@@ -493,6 +493,13 @@ textarea {
   background-size: auto, cover, 780px 780px;
 }
 
+
+.detail-header-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-md);
+}
+
 .detail-grid {
   grid-template-columns: 320px minmax(0, 1fr);
   align-items: start;

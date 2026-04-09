@@ -1,29 +1,5 @@
 const STORAGE_KEY = "campaign-compendium-v2";
 
-const moduleCopy = {
-  characters: {
-    title: "Personatges",
-    description:
-      "Quatre protagonistes, quatre fils de memòria i una sola crònica compartida.",
-  },
-  chronicles: {
-    title: "Cròniques",
-    description:
-      "Un llibre viu de sessions, imatges i records que pots recórrer pàgina a pàgina.",
-  },
-  glossary: {
-    title: "Glossari",
-    description:
-      "Llocs, races, monstres, faccions i objectes que els personatges han descobert al llarg del camí.",
-  },
-};
-
-const prompts = {
-  characters: "Quin d'aquests quatre herois hauria d'esdevenir el centre emocional de la campanya?",
-  chronicles: "Quina sessió mereix una dobla pàgina més cinematogràfica al llibre?",
-  glossary: "Quina ubicació o facció necessita una fitxa més rica perquè el grup no en perdi cap detall?",
-};
-
 const seedData = {
   characters: [
     {
@@ -262,10 +238,6 @@ const seedData = {
 let state = loadState();
 let bookTurnTimer = null;
 
-const heroTitle = document.querySelector("#heroTitle");
-const heroDescription = document.querySelector("#heroDescription");
-const questionPrompt = document.querySelector("#questionPrompt");
-const backToGridButton = document.querySelector("#backToGridButton");
 const editModeToggle = document.querySelector("#editModeToggle");
 const exportButton = document.querySelector("#exportButton");
 const importInput = document.querySelector("#importInput");
@@ -281,10 +253,6 @@ function initialize() {
   document.addEventListener("input", handleInput);
   exportButton?.addEventListener("click", exportData);
   importInput?.addEventListener("change", importData);
-  backToGridButton.addEventListener("click", () => {
-    state.ui.showCharacterGrid = true;
-    persistAndRender();
-  });
   editModeToggle?.addEventListener("click", () => {
     state.ui.isEditMode = !state.ui.isEditMode;
     persistAndRender();
@@ -300,6 +268,12 @@ function handleClick(event) {
     if (state.ui.currentModule === "characters") {
       state.ui.showCharacterGrid = true;
     }
+    persistAndRender();
+    return;
+  }
+
+  if (event.target.closest("[data-back-to-grid]")) {
+    state.ui.showCharacterGrid = true;
     persistAndRender();
     return;
   }
@@ -414,16 +388,6 @@ function render() {
 }
 
 function updateHeader() {
-  const current = moduleCopy[state.ui.currentModule];
-  heroTitle.textContent = current.title;
-  heroDescription.textContent = current.description;
-  if (questionPrompt) {
-    questionPrompt.textContent = prompts[state.ui.currentModule];
-  }
-  backToGridButton.classList.toggle(
-    "hidden",
-    !(state.ui.currentModule === "characters" && !state.ui.showCharacterGrid),
-  );
   if (editModeToggle) {
     editModeToggle.textContent = state.ui.isEditMode ? "Tanca edició" : "Mode edició";
   }
@@ -453,16 +417,6 @@ function renderCharactersModule() {
   if (state.ui.showCharacterGrid) {
     charactersModule.innerHTML = `
       <section class="module-surface">
-        <div class="module-toolbar">
-          <div class="parchment-block">
-            <h3>Els quatre protagonistes</h3>
-            <p>Tria una carta per obrir el compendi detallat del personatge.</p>
-          </div>
-          <div class="parchment-block">
-            <h3>To de la campanya</h3>
-            <p>Fantasia medieval, misteri, memòria i cicatrius que deixen petja.</p>
-          </div>
-        </div>
         <div class="character-grid">
           ${state.characters.map(renderCharacterCard).join("")}
         </div>
@@ -480,6 +434,11 @@ function renderCharactersModule() {
 
   charactersModule.innerHTML = `
     <section class="detail-card">
+      <div class="detail-header-actions">
+        <button id="backToGridButtonInline" type="button" class="secondary" data-back-to-grid>
+          Torna a les cartes
+        </button>
+      </div>
       <div class="detail-grid">
         <div class="detail-portrait" style="${paletteStyle(character.palette)}">
           <div class="detail-portrait-inner">
