@@ -1,29 +1,5 @@
 const STORAGE_KEY = "campaign-compendium-v2";
 
-const moduleCopy = {
-  characters: {
-    title: "Personatges",
-    description:
-      "Quatre protagonistes, quatre fils de memòria i una sola crònica compartida.",
-  },
-  chronicles: {
-    title: "Cròniques",
-    description:
-      "Un llibre viu de sessions, imatges i records que pots recórrer pàgina a pàgina.",
-  },
-  glossary: {
-    title: "Glossari",
-    description:
-      "Llocs, races, monstres, faccions i objectes que els personatges han descobert al llarg del camí.",
-  },
-};
-
-const prompts = {
-  characters: "Quin d'aquests quatre herois hauria d'esdevenir el centre emocional de la campanya?",
-  chronicles: "Quina sessió mereix una dobla pàgina més cinematogràfica al llibre?",
-  glossary: "Quina ubicació o facció necessita una fitxa més rica perquè el grup no en perdi cap detall?",
-};
-
 const seedData = {
   characters: [
     {
@@ -175,9 +151,27 @@ const seedData = {
       date: "03/02/2026",
       summary:
         "El grup es coneix durant una inspecció fallida al port i descobreix un carregament amb segells alterats.",
+      content:
+        "Durant la nit, els protagonistes connecten pistes entre molls i magatzems. [[port-gris|Port Gris]] apareix com a eix de la trama i els [[custodis|Custodis de Cendra]] deixen la seva primera empremta.",
       highlights:
         "Primera aliança. Aparició del símbol de cendra. Iria troba una llista de noms esborrats.",
       imageNote: "Moll nocturn, fanals, boira densa i segells cremats sobre fusta humida.",
+      imageAssets: [],
+      voiceNotes: [],
+      playerNotes: [
+        {
+          id: "note-s1-1",
+          author: "Elatoris",
+          createdAt: "18/04/25",
+          text: "Aquest enemic va ser una bojeria.",
+        },
+        {
+          id: "note-s1-2",
+          author: "Dámakos",
+          createdAt: "18/04/25 18:07",
+          text: "Es veritat, gairebé no superem el repte.",
+        },
+      ],
       characterIds: ["iria", "darian", "mira", "tobin"],
       palette: ["#6f2d21", "#d5b06b"],
     },
@@ -188,9 +182,14 @@ const seedData = {
       date: "17/02/2026",
       summary:
         "Seguint un registre incomplet, el grup arriba a una torre abandonada on troba correspondència entre nobles i Custodis.",
+      content:
+        "La torre oculta confirma que hi ha correspondència secreta entre cases nobles i els [[custodis|Custodis de Cendra]]. La ruta secundària de fugida apunta cap als [[esbarzers-rogencs|Esbarzers Rogencs]].",
       highlights:
         "Darian protegeix un testimoni. Mira detecta una ruta de fugida. Tobin obre la cambra secreta.",
       imageNote: "Torre de pedra mullada, arxius ocults i llum d'espelma contra parets plenes d'humitat.",
+      imageAssets: [],
+      voiceNotes: [],
+      playerNotes: [],
       characterIds: ["darian", "mira", "tobin"],
       palette: ["#39455f", "#bca073"],
     },
@@ -201,9 +200,14 @@ const seedData = {
       date: "01/03/2026",
       summary:
         "Iria confirma que el llibre maleït encara circula. El grup fa un pacte tàcit de no deixar-lo caure en mans dels Custodis.",
+      content:
+        "A l'arxiu vell del [[port-gris|Port Gris]], Iria confirma que el setè llibre no va ser destruït. La sessió tanca amb un jurament per avançar abans que els [[custodis|Custodis de Cendra]].",
       highlights:
         "Nou enemic definitiu. Mites que resulten ser certs. El grup tria la veritat per sobre de la seguretat.",
       imageNote: "Llibre ennegrit sobre altar antic, pols d'or a l'aire i ombres llargues de biblioteca.",
+      imageAssets: [],
+      voiceNotes: [],
+      playerNotes: [],
       characterIds: ["iria", "darian"],
       palette: ["#55335a", "#cf9d68"],
     },
@@ -256,16 +260,14 @@ const seedData = {
     glossarySearch: "",
     selectedGlossaryId: "port-gris",
     isEditMode: false,
+    glossaryReturnChronicleId: "",
+    notesPanelOpen: false,
   },
 };
 
 let state = loadState();
 let bookTurnTimer = null;
 
-const heroTitle = document.querySelector("#heroTitle");
-const heroDescription = document.querySelector("#heroDescription");
-const questionPrompt = document.querySelector("#questionPrompt");
-const backToGridButton = document.querySelector("#backToGridButton");
 const editModeToggle = document.querySelector("#editModeToggle");
 const exportButton = document.querySelector("#exportButton");
 const importInput = document.querySelector("#importInput");
@@ -281,10 +283,6 @@ function initialize() {
   document.addEventListener("input", handleInput);
   exportButton?.addEventListener("click", exportData);
   importInput?.addEventListener("change", importData);
-  backToGridButton.addEventListener("click", () => {
-    state.ui.showCharacterGrid = true;
-    persistAndRender();
-  });
   editModeToggle?.addEventListener("click", () => {
     state.ui.isEditMode = !state.ui.isEditMode;
     persistAndRender();
@@ -300,6 +298,18 @@ function handleClick(event) {
     if (state.ui.currentModule === "characters") {
       state.ui.showCharacterGrid = true;
     }
+    if (state.ui.currentModule !== "glossary") {
+      state.ui.glossaryReturnChronicleId = "";
+    }
+    if (state.ui.currentModule !== "chronicles") {
+      state.ui.notesPanelOpen = false;
+    }
+    persistAndRender();
+    return;
+  }
+
+  if (event.target.closest("[data-back-to-grid]")) {
+    state.ui.showCharacterGrid = true;
     persistAndRender();
     return;
   }
@@ -353,6 +363,39 @@ function handleClick(event) {
     return;
   }
 
+  const glossaryJump = event.target.closest("[data-glossary-jump]");
+  if (glossaryJump) {
+    const glossaryId = glossaryJump.dataset.glossaryJump;
+    if (glossaryId && findGlossaryEntry(glossaryId)) {
+      state.ui.glossaryReturnChronicleId = state.ui.currentModule === "chronicles"
+        ? state.ui.selectedChronicleId
+        : "";
+      state.ui.currentModule = "glossary";
+      state.ui.selectedGlossaryId = glossaryId;
+      persistAndRender();
+    }
+    return;
+  }
+
+  if (event.target.closest("[data-return-to-chronicle]")) {
+    if (state.ui.glossaryReturnChronicleId) {
+      state.ui.currentModule = "chronicles";
+      state.ui.selectedChronicleId = state.ui.glossaryReturnChronicleId;
+      state.ui.glossaryReturnChronicleId = "";
+      persistAndRender();
+    }
+    return;
+  }
+
+  const suggestionButton = event.target.closest("[data-insert-glossary-ref]");
+  if (suggestionButton) {
+    const textarea = document.querySelector(`#${suggestionButton.dataset.inputId}`);
+    if (textarea instanceof HTMLTextAreaElement) {
+      insertGlossaryReference(textarea, suggestionButton.dataset.insertGlossaryRef || "", suggestionButton.dataset.glossaryLabel || "");
+    }
+    return;
+  }
+
   if (event.target.closest("[data-create-chronicle]")) {
     createChronicle();
     return;
@@ -370,6 +413,24 @@ function handleClick(event) {
 
   if (event.target.closest("[data-delete-glossary]")) {
     deleteGlossaryEntry();
+    return;
+  }
+
+  if (event.target.closest("[data-toggle-notes]")) {
+    state.ui.notesPanelOpen = !state.ui.notesPanelOpen;
+    renderChroniclesModule();
+    return;
+  }
+
+  if (event.target.closest("[data-close-notes]")) {
+    state.ui.notesPanelOpen = false;
+    renderChroniclesModule();
+    return;
+  }
+
+  const deleteNoteButton = event.target.closest("[data-delete-player-note]");
+  if (deleteNoteButton) {
+    deletePlayerNote(deleteNoteButton.dataset.deletePlayerNote || "");
   }
 }
 
@@ -377,6 +438,10 @@ function handleInput(event) {
   if (event.target.name === "glossarySearch") {
     state.ui.glossarySearch = event.target.value.trim();
     renderGlossaryModule();
+  }
+
+  if (event.target instanceof HTMLTextAreaElement && event.target.dataset.refInput === "glossary") {
+    renderReferenceSuggestions(event.target);
   }
 }
 
@@ -403,6 +468,10 @@ function handleSubmit(event) {
   if (form.dataset.form === "glossary") {
     saveGlossary(new FormData(form));
   }
+
+  if (form.dataset.form === "chronicle-player-note") {
+    savePlayerNote(new FormData(form));
+  }
 }
 
 function render() {
@@ -414,16 +483,6 @@ function render() {
 }
 
 function updateHeader() {
-  const current = moduleCopy[state.ui.currentModule];
-  heroTitle.textContent = current.title;
-  heroDescription.textContent = current.description;
-  if (questionPrompt) {
-    questionPrompt.textContent = prompts[state.ui.currentModule];
-  }
-  backToGridButton.classList.toggle(
-    "hidden",
-    !(state.ui.currentModule === "characters" && !state.ui.showCharacterGrid),
-  );
   if (editModeToggle) {
     editModeToggle.textContent = state.ui.isEditMode ? "Tanca edició" : "Mode edició";
   }
@@ -453,16 +512,6 @@ function renderCharactersModule() {
   if (state.ui.showCharacterGrid) {
     charactersModule.innerHTML = `
       <section class="module-surface">
-        <div class="module-toolbar">
-          <div class="parchment-block">
-            <h3>Els quatre protagonistes</h3>
-            <p>Tria una carta per obrir el compendi detallat del personatge.</p>
-          </div>
-          <div class="parchment-block">
-            <h3>To de la campanya</h3>
-            <p>Fantasia medieval, misteri, memòria i cicatrius que deixen petja.</p>
-          </div>
-        </div>
         <div class="character-grid">
           ${state.characters.map(renderCharacterCard).join("")}
         </div>
@@ -480,6 +529,11 @@ function renderCharactersModule() {
 
   charactersModule.innerHTML = `
     <section class="detail-card">
+      <div class="detail-header-actions">
+        <button id="backToGridButtonInline" type="button" class="secondary" data-back-to-grid>
+          Torna a les cartes
+        </button>
+      </div>
       <div class="detail-grid">
         <div class="detail-portrait" style="${paletteStyle(character.palette)}">
           <div class="detail-portrait-inner">
@@ -684,6 +738,7 @@ function renderChroniclesModule() {
   const relatedCharacters = current
     ? current.characterIds.map((id) => findCharacter(id)?.name).filter(Boolean)
     : [];
+  const primaryImage = current?.imageAssets?.[0] || "";
 
   chroniclesModule.innerHTML = `
     <section class="book-shell">
@@ -714,18 +769,26 @@ function renderChroniclesModule() {
               <p class="eyebrow">${escapeHtml(current?.chapter || "Sessió")}</p>
               <h3>${escapeHtml(current?.title || "Sense crònica")}</h3>
               <p>${escapeHtml(current?.date || "")}</p>
-              <div class="book-image" style="${paletteStyle(current?.palette || seedData.chronicles[0].palette)}"></div>
-              <p>${escapeHtml(current?.summary || "No hi ha resum disponible.")}</p>
+              ${
+                primaryImage
+                  ? `<img class="book-image-media" src="${escapeAttribute(primaryImage)}" alt="${escapeAttribute(current?.title || "Imatge de crònica")}" loading="lazy" />`
+                  : `<div class="book-image" style="${paletteStyle(current?.palette || seedData.chronicles[0].palette)}"></div>`
+              }
+              <div class="chapter-summary">${renderChronicleRichText(current?.summary || "No hi ha resum disponible.")}</div>
+              <div class="chapter-body">${renderChronicleRichText(current?.content || "")}</div>
               <span class="page-number">Pàgina esquerra</span>
             </article>
             <article class="book-page right-page">
-              <p class="eyebrow">Notes de capítol</p>
-              <h3>Escenes i personatges</h3>
-              <div class="chronicle-notes">
-                ${renderTextCard("Highlights", current?.highlights || "")}
-                ${renderTextCard("Imatge evocadora", current?.imageNote || "")}
-                ${renderTextCard("Personatges implicats", relatedCharacters.join(", ") || "Sense personatges vinculats")}
+              <p class="eyebrow">Detalls addicionals</p>
+              <h3>Highlights</h3>
+              <div class="chapter-body">
+                ${renderChronicleRichText(current?.highlights || "Sense highlights registrats.")}
               </div>
+              <h3>Imatge evocadora</h3>
+              <p>${escapeHtml(current?.imageNote || "Sense descripció visual")}</p>
+              <h3>Personatges implicats</h3>
+              <p>${escapeHtml(relatedCharacters.join(", ") || "Sense personatges vinculats")}</p>
+              ${renderChronicleMedia(current, { compact: true })}
               <span class="page-number">Pàgina dreta</span>
             </article>
           </div>
@@ -734,8 +797,12 @@ function renderChroniclesModule() {
             <button type="button" data-chronicle-nav="next">Pàgina següent</button>
           </div>
           ${state.ui.isEditMode ? renderChronicleEditor(current) : ""}
+          ${renderChronicleNotesPanel(current)}
         </div>
       </div>
+      <button type="button" class="notes-fab" data-toggle-notes>
+        ${state.ui.notesPanelOpen ? "Tanca notes" : "Notes jugadors"}
+      </button>
     </section>
   `;
 }
@@ -750,9 +817,12 @@ function renderChronicleEditor(chronicle) {
         ${renderInputField("chapter", "Capítol", chronicle?.chapter || "")}
         ${renderInputField("title", "Títol", chronicle?.title || "")}
         ${renderInputField("date", "Data", chronicle?.date || "")}
-        ${renderTextareaField("summary", "Resum principal", chronicle?.summary || "")}
-        ${renderTextareaField("highlights", "Highlights", chronicle?.highlights || "")}
+        ${renderReferenceTextareaField("summary", "Resum principal", chronicle?.summary || "")}
+        ${renderReferenceTextareaField("content", "Cos del capítol", chronicle?.content || "", 8)}
+        ${renderReferenceTextareaField("highlights", "Highlights", chronicle?.highlights || "")}
         ${renderTextareaField("imageNote", "Descripció visual", chronicle?.imageNote || "")}
+        ${renderTextareaField("imageAssets", "Imatges (una URL o ruta per línia)", (chronicle?.imageAssets || []).join("\n"))}
+        ${renderTextareaField("voiceNotes", "Notes de veu (una URL o ruta per línia)", (chronicle?.voiceNotes || []).join("\n"))}
         <div class="field span-2">
           <span>Personatges implicats</span>
           <div class="link-list">
@@ -821,6 +891,7 @@ function renderGlossaryModule() {
           </div>
         </div>
         <div class="glossary-detail">
+          ${state.ui.glossaryReturnChronicleId ? renderGlossaryBackLink() : ""}
           ${current ? renderGlossaryDetail(current) : `<div class="empty-state">No hi ha entrades al glossari.</div>`}
         </div>
       </div>
@@ -833,6 +904,59 @@ function renderGlossaryModule() {
       </div>
       ${state.ui.isEditMode ? renderGlossaryEditor(current) : ""}
     </section>
+  `;
+}
+
+function renderGlossaryBackLink() {
+  const chronicle = state.chronicles.find((item) => item.id === state.ui.glossaryReturnChronicleId);
+  const label = chronicle
+    ? `${chronicle.chapter} · ${chronicle.title}`
+    : "la crònica d'origen";
+  return `
+    <div class="section-card glossary-return">
+      <p class="eyebrow">Navegació ràpida</p>
+      <button type="button" class="secondary" data-return-to-chronicle>
+        Volver a ${escapeHtml(label)}
+      </button>
+    </div>
+  `;
+}
+
+function renderChronicleNotesPanel(chronicle) {
+  const notes = chronicle?.playerNotes || [];
+  return `
+    <aside class="chronicle-notes-panel ${state.ui.notesPanelOpen ? "open" : ""}" ${state.ui.notesPanelOpen ? "" : "hidden"}>
+      <div class="notes-panel-header">
+        <p class="eyebrow">Notes personals</p>
+        <button type="button" class="secondary" data-close-notes>Tanca</button>
+      </div>
+      <div class="notes-feed">
+        ${
+          notes.length
+            ? notes
+              .map(
+                (note) => `
+                  <article class="note-item">
+                    <p class="note-meta">${escapeHtml(note.author)} · ${escapeHtml(note.createdAt)}</p>
+                    <p>${escapeHtml(note.text)}</p>
+                    ${
+                      state.ui.isEditMode
+                        ? `<button type="button" class="secondary note-delete" data-delete-player-note="${note.id}">Esborra</button>`
+                        : ""
+                    }
+                  </article>
+                `,
+              )
+              .join("")
+            : `<p class="empty-state">Encara no hi ha notes dels jugadors.</p>`
+        }
+      </div>
+      <form data-form="chronicle-player-note" class="notes-form">
+        ${renderInputField("author", "Nom jugador", "")}
+        ${renderTextareaField("text", "Nova nota", "", 4)}
+        <button type="submit">Afegeix nota</button>
+      </form>
+    </aside>
   `;
 }
 
@@ -1006,9 +1130,45 @@ function saveChronicle(formData) {
   chronicle.title = readString(formData, "title");
   chronicle.date = readString(formData, "date");
   chronicle.summary = readString(formData, "summary");
+  chronicle.content = readString(formData, "content");
   chronicle.highlights = readString(formData, "highlights");
   chronicle.imageNote = readString(formData, "imageNote");
+  chronicle.imageAssets = splitLines(readString(formData, "imageAssets"));
+  chronicle.voiceNotes = splitLines(readString(formData, "voiceNotes"));
   chronicle.characterIds = formData.getAll("characterIds").map(String);
+  persistAndRender();
+}
+
+function savePlayerNote(formData) {
+  const chronicle = getSelectedChronicle();
+  if (!chronicle) {
+    return;
+  }
+
+  const author = readString(formData, "author");
+  const text = readString(formData, "text");
+  if (!author || !text) {
+    return;
+  }
+
+  chronicle.playerNotes = chronicle.playerNotes || [];
+  chronicle.playerNotes.unshift({
+    id: `pn-${Date.now()}`,
+    author,
+    createdAt: formatShortDate(new Date()),
+    text,
+  });
+  state.ui.notesPanelOpen = true;
+  persistAndRender();
+}
+
+function deletePlayerNote(noteId) {
+  const chronicle = getSelectedChronicle();
+  if (!chronicle || !noteId) {
+    return;
+  }
+  chronicle.playerNotes = (chronicle.playerNotes || []).filter((note) => note.id !== noteId);
+  state.ui.notesPanelOpen = true;
   persistAndRender();
 }
 
@@ -1128,6 +1288,11 @@ function sanitizeChronicle(chronicle, fallback) {
     ...structuredClone(fallback),
     ...chronicle,
     characterIds: Array.isArray(chronicle?.characterIds) ? chronicle.characterIds : fallback.characterIds,
+    imageAssets: Array.isArray(chronicle?.imageAssets) ? chronicle.imageAssets : splitLines(chronicle?.imageAssets || fallback.imageAssets?.join("\n") || ""),
+    voiceNotes: Array.isArray(chronicle?.voiceNotes) ? chronicle.voiceNotes : splitLines(chronicle?.voiceNotes || fallback.voiceNotes?.join("\n") || ""),
+    playerNotes: sanitizePlayerNotes(
+      Array.isArray(chronicle?.playerNotes) ? chronicle.playerNotes : fallback.playerNotes || [],
+    ),
     palette: Array.isArray(chronicle?.palette) ? chronicle.palette : fallback.palette,
   };
 }
@@ -1150,8 +1315,12 @@ function createChronicle() {
     title: "Nova crònica",
     date: "",
     summary: "",
+    content: "",
     highlights: "",
     imageNote: "",
+    imageAssets: [],
+    voiceNotes: [],
+    playerNotes: [],
     characterIds: [],
     palette: ["#64483d", "#c8a86d"],
   };
@@ -1298,11 +1467,29 @@ function renderInputField(name, label, value) {
   `;
 }
 
-function renderTextareaField(name, label, value) {
+function renderTextareaField(name, label, value, rows = 3) {
   return `
     <label class="field span-2">
       <span>${escapeHtml(label)}</span>
-      <textarea name="${name}" rows="3">${escapeHtml(value)}</textarea>
+      <textarea name="${name}" rows="${rows}">${escapeHtml(value)}</textarea>
+    </label>
+  `;
+}
+
+function renderReferenceTextareaField(name, label, value, rows = 3) {
+  const inputId = `chronicle-ref-${name}`;
+  return `
+    <label class="field span-2 reference-field">
+      <span>${escapeHtml(label)}</span>
+      <textarea
+        id="${inputId}"
+        name="${name}"
+        rows="${rows}"
+        data-ref-input="glossary"
+        data-suggestion-target="${inputId}-suggestions"
+      >${escapeHtml(value)}</textarea>
+      <div id="${inputId}-suggestions" class="reference-suggestions"></div>
+      <small class="field-help">Escriu un nom del glossari i selecciona la suggerència per inserir una referència clicable.</small>
     </label>
   `;
 }
@@ -1316,6 +1503,156 @@ function shortText(value, maxLength) {
     return value;
   }
   return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function formatShortDate(value) {
+  return new Intl.DateTimeFormat("ca-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(value);
+}
+
+function splitLines(value) {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function sanitizePlayerNotes(notes) {
+  return notes
+    .map((note, index) => ({
+      id: String(note?.id || `pn-fallback-${index}`),
+      author: String(note?.author || "Jugador"),
+      createdAt: String(note?.createdAt || ""),
+      text: String(note?.text || ""),
+    }))
+    .filter((note) => note.text.trim().length);
+}
+
+function renderChronicleRichText(text) {
+  return String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `<p>${replaceGlossaryReferences(line)}</p>`)
+    .join("") || "<p>Sense contingut.</p>";
+}
+
+function replaceGlossaryReferences(value) {
+  return escapeHtml(value).replaceAll(
+    /\[\[([a-zA-Z0-9-_]+)\|([^\]]+)\]\]/g,
+    (_full, id, label) =>
+      `<button type="button" class="glossary-inline-link" data-glossary-jump="${id}">${escapeHtml(label)}</button>`,
+  );
+}
+
+function renderChronicleMedia(chronicle, options = { compact: false }) {
+  const images = (chronicle?.imageAssets || []).filter(Boolean);
+  const notes = (chronicle?.voiceNotes || []).filter(Boolean);
+  if (!images.length && !notes.length) {
+    return `<p class="resource-empty">Sense imatges ni notes de veu vinculades encara.</p>`;
+  }
+
+  return `
+    <article class="chronicle-media-card ${options.compact ? "compact" : ""}">
+      <p class="eyebrow">Recursos vinculats</p>
+      ${images.length
+        ? `<div class="chronicle-image-grid">
+            ${images
+              .map(
+                (source, index) => `
+                  <figure>
+                    <img src="${escapeAttribute(source)}" alt="Imatge de crònica ${index + 1}" loading="lazy" />
+                    <figcaption>${escapeHtml(source)}</figcaption>
+                  </figure>
+                `,
+              )
+              .join("")}
+          </div>`
+        : ""}
+      ${notes.length
+        ? `<div class="chronicle-audio-list">
+            ${notes
+              .map(
+                (source) => `
+                  <label>
+                    <span>${escapeHtml(source)}</span>
+                    <audio controls preload="none" src="${escapeAttribute(source)}"></audio>
+                  </label>
+                `,
+              )
+              .join("")}
+          </div>`
+        : ""}
+    </article>
+  `;
+}
+
+function renderReferenceSuggestions(textarea) {
+  const targetId = textarea.dataset.suggestionTarget;
+  if (!targetId) {
+    return;
+  }
+  const container = document.querySelector(`#${targetId}`);
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+
+  const token = getCurrentToken(textarea);
+  if (!token || token.length < 2) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const matches = state.glossary
+    .filter((entry) => entry.name.toLowerCase().includes(token.toLowerCase()))
+    .slice(0, 5);
+
+  if (!matches.length) {
+    container.innerHTML = "";
+    return;
+  }
+
+  container.innerHTML = matches
+    .map(
+      (entry) => `
+        <button
+          type="button"
+          class="suggestion-chip"
+          data-insert-glossary-ref="${entry.id}"
+          data-glossary-label="${escapeAttribute(entry.name)}"
+          data-input-id="${escapeAttribute(textarea.id)}"
+        >
+          ${escapeHtml(entry.name)} · ${escapeHtml(entry.category)}
+        </button>
+      `,
+    )
+    .join("");
+}
+
+function getCurrentToken(textarea) {
+  const cursor = textarea.selectionStart || 0;
+  const before = textarea.value.slice(0, cursor);
+  const match = before.match(/([a-zA-ZÀ-ÿ0-9'’-]{2,})$/);
+  return match ? match[1] : "";
+}
+
+function insertGlossaryReference(textarea, glossaryId, glossaryName) {
+  const cursor = textarea.selectionStart || 0;
+  const before = textarea.value.slice(0, cursor);
+  const after = textarea.value.slice(cursor);
+  const match = before.match(/([a-zA-ZÀ-ÿ0-9'’-]{2,})$/);
+  const replaceFrom = match ? cursor - match[1].length : cursor;
+  const token = `[[${glossaryId}|${glossaryName}]]`;
+  textarea.value = `${textarea.value.slice(0, replaceFrom)}${token}${after}`;
+  const next = replaceFrom + token.length;
+  textarea.setSelectionRange(next, next);
+  textarea.focus();
+  renderReferenceSuggestions(textarea);
 }
 
 function escapeHtml(value) {
