@@ -158,20 +158,6 @@ const seedData = {
       imageNote: "Moll nocturn, fanals, boira densa i segells cremats sobre fusta humida.",
       imageAssets: [],
       voiceNotes: [],
-      playerNotes: [
-        {
-          id: "note-s1-1",
-          author: "Elatoris",
-          createdAt: "18/04/25",
-          text: "Aquest enemic va ser una bojeria.",
-        },
-        {
-          id: "note-s1-2",
-          author: "Dámakos",
-          createdAt: "18/04/25 18:07",
-          text: "Es veritat, gairebé no superem el repte.",
-        },
-      ],
       characterIds: ["iria", "darian", "mira", "tobin"],
       palette: ["#6f2d21", "#d5b06b"],
     },
@@ -189,7 +175,6 @@ const seedData = {
       imageNote: "Torre de pedra mullada, arxius ocults i llum d'espelma contra parets plenes d'humitat.",
       imageAssets: [],
       voiceNotes: [],
-      playerNotes: [],
       characterIds: ["darian", "mira", "tobin"],
       palette: ["#39455f", "#bca073"],
     },
@@ -207,7 +192,6 @@ const seedData = {
       imageNote: "Llibre ennegrit sobre altar antic, pols d'or a l'aire i ombres llargues de biblioteca.",
       imageAssets: [],
       voiceNotes: [],
-      playerNotes: [],
       characterIds: ["iria", "darian"],
       palette: ["#55335a", "#cf9d68"],
     },
@@ -261,7 +245,6 @@ const seedData = {
     selectedGlossaryId: "port-gris",
     isEditMode: false,
     glossaryReturnChronicleId: "",
-    notesPanelOpen: false,
   },
 };
 
@@ -301,9 +284,12 @@ function handleClick(event) {
     if (state.ui.currentModule !== "glossary") {
       state.ui.glossaryReturnChronicleId = "";
     }
-    if (state.ui.currentModule !== "chronicles") {
-      state.ui.notesPanelOpen = false;
-    }
+    persistAndRender();
+    return;
+  }
+
+  if (event.target.closest("[data-back-to-grid]")) {
+    state.ui.showCharacterGrid = true;
     persistAndRender();
     return;
   }
@@ -367,21 +353,8 @@ function handleClick(event) {
   if (glossaryJump) {
     const glossaryId = glossaryJump.dataset.glossaryJump;
     if (glossaryId && findGlossaryEntry(glossaryId)) {
-      state.ui.glossaryReturnChronicleId = state.ui.currentModule === "chronicles"
-        ? state.ui.selectedChronicleId
-        : "";
       state.ui.currentModule = "glossary";
       state.ui.selectedGlossaryId = glossaryId;
-      persistAndRender();
-    }
-    return;
-  }
-
-  if (event.target.closest("[data-return-to-chronicle]")) {
-    if (state.ui.glossaryReturnChronicleId) {
-      state.ui.currentModule = "chronicles";
-      state.ui.selectedChronicleId = state.ui.glossaryReturnChronicleId;
-      state.ui.glossaryReturnChronicleId = "";
       persistAndRender();
     }
     return;
@@ -779,10 +752,13 @@ function renderChroniclesModule() {
               <span class="page-number">Pàgina esquerra</span>
             </article>
             <article class="book-page right-page">
-              <p class="eyebrow">Capítol</p>
-              <h3>Detalls i recursos</h3>
-              <div class="chapter-body">
-                ${renderChronicleRichText(current?.highlights || "Sense highlights registrats.")}
+              <p class="eyebrow">Notes de capítol</p>
+              <h3>Escenes i personatges</h3>
+              <div class="chronicle-notes">
+                ${renderTextCard("Highlights", current?.highlights || "", { rich: true })}
+                ${renderTextCard("Imatge evocadora", current?.imageNote || "")}
+                ${renderTextCard("Personatges implicats", relatedCharacters.join(", ") || "Sense personatges vinculats")}
+                ${renderChronicleMedia(current)}
               </div>
               ${renderTextCard("Imatge evocadora", current?.imageNote || "")}
               ${renderTextCard("Personatges implicats", relatedCharacters.join(", ") || "Sense personatges vinculats")}
@@ -917,44 +893,6 @@ function renderGlossaryBackLink() {
         Volver a ${escapeHtml(label)}
       </button>
     </div>
-  `;
-}
-
-function renderChronicleNotesPanel(chronicle) {
-  const notes = chronicle?.playerNotes || [];
-  return `
-    <aside class="chronicle-notes-panel ${state.ui.notesPanelOpen ? "open" : ""}">
-      <div class="notes-panel-header">
-        <p class="eyebrow">Notes personals</p>
-        <button type="button" class="secondary" data-close-notes>Tanca</button>
-      </div>
-      <div class="notes-feed">
-        ${
-          notes.length
-            ? notes
-              .map(
-                (note) => `
-                  <article class="note-item">
-                    <p class="note-meta">${escapeHtml(note.author)} · ${escapeHtml(note.createdAt)}</p>
-                    <p>${escapeHtml(note.text)}</p>
-                    ${
-                      state.ui.isEditMode
-                        ? `<button type="button" class="secondary note-delete" data-delete-player-note="${note.id}">Esborra</button>`
-                        : ""
-                    }
-                  </article>
-                `,
-              )
-              .join("")
-            : `<p class="empty-state">Encara no hi ha notes dels jugadors.</p>`
-        }
-      </div>
-      <form data-form="chronicle-player-note" class="notes-form">
-        ${renderInputField("author", "Nom jugador", "")}
-        ${renderTextareaField("text", "Nova nota", "", 4)}
-        <button type="submit">Afegeix nota</button>
-      </form>
-    </aside>
   `;
 }
 
@@ -1288,7 +1226,6 @@ function sanitizeChronicle(chronicle, fallback) {
     characterIds: Array.isArray(chronicle?.characterIds) ? chronicle.characterIds : fallback.characterIds,
     imageAssets: Array.isArray(chronicle?.imageAssets) ? chronicle.imageAssets : splitLines(chronicle?.imageAssets || fallback.imageAssets?.join("\n") || ""),
     voiceNotes: Array.isArray(chronicle?.voiceNotes) ? chronicle.voiceNotes : splitLines(chronicle?.voiceNotes || fallback.voiceNotes?.join("\n") || ""),
-    playerNotes: Array.isArray(chronicle?.playerNotes) ? chronicle.playerNotes : fallback.playerNotes || [],
     palette: Array.isArray(chronicle?.palette) ? chronicle.palette : fallback.palette,
   };
 }
@@ -1316,7 +1253,6 @@ function createChronicle() {
     imageNote: "",
     imageAssets: [],
     voiceNotes: [],
-    playerNotes: [],
     characterIds: [],
     palette: ["#64483d", "#c8a86d"],
   };
@@ -1491,6 +1427,24 @@ function renderReferenceTextareaField(name, label, value, rows = 3) {
   `;
 }
 
+function renderReferenceTextareaField(name, label, value, rows = 3) {
+  const inputId = `chronicle-ref-${name}`;
+  return `
+    <label class="field span-2 reference-field">
+      <span>${escapeHtml(label)}</span>
+      <textarea
+        id="${inputId}"
+        name="${name}"
+        rows="${rows}"
+        data-ref-input="glossary"
+        data-suggestion-target="${inputId}-suggestions"
+      >${escapeHtml(value)}</textarea>
+      <div id="${inputId}-suggestions" class="reference-suggestions"></div>
+      <small class="field-help">Escriu un nom del glossari i selecciona la suggerència per inserir una referència clicable.</small>
+    </label>
+  `;
+}
+
 function readString(formData, key) {
   return formData.get(key)?.toString().trim() || "";
 }
@@ -1500,16 +1454,6 @@ function shortText(value, maxLength) {
     return value;
   }
   return `${value.slice(0, maxLength - 1)}…`;
-}
-
-function formatShortDate(value) {
-  return new Intl.DateTimeFormat("ca-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(value);
 }
 
 function splitLines(value) {

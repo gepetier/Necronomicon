@@ -16,7 +16,6 @@ SPA estàtica per centralitzar la informació d'una campanya de D&D amb estètic
 - Exportació i importació de JSON
 - Cròniques editables amb cos de capítol, imatges i notes de veu vinculades
 - Referències vinculables al Glossari amb suggerència automàtica en escriure
-- Panell flotant de notes personals dels jugadors per capítol
 - Fallback responsive sense dependències externes
 
 ## Fitxers principals
