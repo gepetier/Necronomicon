@@ -493,6 +493,13 @@ textarea {
   background-size: auto, cover, 780px 780px;
 }
 
+
+.detail-header-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-md);
+}
+
 .detail-grid {
   grid-template-columns: 320px minmax(0, 1fr);
   align-items: start;
@@ -880,6 +887,27 @@ history-list,
     0 12px 24px rgba(88, 58, 35, 0.12);
 }
 
+.book-image-media {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  border-radius: 14px;
+  margin: 0.15rem 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 248, 233, 0.18),
+    0 12px 24px rgba(88, 58, 35, 0.12);
+}
+
+.chapter-summary p,
+.chapter-body p {
+  margin: 0 0 0.45rem;
+}
+
+.chapter-body {
+  border-top: 1px solid rgba(91, 53, 27, 0.14);
+  padding-top: 0.7rem;
+}
+
 .book-page::before {
   content: "";
   position: absolute;
@@ -956,6 +984,195 @@ history-list,
 .book-controls button {
   min-height: 52px;
   font-size: 0.98rem;
+}
+
+.notes-fab {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 9999;
+  border-radius: 999px;
+  padding-inline: 1.15rem;
+}
+
+.chronicle-notes-panel {
+  position: fixed;
+  right: 1rem;
+  bottom: 5.2rem;
+  width: min(390px, calc(100vw - 2rem));
+  max-height: min(70vh, 640px);
+  display: none;
+  grid-template-rows: auto 1fr auto;
+  gap: 0.7rem;
+  padding: 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(95, 62, 38, 0.22);
+  background:
+    linear-gradient(180deg, rgba(253, 245, 230, 0.96), rgba(237, 219, 192, 0.94)),
+    var(--tex-parchment);
+  box-shadow: 0 18px 34px rgba(15, 9, 7, 0.38);
+  z-index: 9998;
+}
+
+.chronicle-notes-panel.open {
+  display: grid;
+}
+
+.notes-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.notes-panel-header button {
+  min-height: auto;
+  padding: 0.42rem 0.8rem;
+}
+
+.notes-feed {
+  overflow-y: auto;
+  display: grid;
+  gap: 0.55rem;
+  padding-right: 0.2rem;
+}
+
+.note-item {
+  background: rgba(255, 248, 236, 0.82);
+  border: 1px solid rgba(95, 62, 38, 0.12);
+  border-radius: 12px;
+  padding: 0.65rem 0.7rem;
+}
+
+.note-meta {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.25rem;
+}
+
+.notes-form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.note-delete {
+  margin-top: 0.45rem;
+  min-height: auto;
+  padding: 0.3rem 0.62rem;
+}
+
+.glossary-inline-link {
+  display: inline;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(165, 110, 56, 0.18);
+  color: #5c351f;
+  box-shadow: none;
+  padding: 0.12rem 0.38rem;
+  min-height: auto;
+  font-weight: 600;
+}
+
+.glossary-inline-link:hover {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+  background: rgba(165, 110, 56, 0.28);
+}
+
+.chronicle-media-card {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+  padding: 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(95, 62, 38, 0.16);
+  background: rgba(255, 248, 235, 0.55);
+}
+
+.chronicle-media-card.compact {
+  padding: 0.55rem;
+}
+
+.chronicle-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+
+.chronicle-image-grid figure {
+  margin: 0;
+}
+
+.chronicle-image-grid img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(95, 62, 38, 0.2);
+}
+
+.chronicle-image-grid figcaption {
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  word-break: break-all;
+}
+
+.chronicle-audio-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.chronicle-audio-list label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.chronicle-audio-list audio {
+  width: 100%;
+}
+
+.resource-empty {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.reference-field {
+  position: relative;
+}
+
+.reference-suggestions {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.suggestion-chip {
+  width: fit-content;
+  max-width: 100%;
+  text-align: left;
+  box-shadow: none;
+  min-height: auto;
+  padding: 0.45rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(165, 110, 56, 0.12);
+  color: #5d3c2e;
+  border: 1px solid rgba(95, 62, 38, 0.2);
+}
+
+.field-help {
+  margin-top: 0.3rem;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.glossary-return {
+  margin-bottom: var(--space-sm);
+}
+
+.glossary-return button {
+  width: 100%;
 }
 
 .glossary-shell {
