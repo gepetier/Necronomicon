@@ -887,6 +887,27 @@ history-list,
     0 12px 24px rgba(88, 58, 35, 0.12);
 }
 
+.book-image-media {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  border-radius: 14px;
+  margin: 0.15rem 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 248, 233, 0.18),
+    0 12px 24px rgba(88, 58, 35, 0.12);
+}
+
+.chapter-summary p,
+.chapter-body p {
+  margin: 0 0 0.45rem;
+}
+
+.chapter-body {
+  border-top: 1px solid rgba(91, 53, 27, 0.14);
+  padding-top: 0.7rem;
+}
+
 .book-page::before {
   content: "";
   position: absolute;
@@ -963,6 +984,98 @@ history-list,
 .book-controls button {
   min-height: 52px;
   font-size: 0.98rem;
+}
+
+.glossary-inline-link {
+  display: inline;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(165, 110, 56, 0.18);
+  color: #5c351f;
+  box-shadow: none;
+  padding: 0.12rem 0.38rem;
+  min-height: auto;
+  font-weight: 600;
+}
+
+.glossary-inline-link:hover {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+  background: rgba(165, 110, 56, 0.28);
+}
+
+.chronicle-media-card {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.chronicle-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+
+.chronicle-image-grid figure {
+  margin: 0;
+}
+
+.chronicle-image-grid img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(95, 62, 38, 0.2);
+}
+
+.chronicle-image-grid figcaption {
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  word-break: break-all;
+}
+
+.chronicle-audio-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.chronicle-audio-list label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.chronicle-audio-list audio {
+  width: 100%;
+}
+
+.reference-field {
+  position: relative;
+}
+
+.reference-suggestions {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.suggestion-chip {
+  width: fit-content;
+  max-width: 100%;
+  text-align: left;
+  box-shadow: none;
+  min-height: auto;
+  padding: 0.45rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(165, 110, 56, 0.12);
+  color: #5d3c2e;
+  border: 1px solid rgba(95, 62, 38, 0.2);
+}
+
+.field-help {
+  margin-top: 0.3rem;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
 }
 
 .glossary-shell {
