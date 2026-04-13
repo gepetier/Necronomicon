@@ -244,6 +244,7 @@ const seedData = {
     glossarySearch: "",
     selectedGlossaryId: "port-gris",
     isEditMode: false,
+    glossaryReturnChronicleId: "",
   },
 };
 
@@ -280,6 +281,15 @@ function handleClick(event) {
     if (state.ui.currentModule === "characters") {
       state.ui.showCharacterGrid = true;
     }
+    if (state.ui.currentModule !== "glossary") {
+      state.ui.glossaryReturnChronicleId = "";
+    }
+    persistAndRender();
+    return;
+  }
+
+  if (event.target.closest("[data-back-to-grid]")) {
+    state.ui.showCharacterGrid = true;
     persistAndRender();
     return;
   }
@@ -826,6 +836,7 @@ function renderGlossaryModule() {
           </div>
         </div>
         <div class="glossary-detail">
+          ${state.ui.glossaryReturnChronicleId ? renderGlossaryBackLink() : ""}
           ${current ? renderGlossaryDetail(current) : `<div class="empty-state">No hi ha entrades al glossari.</div>`}
         </div>
       </div>
@@ -838,6 +849,21 @@ function renderGlossaryModule() {
       </div>
       ${state.ui.isEditMode ? renderGlossaryEditor(current) : ""}
     </section>
+  `;
+}
+
+function renderGlossaryBackLink() {
+  const chronicle = state.chronicles.find((item) => item.id === state.ui.glossaryReturnChronicleId);
+  const label = chronicle
+    ? `${chronicle.chapter} · ${chronicle.title}`
+    : "la crònica d'origen";
+  return `
+    <div class="section-card glossary-return">
+      <p class="eyebrow">Navegació ràpida</p>
+      <button type="button" class="secondary" data-return-to-chronicle>
+        Volver a ${escapeHtml(label)}
+      </button>
+    </div>
   `;
 }
 
