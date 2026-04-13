@@ -386,6 +386,24 @@ function handleClick(event) {
 
   if (event.target.closest("[data-delete-glossary]")) {
     deleteGlossaryEntry();
+    return;
+  }
+
+  if (event.target.closest("[data-toggle-notes]")) {
+    state.ui.notesPanelOpen = !state.ui.notesPanelOpen;
+    renderChroniclesModule();
+    return;
+  }
+
+  if (event.target.closest("[data-close-notes]")) {
+    state.ui.notesPanelOpen = false;
+    renderChroniclesModule();
+    return;
+  }
+
+  const deleteNoteButton = event.target.closest("[data-delete-player-note]");
+  if (deleteNoteButton) {
+    deletePlayerNote(deleteNoteButton.dataset.deletePlayerNote || "");
   }
 }
 
@@ -422,6 +440,10 @@ function handleSubmit(event) {
 
   if (form.dataset.form === "glossary") {
     saveGlossary(new FormData(form));
+  }
+
+  if (form.dataset.form === "chronicle-player-note") {
+    savePlayerNote(new FormData(form));
   }
 }
 
@@ -738,6 +760,9 @@ function renderChroniclesModule() {
                 ${renderTextCard("Personatges implicats", relatedCharacters.join(", ") || "Sense personatges vinculats")}
                 ${renderChronicleMedia(current)}
               </div>
+              ${renderTextCard("Imatge evocadora", current?.imageNote || "")}
+              ${renderTextCard("Personatges implicats", relatedCharacters.join(", ") || "Sense personatges vinculats")}
+              ${renderChronicleMedia(current)}
               <span class="page-number">Pàgina dreta</span>
             </article>
           </div>
@@ -746,8 +771,12 @@ function renderChroniclesModule() {
             <button type="button" data-chronicle-nav="next">Pàgina següent</button>
           </div>
           ${state.ui.isEditMode ? renderChronicleEditor(current) : ""}
+          ${renderChronicleNotesPanel(current)}
         </div>
       </div>
+      <button type="button" class="notes-fab" data-toggle-notes>
+        ${state.ui.notesPanelOpen ? "Tanca notes" : "Notes jugadors"}
+      </button>
     </section>
   `;
 }
@@ -1046,6 +1075,39 @@ function saveChronicle(formData) {
   persistAndRender();
 }
 
+function savePlayerNote(formData) {
+  const chronicle = getSelectedChronicle();
+  if (!chronicle) {
+    return;
+  }
+
+  const author = readString(formData, "author");
+  const text = readString(formData, "text");
+  if (!author || !text) {
+    return;
+  }
+
+  chronicle.playerNotes = chronicle.playerNotes || [];
+  chronicle.playerNotes.unshift({
+    id: `pn-${Date.now()}`,
+    author,
+    createdAt: formatShortDate(new Date()),
+    text,
+  });
+  state.ui.notesPanelOpen = true;
+  persistAndRender();
+}
+
+function deletePlayerNote(noteId) {
+  const chronicle = getSelectedChronicle();
+  if (!chronicle || !noteId) {
+    return;
+  }
+  chronicle.playerNotes = (chronicle.playerNotes || []).filter((note) => note.id !== noteId);
+  state.ui.notesPanelOpen = true;
+  persistAndRender();
+}
+
 function saveGlossary(formData) {
   const entry = findGlossaryEntry(readString(formData, "id"));
   if (!entry) {
@@ -1338,11 +1400,29 @@ function renderInputField(name, label, value) {
   `;
 }
 
-function renderTextareaField(name, label, value) {
+function renderTextareaField(name, label, value, rows = 3) {
   return `
     <label class="field span-2">
       <span>${escapeHtml(label)}</span>
-      <textarea name="${name}" rows="3">${escapeHtml(value)}</textarea>
+      <textarea name="${name}" rows="${rows}">${escapeHtml(value)}</textarea>
+    </label>
+  `;
+}
+
+function renderReferenceTextareaField(name, label, value, rows = 3) {
+  const inputId = `chronicle-ref-${name}`;
+  return `
+    <label class="field span-2 reference-field">
+      <span>${escapeHtml(label)}</span>
+      <textarea
+        id="${inputId}"
+        name="${name}"
+        rows="${rows}"
+        data-ref-input="glossary"
+        data-suggestion-target="${inputId}-suggestions"
+      >${escapeHtml(value)}</textarea>
+      <div id="${inputId}-suggestions" class="reference-suggestions"></div>
+      <small class="field-help">Escriu un nom del glossari i selecciona la suggerència per inserir una referència clicable.</small>
     </label>
   `;
 }
