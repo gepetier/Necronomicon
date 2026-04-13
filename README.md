@@ -14,6 +14,8 @@ SPA estàtica per centralitzar la informació d'una campanya de D&D amb estètic
 - Mode edició
 - Persistència amb `localStorage`
 - Exportació i importació de JSON
+- Cròniques editables amb cos de capítol, imatges i notes de veu vinculades
+- Referències vinculables al Glossari amb suggerència automàtica en escriure
 - Fallback responsive sense dependències externes
 
 ## Fitxers principals
@@ -21,3 +23,10 @@ SPA estàtica per centralitzar la informació d'una campanya de D&D amb estètic
 - [index.html](C:\Users\Adri\Documents\Nigganomicron\index.html)
 - [styles.css](C:\Users\Adri\Documents\Nigganomicron\styles.css)
 - [app.js](C:\Users\Adri\Documents\Nigganomicron\app.js)
+
+## Directori de recursos
+
+S'ha afegit un directori `resources/` per desar arxius que després es podran enllaçar a les cròniques:
+
+- `resources/notes-de-veu/` → notes de veu (`.mp3`, `.wav`, etc.)
+- `resources/imatges/` → imatges de sessions, mapes o referències
