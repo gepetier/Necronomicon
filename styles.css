@@ -1078,14 +1078,6 @@ history-list,
   font-size: 0.78rem;
 }
 
-.glossary-return {
-  margin-bottom: var(--space-sm);
-}
-
-.glossary-return button {
-  width: 100%;
-}
-
 .glossary-shell {
   padding: var(--space-lg);
 }

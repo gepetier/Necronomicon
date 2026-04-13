@@ -294,6 +294,12 @@ function handleClick(event) {
     return;
   }
 
+  if (event.target.closest("[data-back-to-grid]")) {
+    state.ui.showCharacterGrid = true;
+    persistAndRender();
+    return;
+  }
+
   const characterCard = event.target.closest("[data-character-card]");
   if (characterCard) {
     state.ui.selectedCharacterId = characterCard.dataset.characterCard;
@@ -347,21 +353,8 @@ function handleClick(event) {
   if (glossaryJump) {
     const glossaryId = glossaryJump.dataset.glossaryJump;
     if (glossaryId && findGlossaryEntry(glossaryId)) {
-      state.ui.glossaryReturnChronicleId = state.ui.currentModule === "chronicles"
-        ? state.ui.selectedChronicleId
-        : "";
       state.ui.currentModule = "glossary";
       state.ui.selectedGlossaryId = glossaryId;
-      persistAndRender();
-    }
-    return;
-  }
-
-  if (event.target.closest("[data-return-to-chronicle]")) {
-    if (state.ui.glossaryReturnChronicleId) {
-      state.ui.currentModule = "chronicles";
-      state.ui.selectedChronicleId = state.ui.glossaryReturnChronicleId;
-      state.ui.glossaryReturnChronicleId = "";
       persistAndRender();
     }
     return;
