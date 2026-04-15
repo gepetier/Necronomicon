@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "qa": "node qa-runner.mjs",
+    "qa:functional": "node qa-runner.mjs functional",
+    "qa:ui": "node qa-runner.mjs ui"
   },
   "devDependencies": {
     "vite": "^7.1.0"

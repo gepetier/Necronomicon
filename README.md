@@ -1,4 +1,4 @@
-# Compendi de Campanya
+﻿# Compendi de Campanya
 
 SPA estàtica per centralitzar la informació d'una campanya de D&D amb estètica de llibre vell i fantasia medieval.
 
@@ -20,9 +20,16 @@ SPA estàtica per centralitzar la informació d'una campanya de D&D amb estètic
 
 ## Fitxers principals
 
-- [index.html](C:\Users\Adri\Documents\Nigganomicron\index.html)
-- [styles.css](C:\Users\Adri\Documents\Nigganomicron\styles.css)
-- [app.js](C:\Users\Adri\Documents\Nigganomicron\app.js)
+- [index.html](C:\Users\adriagardela\WebstormProjects\Necronomicon\index.html)
+- [styles.css](C:\Users\adriagardela\WebstormProjects\Necronomicon\styles.css)
+- [main.js](C:\Users\adriagardela\WebstormProjects\Necronomicon\main.js)
+
+## QA
+
+- `npm.cmd run qa` executa el test funcional i el de UI en `desktop` i `mobile`
+- `npm.cmd run qa:functional` executa només els casos funcionals
+- `npm.cmd run qa:ui` executa només els casos de layout/UI
+- Els artefactes es guarden a `qa-results/`, incloent els HTML de cada escenari i `summary.json`
 
 ## Directori de recursos
 
@@ -30,3 +37,4 @@ S'ha afegit un directori `resources/` per desar arxius que després es podran en
 
 - `resources/notes-de-veu/` → notes de veu (`.mp3`, `.wav`, etc.)
 - `resources/imatges/` → imatges de sessions, mapes o referències
+
