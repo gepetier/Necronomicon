@@ -2,3 +2,9 @@ node_modules/
 dist/
 .DS_Store
 qa-results/
+.idea/
+.vite*.log
+tmp_glossari/
+GLOSSARI PARTIDA MELEDAR.docx
+GLOSSARI PARTIDA MELEDAR.zip
+resources/imatges/*.png
