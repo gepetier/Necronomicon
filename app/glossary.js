@@ -8,6 +8,10 @@ import {
   renderEditorCard,
   renderEditorWorkspaceHeader,
   renderInputField,
+  renderModuleActionIcon,
+  renderRichText,
+  renderRichTextareaField,
+  renderStatusPills,
   renderTextCard,
   renderTextareaField,
   shortText,
@@ -27,6 +31,47 @@ export function renderGlossaryModule({
   const current = findGlossaryEntry(state.ui.selectedGlossaryId) || entries[0];
 
   rootEl.innerHTML = `
+    <section class="hero-banner module-hero module-hero-glossary">
+      <div class="module-hero-copy">
+        <p class="eyebrow">Compendi viu</p>
+        <h2>Glossari pensat per navegar l'univers</h2>
+        <p>
+          El llistat filtra ràpid i el detall manté context narratiu: faccions, llocs, entitats i objectes clau sense
+          aparença de backoffice.
+        </p>
+      </div>
+      <div class="hero-side-panel">
+        <div class="module-inline-actions">
+          <button
+            type="button"
+            class="secondary module-edit-button"
+            data-toggle-edit="glossary"
+            aria-pressed="${state.ui.editModes.glossary ? "true" : "false"}"
+          >
+            <span class="module-action-icon">${renderModuleActionIcon("glossary")}</span>
+            <span>${state.ui.editModes.glossary ? "Tanca edició" : "Edita entrada"}</span>
+          </button>
+          <button type="button" class="secondary module-edit-button" data-create-glossary>
+            <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
+            <span>Nova entrada</span>
+          </button>
+        </div>
+        <div class="hero-stat-grid">
+          <div class="hero-stat-card">
+            <strong>${state.glossary.length}</strong>
+            <span>Entrades totals</span>
+          </div>
+          <div class="hero-stat-card">
+            <strong>${new Set(state.glossary.map((entry) => entry.category)).size}</strong>
+            <span>Categories</span>
+          </div>
+          <div class="hero-stat-card">
+            <strong>${entries.length}</strong>
+            <span>Visibles ara</span>
+          </div>
+        </div>
+      </div>
+    </section>
     <section class="glossary-shell ${state.ui.notesPanelOpen ? "notes-open" : ""}">
       <div class="glossary-top">
         <div>
@@ -42,7 +87,7 @@ export function renderGlossaryModule({
           />
         </div>
       </div>
-      <div class="tab-strip glossary-filters">
+      <div class="tab-strip glossary-filters" role="tablist" aria-label="Categories del glossari">
         ${["Totes", ...new Set(state.glossary.map((entry) => entry.category))]
           .map(
             (category) => `
@@ -50,6 +95,11 @@ export function renderGlossaryModule({
                 type="button"
                 class="tab-button ${state.ui.glossaryCategory === category ? "active" : ""}"
                 data-glossary-filter="${category}"
+                id="glossary-filter-${category.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "") || "totes"}"
+                role="tab"
+                aria-selected="${state.ui.glossaryCategory === category ? "true" : "false"}"
+                aria-controls="glossary-results-panel"
+                tabindex="${state.ui.glossaryCategory === category ? "0" : "-1"}"
               >
                 ${escapeHtml(category)}
               </button>
@@ -57,13 +107,20 @@ export function renderGlossaryModule({
           )
           .join("")}
       </div>
-      <div class="glossary-grid">
+      <div
+        id="glossary-results-panel"
+        class="glossary-grid"
+        role="tabpanel"
+        aria-labelledby="glossary-filter-${(state.ui.glossaryCategory || "totes").toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "") || "totes"}"
+      >
         <div class="glossary-list">
-          ${entries.map((entry) => renderGlossaryCard(entry, state.ui.selectedGlossaryId)).join("")}
+          ${entries.length
+            ? entries.map((entry) => renderGlossaryCard(entry, state.ui.selectedGlossaryId, state)).join("")
+            : renderGlossaryEmptyState(state)}
         </div>
         <div class="glossary-detail-wrap">
-          ${current ? renderGlossaryDetail(current, state, findCharacter) : `<div class="glossary-detail"><p>No hi ha entrades.</p></div>`}
-          ${state.ui.isEditMode ? renderGlossaryEditorV2(current, state) : ""}
+          ${current ? renderGlossaryDetail(current, state, findCharacter) : renderGlossaryEmptyDetail()}
+          ${state.ui.editModes.glossary && current ? renderGlossaryEditor(current, state) : ""}
           ${renderPlayerNotesPanel()}
           ${shouldShowGlossaryReturnFab(current?.id) ? renderGlossaryReturnFab(getViewStateLabel(state.ui.glossaryReturnView)) : ""}
         </div>
@@ -111,17 +168,33 @@ export function deleteGlossaryEntry(state) {
   if (state.glossary.length <= 1) {
     return;
   }
+
   state.glossary = state.glossary.filter((entry) => entry.id !== state.ui.selectedGlossaryId);
   state.ui.selectedGlossaryId = state.glossary[0].id;
 }
 
-function renderGlossaryCard(entry, selectedGlossaryId) {
+function renderGlossaryCard(entry, selectedGlossaryId, state) {
+  const statusPills = [];
+  const hasPendingDraft = Object.keys(state.ui.drafts.glossary[entry.id] || {}).length > 0;
+
+  if (hasPendingDraft) {
+    statusPills.push({ label: "Esborrany", tone: "draft" });
+  }
+
+  if (state.ui.editModes.glossary && state.ui.selectedGlossaryId === entry.id) {
+    statusPills.push({ label: "En edició", tone: "editing" });
+  }
+
   return `
     <article
       class="glossary-entry ${entry.id === selectedGlossaryId ? "active" : ""}"
       data-glossary-id="${entry.id}"
+      tabindex="0"
+      role="button"
+      aria-label="${escapeAttribute(`Obre l'entrada ${entry.name}`)}"
       style="${paletteStyle(entry.palette)}"
     >
+      ${renderStatusPills(statusPills)}
       <p class="eyebrow">${escapeHtml(entry.category)}</p>
       <h3>${escapeHtml(entry.name)}</h3>
       <p>${escapeHtml(shortText(entry.description, 120))}</p>
@@ -132,17 +205,43 @@ function renderGlossaryCard(entry, selectedGlossaryId) {
   `;
 }
 
+function renderGlossaryEmptyState(state) {
+  const hasFilters = Boolean(state.ui.glossarySearch) || state.ui.glossaryCategory !== "Totes";
+  return `
+    <div class="empty-state empty-state-list">
+      <p class="eyebrow">Sense resultats</p>
+      <h3>No hi ha entrades visibles</h3>
+      <p>${hasFilters
+        ? "La cerca o la categoria actual no coincideixen amb cap terme del compendi."
+        : "Encara no hi ha cap entrada disponible en aquest conjunt."}</p>
+      ${hasFilters
+        ? `<button type="button" data-clear-glossary-filters>Neteja filtres</button>`
+        : ""}
+    </div>
+  `;
+}
+
+function renderGlossaryEmptyDetail() {
+  return `
+    <div class="glossary-detail empty-state">
+      <p class="eyebrow">Compendi buit</p>
+      <h3>Selecciona o crea una entrada</h3>
+      <p>Quan hi hagi resultats, el detall es mostrarà aquí amb les relacions de món i les notes.</p>
+    </div>
+  `;
+}
+
 function renderGlossaryDetail(entry, state, findCharacter) {
   return `
     <article class="glossary-detail" style="${paletteStyle(entry.palette)}">
       <div class="glossary-detail-hero">
         <p class="eyebrow">${escapeHtml(entry.category)}</p>
         <h3>${escapeHtml(entry.name)}</h3>
-        <p>${escapeHtml(entry.description)}</p>
+        <div class="rich-text">${renderRichText(entry.description)}</div>
       </div>
       <div class="item-grid">
         ${renderTextCard("Etiquetes", (entry.tags || []).join(", ") || "Sense etiquetes")}
-        ${renderTextCard("Notes", entry.notes || "Sense notes")}
+        ${renderTextCard("Notes", entry.notes || "Sense notes", { rich: true })}
         ${renderTextCard("Personatges vinculats", formatCharacterLinks(entry.characterIds, findCharacter))}
         ${renderTextCard("Cròniques vinculades", formatChronicleLinks(entry.chronicleIds, state))}
       </div>
@@ -158,9 +257,13 @@ function renderGlossaryReturnFab(targetLabel) {
   `;
 }
 
-function renderGlossaryEditorV2(entry, state) {
-  const selectedCharacters = new Set(entry?.characterIds || []);
-  const selectedChronicles = new Set(entry?.chronicleIds || []);
+function renderGlossaryEditor(entry, state) {
+  const draft = state.ui.drafts.glossary[entry?.id || ""] || {};
+  const selectedCharacters = new Set(readDraftArray(draft.characterIds, entry?.characterIds || []));
+  const selectedChronicles = new Set(readDraftArray(draft.chronicleIds, entry?.chronicleIds || []));
+  const hasPendingDraft = Object.keys(draft).length > 0;
+  const editorStatus = renderEditorStatus(state, "glossary", entry?.id || "", hasPendingDraft);
+
   return `
     <section class="module-surface editor-workspace editor-workspace-glossary">
       ${renderEditorWorkspaceHeader(
@@ -173,6 +276,7 @@ function renderGlossaryEditorV2(entry, state) {
           `${(entry?.chronicleIds || []).length} cròniques`,
         ],
       )}
+      ${editorStatus}
       <form data-form="glossary" class="editor-form">
         <input type="hidden" name="id" value="${escapeAttribute(entry?.id || "")}" />
         <div class="editor-layout editor-layout-glossary">
@@ -181,14 +285,14 @@ function renderGlossaryEditorV2(entry, state) {
             "Nom, categoria i text descriptiu. Aquest bloc defineix el que es veu al detall i a la targeta.",
             `
               <div class="editor-grid">
-                ${renderInputField("name", "Nom", entry?.name || "")}
+                ${renderInputField("name", "Nom", readDraftValue(draft.name, entry?.name || ""))}
                 <label class="field">
                   <span>Categoria</span>
                   <select name="category">
                     ${["Llocs", "Religió", "Antagonistes", "Entitats", "Faccions", "Objectes", "Monstres", "Races", "Altres"]
                       .map(
                         (category) => `
-                          <option value="${category}" ${entry?.category === category ? "selected" : ""}>
+                          <option value="${category}" ${readDraftValue(draft.category, entry?.category || "") === category ? "selected" : ""}>
                             ${category}
                           </option>
                         `,
@@ -196,9 +300,9 @@ function renderGlossaryEditorV2(entry, state) {
                       .join("")}
                   </select>
                 </label>
-                ${renderTextareaField("description", "Descripció", entry?.description || "", 5)}
-                ${renderInputField("tags", "Etiquetes (separades per comes)", (entry?.tags || []).join(", "))}
-                ${renderTextareaField("notes", "Notes", entry?.notes || "", 5)}
+                ${renderRichTextareaField("description", "Descripció", readDraftValue(draft.description, entry?.description || ""), 6)}
+                ${renderInputField("tags", "Etiquetes (separades per comes)", readDraftValue(draft.tags, (entry?.tags || []).join(", ")))}
+                ${renderRichTextareaField("notes", "Notes", readDraftValue(draft.notes, entry?.notes || ""), 6)}
               </div>
             `,
           )}
@@ -256,4 +360,46 @@ function formatChronicleLinks(ids, state) {
     .filter(Boolean)
     .map((chronicle) => `${chronicle.chapter} · ${chronicle.title}`)
     .join(", ") || "Sense lligams";
+}
+
+function readDraftValue(draftValue, fallback) {
+  return draftValue !== undefined ? draftValue : fallback;
+}
+
+function readDraftArray(draftValue, fallback) {
+  return Array.isArray(draftValue) ? draftValue : fallback;
+}
+
+function renderEditorStatus(state, module, itemId, hasPendingDraft) {
+  if (hasPendingDraft) {
+    return `<p class="editor-save-state pending">Canvis no desats guardats localment fins que els confirmis.</p>`;
+  }
+
+  if (state.ui.lastSaved?.module === module && state.ui.lastSaved?.itemId === itemId && state.ui.lastSaved?.at) {
+    return `<p class="editor-save-state">Darrer desat: ${escapeHtml(formatRelativeTime(state.ui.lastSaved.at))}</p>`;
+  }
+
+  return "";
+}
+
+function formatRelativeTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "fa un moment";
+  }
+
+  const diff = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+  if (diff < 10) {
+    return "fa uns segons";
+  }
+  if (diff < 60) {
+    return `fa ${diff}s`;
+  }
+
+  const minutes = Math.round(diff / 60);
+  if (minutes < 60) {
+    return `fa ${minutes} min`;
+  }
+
+  return date.toLocaleTimeString("ca-ES", { hour: "2-digit", minute: "2-digit" });
 }

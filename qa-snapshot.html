@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ca">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QA Snapshot</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #120c08;
+      }
+
+      iframe {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        border: 0;
+        background: #120c08;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe id="appFrame" title="App snapshot"></iframe>
+    <pre id="metrics" hidden></pre>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const scenario = params.get("scenario") || "home";
+      const showMetrics = params.get("metrics") === "1";
+      const frame = document.querySelector("#appFrame");
+      const metricsEl = document.querySelector("#metrics");
+
+      frame.addEventListener("load", async () => {
+        const doc = frame.contentDocument;
+        const win = frame.contentWindow;
+        if (!doc || !win) {
+          return;
+        }
+
+        const click = (selector) => {
+          const el = doc.querySelector(selector);
+          if (el instanceof win.HTMLElement) {
+            el.click();
+          }
+        };
+
+        const wait = (ms) => new Promise((resolve) => win.setTimeout(resolve, ms));
+
+        await wait(250);
+
+        if (scenario === "character-detail") {
+          click('[data-character-card="ilu"]');
+          await wait(180);
+        }
+
+        if (scenario === "chronicles-read") {
+          click('[data-module-link="chronicles"]');
+          await wait(180);
+        }
+
+        if (scenario === "chronicles-edit") {
+          click('[data-module-link="chronicles"]');
+          await wait(180);
+          click('[data-toggle-edit="chronicles"]');
+          await wait(240);
+        }
+
+        if (scenario === "glossary-read") {
+          click('[data-module-link="glossary"]');
+          await wait(180);
+        }
+
+        if (scenario === "glossary-edit") {
+          click('[data-module-link="glossary"]');
+          await wait(180);
+          click('[data-toggle-edit="glossary"]');
+          await wait(240);
+        }
+
+        if (showMetrics && metricsEl) {
+          const appShell = doc.querySelector(".app-shell");
+          const mainContent = doc.querySelector(".main-content");
+          metricsEl.hidden = false;
+          metricsEl.textContent = JSON.stringify(
+            {
+              viewport: {
+                innerWidth: win.innerWidth,
+                innerHeight: win.innerHeight,
+              },
+              document: {
+                clientWidth: doc.documentElement.clientWidth,
+                scrollWidth: doc.documentElement.scrollWidth,
+              },
+              body: {
+                clientWidth: doc.body?.clientWidth || null,
+                scrollWidth: doc.body?.scrollWidth || null,
+              },
+              appShell: appShell
+                ? {
+                    clientWidth: appShell.clientWidth,
+                    scrollWidth: appShell.scrollWidth,
+                  }
+                : null,
+              mainContent: mainContent
+                ? {
+                    clientWidth: mainContent.clientWidth,
+                    scrollWidth: mainContent.scrollWidth,
+                  }
+                : null,
+            },
+            null,
+            2,
+          );
+        }
+
+        document.body.dataset.ready = "true";
+      });
+
+      frame.src = `/index.html?qaSnapshot=${Date.now()}`;
+    </script>
+  </body>
+</html>

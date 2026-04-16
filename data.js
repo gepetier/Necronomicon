@@ -1,5 +1,5 @@
 ﻿export const STORAGE_KEY = "campaign-compendium";
-export const DATA_VERSION = 3;
+export const DATA_VERSION = 4;
 
 
 const CHARACTER_PORTRAITS = {
@@ -311,11 +311,29 @@ export const seedData = {
     glossaryCategory: "Totes",
     glossarySearch: "",
     selectedGlossaryId: "acantilado-del-silencio",
-    isEditMode: false,
+    editModes: {
+      characters: false,
+      chronicles: false,
+      glossary: false,
+    },
+    drafts: {
+      characters: {
+        overview: {},
+        tabs: {},
+      },
+      chronicles: {},
+      glossary: {},
+    },
     glossaryReturnView: null,
     glossaryReturnTargetId: "",
     notesPanelOpen: false,
     saveNotice: "",
+    lastSaved: {
+      module: "",
+      itemId: "",
+      at: "",
+      message: "",
+    },
   },
 };
 

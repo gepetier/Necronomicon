@@ -32,7 +32,9 @@ async function bootstrap() {
   const context = createContext(iframe);
   const result = suite === "ui"
     ? await runUiSuite(context)
-    : await runFunctionalSuite(context);
+    : suite === "edit"
+      ? await runEditSuite(context)
+      : await runFunctionalSuite(context);
 
   publish(result);
 }
@@ -66,6 +68,13 @@ function createContext(currentFrame) {
       target.dispatchEvent(new win.Event("input", { bubbles: true }));
       target.dispatchEvent(new win.Event("change", { bubbles: true }));
     },
+    submit(selector) {
+      const form = doc.querySelector(selector);
+      if (!(form instanceof win.HTMLFormElement)) {
+        throw new Error(`Formulari no trobat: ${selector}`);
+      }
+      form.requestSubmit();
+    },
     qsa(selector) {
       return Array.from(doc.querySelectorAll(selector));
     },
@@ -79,7 +88,7 @@ async function runFunctionalSuite(context) {
   record(
     steps,
     initialCards.length === 4,
-    `Render inicial amb 4 cartes de personatge`,
+    "Render inicial amb 4 cartes de personatge",
     { cards: initialCards.length },
   );
 
@@ -201,6 +210,104 @@ async function runUiSuite(context) {
       { bookColumns },
     );
   }
+
+  return {
+    ok: steps.every((step) => step.ok),
+    suite: context.suite,
+    mode: context.mode,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    steps,
+  };
+}
+
+async function runEditSuite(context) {
+  const steps = [];
+
+  record(
+    steps,
+    context.doc.querySelector("[data-open-character-editor]") !== null,
+    "La vista de personatges exposa un accés local a l'edició",
+  );
+
+  context.click("[data-open-character-editor]");
+  await delay(80);
+  record(
+    steps,
+    context.doc.querySelector(".editor-workspace-character") !== null,
+    "L'editor de personatges s'obre des del mòdul",
+  );
+
+  context.type('form[data-form="character-overview"] input[name="title"]', "Títol QA");
+  await delay(60);
+  context.click('[data-module-link="chronicles"]');
+  await delay(80);
+  context.click('[data-module-link="characters"]');
+  await delay(80);
+  const persistedCharacterDraft = context.doc.querySelector('form[data-form="character-overview"] input[name="title"]')?.value || "";
+  record(
+    steps,
+    persistedCharacterDraft === "Títol QA",
+    "El draft de personatge es manté en navegar entre mòduls",
+    { value: persistedCharacterDraft },
+  );
+
+  context.click('[data-module-link="chronicles"]');
+  await delay(80);
+  record(
+    steps,
+    context.doc.querySelector("[data-create-chronicle]") !== null,
+    "Cròniques mostra una acció visible per crear noves entrades",
+  );
+
+  context.click('[data-toggle-edit="chronicles"]');
+  await delay(80);
+  record(
+    steps,
+    context.doc.querySelector(".editor-workspace-chronicle") !== null,
+    "L'editor de cròniques és visible en el layout actual",
+  );
+
+  context.type('form[data-form="chronicle"] input[name="title"]', "Crònica QA");
+  await delay(60);
+  context.click('[data-module-link="glossary"]');
+  await delay(80);
+  context.click('[data-module-link="chronicles"]');
+  await delay(80);
+  const persistedChronicleDraft = context.doc.querySelector('form[data-form="chronicle"] input[name="title"]')?.value || "";
+  record(
+    steps,
+    persistedChronicleDraft === "Crònica QA",
+    "El draft de crònica es conserva entre canvis de mòdul",
+    { value: persistedChronicleDraft },
+  );
+
+  context.click('[data-module-link="glossary"]');
+  await delay(80);
+  record(
+    steps,
+    context.doc.querySelector("[data-create-glossary]") !== null,
+    "Glossari mostra una acció visible per crear entrades",
+  );
+
+  context.click('[data-toggle-edit="glossary"]');
+  await delay(80);
+  record(
+    steps,
+    context.doc.querySelector(".editor-workspace-glossary") !== null,
+    "L'editor de glossari s'obre des del mòdul",
+  );
+
+  context.type('form[data-form="glossary"] input[name="name"]', "Entrada QA");
+  await delay(60);
+  context.submit('form[data-form="glossary"]');
+  await delay(80);
+  const saveNotice = context.doc.querySelector("#saveNotice")?.textContent?.trim() || "";
+  record(
+    steps,
+    saveNotice.length > 0,
+    "El desat mostra feedback visible a l'usuari",
+    { notice: saveNotice },
+  );
 
   return {
     ok: steps.every((step) => step.ok),

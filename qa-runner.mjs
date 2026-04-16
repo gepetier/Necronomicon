@@ -57,6 +57,8 @@ function getScenarios(target) {
     { suite: "functional", mode: "mobile", width: 390, height: 844 },
     { suite: "ui", mode: "desktop", width: 1440, height: 1200 },
     { suite: "ui", mode: "mobile", width: 390, height: 844 },
+    { suite: "edit", mode: "desktop", width: 1440, height: 1200 },
+    { suite: "edit", mode: "mobile", width: 390, height: 844 },
   ];
 
   if (target === "all") {

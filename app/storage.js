@@ -49,6 +49,9 @@ export function migrateStoredState(payload) {
   if (version < 3) {
     nextState = migrateCharacterPortraits(nextState);
   }
+  if (version < 4) {
+    nextState = migrateLocalEditingState(nextState);
+  }
 
   return sanitizeState(nextState);
 }
@@ -120,6 +123,24 @@ function migrateCharacterPortraits(candidate) {
   return next;
 }
 
+function migrateLocalEditingState(candidate) {
+  const next = structuredClone(candidate);
+  const legacyEditMode = Boolean(next.ui?.isEditMode);
+
+  next.ui = {
+    ...(next.ui || {}),
+    editModes: {
+      characters: legacyEditMode && (next.ui?.currentModule || "characters") === "characters",
+      chronicles: legacyEditMode && next.ui?.currentModule === "chronicles",
+      glossary: legacyEditMode && next.ui?.currentModule === "glossary",
+    },
+    drafts: structuredClone(seedData.ui.drafts),
+  };
+
+  delete next.ui.isEditMode;
+  return next;
+}
+
 function sanitizeState(candidate) {
   const safe = structuredClone(seedData);
   if (!candidate || typeof candidate !== "object") {
@@ -138,6 +159,11 @@ function sanitizeState(candidate) {
   safe.ui = {
     ...safe.ui,
     ...candidate.ui,
+    editModes: {
+      ...safe.ui.editModes,
+      ...(candidate.ui?.editModes || {}),
+    },
+    drafts: sanitizeDrafts(candidate.ui?.drafts, safe.ui.drafts),
   };
 
   if (!safe.ui.glossaryReturnView && candidate.ui?.glossaryReturnChronicleId) {
@@ -170,6 +196,17 @@ function sanitizeState(candidate) {
   }
 
   return safe;
+}
+
+function sanitizeDrafts(candidateDrafts, fallbackDrafts) {
+  return {
+    characters: {
+      overview: { ...(fallbackDrafts.characters.overview || {}), ...(candidateDrafts?.characters?.overview || {}) },
+      tabs: { ...(fallbackDrafts.characters.tabs || {}), ...(candidateDrafts?.characters?.tabs || {}) },
+    },
+    chronicles: { ...(fallbackDrafts.chronicles || {}), ...(candidateDrafts?.chronicles || {}) },
+    glossary: { ...(fallbackDrafts.glossary || {}), ...(candidateDrafts?.glossary || {}) },
+  };
 }
 
 function sanitizeCharacter(character, fallback) {

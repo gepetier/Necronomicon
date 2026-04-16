@@ -17,37 +17,59 @@
           </p>
         </div>
 
-        <nav class="module-nav" aria-label="Mòduls principals">
-          <button type="button" class="module-link active" data-module-link="characters">
+        <nav class="module-nav" aria-label="Mòduls principals" role="tablist">
+          <button
+            id="module-tab-characters"
+            type="button"
+            class="module-link active"
+            data-module-link="characters"
+            role="tab"
+            aria-selected="true"
+            aria-controls="charactersModule"
+          >
             Personatges
           </button>
-          <button type="button" class="module-link" data-module-link="chronicles">
+          <button
+            id="module-tab-chronicles"
+            type="button"
+            class="module-link"
+            data-module-link="chronicles"
+            role="tab"
+            aria-selected="false"
+            aria-controls="chroniclesModule"
+            tabindex="-1"
+          >
             Cròniques
           </button>
-          <button type="button" class="module-link" data-module-link="glossary">
+          <button
+            id="module-tab-glossary"
+            type="button"
+            class="module-link"
+            data-module-link="glossary"
+            role="tab"
+            aria-selected="false"
+            aria-controls="glossaryModule"
+            tabindex="-1"
+          >
             Glossari
           </button>
         </nav>
 
         <div class="sidebar-panel">
           <h2>Eines</h2>
-          <div class="sidebar-actions">
-            <button id="editModeToggle" type="button" class="secondary">Mode edició</button>
-            <button id="exportButton" type="button" class="secondary">Exporta JSON</button>
-            <label class="button secondary upload-button">
-              Importa JSON
-              <input id="importInput" type="file" accept="application/json,.json" />
-            </label>
-          </div>
+          <p class="sidebar-copy">
+            L'edició s'activa des de cada mòdul amb el seu propi accés contextual.
+          </p>
         </div>
       </aside>
 
       <main class="main-content">
-        <section id="charactersModule" class="module-view active"></section>
-        <section id="chroniclesModule" class="module-view"></section>
-        <section id="glossaryModule" class="module-view"></section>
+        <section id="charactersModule" class="module-view active" role="tabpanel" aria-labelledby="module-tab-characters"></section>
+        <section id="chroniclesModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-chronicles" hidden></section>
+        <section id="glossaryModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-glossary" hidden></section>
       </main>
     </div>
+    <div id="saveNotice" class="save-notice" aria-live="polite" aria-atomic="true"></div>
 
     <script type="module" src="main.js"></script>
   </body>
