@@ -112,9 +112,7 @@ function handleClick(event) {
 
   const chronicleSelect = event.target.closest("[data-chronicle-id]");
   if (chronicleSelect) {
-    state.ui.selectedChronicleId = chronicleSelect.dataset.chronicleId;
-    persistAndRender();
-    animateBook("next");
+    switchChronicleSelection(chronicleSelect.dataset.chronicleId || "", "next");
     return;
   }
 
@@ -123,9 +121,7 @@ function handleClick(event) {
     const direction = chronicleNav.dataset.chronicleNav;
     const nextId = getAdjacentChronicleId(direction);
     if (nextId) {
-      state.ui.selectedChronicleId = nextId;
-      persistAndRender();
-      animateBook(direction);
+      switchChronicleSelection(nextId, direction);
     }
     return;
   }
@@ -211,6 +207,11 @@ function handleClick(event) {
 
   if (event.target.closest("[data-delete-chronicle]")) {
     deleteChronicle();
+    return;
+  }
+
+  if (event.target.closest("[data-discard-chronicle-edit]")) {
+    discardChronicleChanges();
     return;
   }
 
@@ -588,16 +589,18 @@ function renderPlayerNotesPanel() {
   `;
 }
 
-function renderPlayerNotesFab() {
+function renderPlayerNotesFab(options = {}) {
   const context = getCurrentPlayerNoteContext();
   if (!context) {
     return "";
   }
 
+  const className = options.inline ? "notes-fab notes-fab-inline" : "notes-fab";
+
   return `
     <button
       type="button"
-      class="notes-fab"
+      class="${className}"
       data-toggle-notes
       title="${escapeAttribute(context.buttonLabel)}"
       aria-label="${escapeAttribute(context.buttonLabel)}"
@@ -617,6 +620,88 @@ function saveCharacterTab(formData) {
 
 function saveChronicle(formData) {
   saveChronicleEntry(formData, { getSelectedChronicle, showSaveNotice });
+  if (state.ui.newChronicleId === state.ui.selectedChronicleId) {
+    state.ui.newChronicleId = "";
+  }
+}
+
+function switchChronicleSelection(nextId, direction = "next") {
+  if (!nextId || nextId === state.ui.selectedChronicleId) {
+    return;
+  }
+
+  if (!resolveChronicleEditBeforeSwitch()) {
+    return;
+  }
+
+  state.ui.selectedChronicleId = nextId;
+  persistAndRender();
+  animateBook(direction);
+}
+
+function resolveChronicleEditBeforeSwitch() {
+  if (!state.ui.editModes.chronicles) {
+    return true;
+  }
+
+  const currentId = state.ui.selectedChronicleId;
+  const hasPendingDraft = Boolean(Object.keys(state.ui.drafts.chronicles[currentId] || {}).length);
+
+  if (hasPendingDraft) {
+    const shouldSave = window.confirm(
+      "Hi ha canvis pendents en aquesta cronica. Prem D'acord per desar-los i continuar o Cancel·la per descartar-los i continuar.",
+    );
+
+    if (shouldSave) {
+      saveChronicleDraft(currentId);
+    } else {
+      discardChronicleChanges({ persist: false });
+    }
+  } else {
+    state.ui.editModes.chronicles = false;
+  }
+
+  return true;
+}
+
+function saveChronicleDraft(chronicleId) {
+  const chronicle = state.chronicles.find((item) => item.id === chronicleId);
+  const draft = state.ui.drafts.chronicles[chronicleId];
+  if (!chronicle || !draft) {
+    state.ui.editModes.chronicles = false;
+    return;
+  }
+
+  const formData = new FormData();
+  formData.set("id", chronicle.id);
+  formData.set("chapter", draft.chapter !== undefined ? String(draft.chapter) : chronicle.chapter || "");
+  formData.set("title", draft.title !== undefined ? String(draft.title) : chronicle.title || "");
+  formData.set("date", draft.date !== undefined ? String(draft.date) : chronicle.date || "");
+  formData.set("summary", draft.summary !== undefined ? String(draft.summary) : chronicle.summary || "");
+  formData.set("content", draft.content !== undefined ? String(draft.content) : chronicle.content || "");
+  formData.set("highlights", draft.highlights !== undefined ? String(draft.highlights) : chronicle.highlights || "");
+  formData.set("imageNote", draft.imageNote !== undefined ? String(draft.imageNote) : chronicle.imageNote || "");
+  formData.set(
+    "imageAssets",
+    draft.imageAssets !== undefined
+      ? (Array.isArray(draft.imageAssets) ? draft.imageAssets.join("\n") : String(draft.imageAssets))
+      : (chronicle.imageAssets || []).join("\n"),
+  );
+  formData.set(
+    "voiceNotes",
+    draft.voiceNotes !== undefined
+      ? (Array.isArray(draft.voiceNotes) ? draft.voiceNotes.join("\n") : String(draft.voiceNotes))
+      : (chronicle.voiceNotes || []).join("\n"),
+  );
+
+  const selectedCharacterIds = Array.isArray(draft.characterIds)
+    ? draft.characterIds
+    : (chronicle.characterIds || []);
+  selectedCharacterIds.forEach((characterId) => formData.append("characterIds", String(characterId)));
+
+  clearChronicleDraft(chronicleId);
+  saveChronicle(formData);
+  state.ui.editModes.chronicles = false;
 }
 
 function savePlayerNote(formData) {
@@ -685,6 +770,7 @@ function showSaveNotice(message) {
 
 function createChronicle() {
   createChronicleEntry(state);
+  state.ui.newChronicleId = state.ui.selectedChronicleId;
   clearChronicleDraft(state.ui.selectedChronicleId);
   state.ui.editModes.chronicles = true;
   persistAndRender();
@@ -698,7 +784,28 @@ function deleteChronicle() {
   const deletedId = state.ui.selectedChronicleId;
   deleteChronicleEntry(state);
   clearChronicleDraft(deletedId);
+  if (state.ui.newChronicleId === deletedId) {
+    state.ui.newChronicleId = "";
+  }
   persistAndRender();
+}
+
+function discardChronicleChanges(options = {}) {
+  const chronicleId = state.ui.selectedChronicleId;
+  const isUnsavedNewChronicle = chronicleId && state.ui.newChronicleId === chronicleId;
+  const shouldPersist = options.persist !== false;
+
+  clearChronicleDraft(chronicleId);
+  state.ui.editModes.chronicles = false;
+
+  if (isUnsavedNewChronicle) {
+    deleteChronicleEntry(state);
+    state.ui.newChronicleId = "";
+  }
+
+  if (shouldPersist) {
+    persistAndRender();
+  }
 }
 
 function createGlossaryEntry() {
@@ -762,6 +869,8 @@ function ensureUiStateShape() {
     message: "",
     ...(state.ui.lastSaved || {}),
   };
+
+  state.ui.newChronicleId = typeof state.ui.newChronicleId === "string" ? state.ui.newChronicleId : "";
 }
 
 function updateDraftFromForm(form) {

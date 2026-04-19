@@ -7,7 +7,6 @@ import {
   readString,
   renderChronicleMedia,
   renderChronicleRichText,
-  renderChoiceGrid,
   renderEditorActions,
   renderEditorCard,
   renderEditorWorkspaceHeader,
@@ -15,7 +14,6 @@ import {
   renderModuleActionIcon,
   renderRichTextareaField,
   renderStatusPills,
-  renderTextareaField,
 } from "./utils.js";
 
 export function renderChroniclesModule({
@@ -29,47 +27,6 @@ export function renderChroniclesModule({
   const primaryImage = current?.imageAssets?.[0] || "";
 
   rootEl.innerHTML = `
-    <section class="hero-banner module-hero module-hero-chronicles">
-      <div class="module-hero-copy">
-        <p class="eyebrow">Memoria de campanya</p>
-        <h2>Croniques amb ritme de volum ilustrat</h2>
-        <p>
-          Cada sessio queda presentada com un diptic: resum, cos, highlights i recursos vinculats en una lectura
-          mes editorial que de wiki.
-        </p>
-      </div>
-      <div class="hero-side-panel">
-        <div class="module-inline-actions">
-          <button
-            type="button"
-            class="secondary module-edit-button"
-            data-toggle-edit="chronicles"
-            aria-pressed="${state.ui.editModes.chronicles ? "true" : "false"}"
-          >
-            <span class="module-action-icon">${renderModuleActionIcon("chronicles")}</span>
-            <span>${state.ui.editModes.chronicles ? "Tanca edicio" : "Edita cronica"}</span>
-          </button>
-          <button type="button" class="secondary module-edit-button" data-create-chronicle>
-            <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
-            <span>Nova cronica</span>
-          </button>
-        </div>
-        <div class="hero-stat-grid">
-          <div class="hero-stat-card">
-            <strong>${state.chronicles.length}</strong>
-            <span>Capitols</span>
-          </div>
-          <div class="hero-stat-card">
-            <strong>${state.chronicles.filter((chronicle) => (chronicle.characterIds || []).length).length}</strong>
-            <span>Amb repartiment</span>
-          </div>
-          <div class="hero-stat-card">
-            <strong>${(current?.voiceNotes || []).length}</strong>
-            <span>Notes de veu</span>
-          </div>
-        </div>
-      </div>
-    </section>
     <section class="book-shell ${state.ui.notesPanelOpen ? "notes-open" : ""} ${state.ui.editModes.chronicles ? "chronicles-editing" : ""}">
       <div class="book-layout">
         <aside class="book-index">
@@ -80,28 +37,15 @@ export function renderChroniclesModule({
             </div>
           </div>
           <div class="chapter-list" role="listbox" aria-label="Capitols de campanya">
-            ${state.chronicles
-              .map(
-                (chronicle) => `
-                  <article
-                    class="chapter-entry index-entry ${chronicle.id === state.ui.selectedChronicleId ? "active" : ""}"
-                    data-chronicle-id="${chronicle.id}"
-                    tabindex="0"
-                    role="option"
-                    aria-selected="${chronicle.id === state.ui.selectedChronicleId ? "true" : "false"}"
-                    aria-label="${escapeAttribute(`Obre ${chronicle.chapter}: ${chronicle.title}`)}"
-                  >
-                    ${renderStatusPills(getChronicleStatusPills(chronicle, state))}
-                    <p>${escapeHtml(chronicle.chapter)} · ${escapeHtml(chronicle.title)}</p>
-                    <small>${escapeHtml(chronicle.date)}</small>
-                  </article>
-                `,
-              )
-              .join("")}
+            ${state.chronicles.map((chronicle) => renderChronicleIndexEntry(chronicle, state)).join("")}
+            <button type="button" class="chapter-entry index-entry chapter-entry-create" data-create-chronicle>
+              <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
+              <span>Nova cronica</span>
+            </button>
           </div>
         </aside>
         ${state.ui.editModes.chronicles
-          ? renderChronicleEditingStage(current, state, renderPlayerNotesPanel, renderPlayerNotesFab)
+          ? renderChronicleEditingStage(current, state)
           : renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab)}
       </div>
     </section>
@@ -120,16 +64,29 @@ export function saveChronicle(formData, { getSelectedChronicle, showSaveNotice }
   chronicle.summary = readString(formData, "summary");
   chronicle.content = readString(formData, "content");
   chronicle.highlights = readString(formData, "highlights");
-  chronicle.imageNote = readString(formData, "imageNote");
-  chronicle.imageAssets = readString(formData, "imageAssets")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  chronicle.voiceNotes = readString(formData, "voiceNotes")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  chronicle.characterIds = formData.getAll("characterIds").map(String);
+
+  if (formData.has("imageNote")) {
+    chronicle.imageNote = readString(formData, "imageNote");
+  }
+
+  if (formData.has("imageAssets")) {
+    chronicle.imageAssets = readString(formData, "imageAssets")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  if (formData.has("voiceNotes")) {
+    chronicle.voiceNotes = readString(formData, "voiceNotes")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  if (formData.has("characterIds")) {
+    chronicle.characterIds = formData.getAll("characterIds").map(String);
+  }
+
   showSaveNotice("Cronica desada");
 }
 
@@ -162,6 +119,43 @@ export function deleteChronicle(state) {
   state.ui.selectedChronicleId = state.chronicles[0].id;
 }
 
+function renderChronicleIndexEntry(chronicle, state) {
+  const isActive = chronicle.id === state.ui.selectedChronicleId;
+
+  return `
+    <article
+      class="chapter-entry index-entry ${isActive ? "active" : ""}"
+      data-chronicle-id="${chronicle.id}"
+      tabindex="0"
+      role="option"
+      aria-selected="${isActive ? "true" : "false"}"
+      aria-label="${escapeAttribute(`Obre ${chronicle.chapter}: ${chronicle.title}`)}"
+    >
+      ${renderStatusPills(getChronicleStatusPills(chronicle, state))}
+      <div class="chapter-entry-head">
+        <div class="chapter-entry-copy">
+          <p>${escapeHtml(chronicle.chapter)} · ${escapeHtml(chronicle.title)}</p>
+          <small>${escapeHtml(chronicle.date)}</small>
+        </div>
+        ${isActive
+          ? `
+            <button
+              type="button"
+              class="secondary chronicle-inline-edit"
+              data-toggle-edit="chronicles"
+              aria-pressed="${state.ui.editModes.chronicles ? "true" : "false"}"
+              aria-label="${escapeAttribute(state.ui.editModes.chronicles ? "Tanca edicio de cronica" : "Edita cronica")}"
+              title="${escapeAttribute(state.ui.editModes.chronicles ? "Tanca edicio" : "Edita cronica")}"
+            >
+              <span class="module-action-icon">${renderModuleActionIcon("chronicles")}</span>
+            </button>
+          `
+          : ""}
+      </div>
+    </article>
+  `;
+}
+
 function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab) {
   return `
     <div class="book-spread">
@@ -187,7 +181,6 @@ function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel
           <button type="button" class="secondary" data-chronicle-nav="prev">Pagina anterior</button>
           <button type="button" data-chronicle-nav="next">Pagina seguent</button>
         </div>
-        ${renderPlayerNotesFab()}
         <div class="chapter-body rich-text">${renderChronicleRichText(current?.content || "Encara no hi ha cos de capitol.")}</div>
         <div class="chapter-highlights">
           <p class="eyebrow">Highlights</p>
@@ -197,49 +190,24 @@ function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel
         <div class="link-list">
           ${renderPlayerNotesPanel()}
         </div>
+        ${renderPlayerNotesFab({ inline: true })}
       </article>
     </div>
   `;
 }
 
-function renderChronicleEditingStage(current, state, renderPlayerNotesPanel, renderPlayerNotesFab) {
+function renderChronicleEditingStage(current, state) {
   return `
     <div class="chronicle-edit-stage ${state.ui.notesPanelOpen ? "notes-open" : ""}">
       <div class="chronicle-edit-main">
-        ${renderChronicleEditor(current, state.characters, state)}
+        ${renderChronicleEditor(current, state)}
       </div>
-      <aside class="chronicle-edit-sidebar">
-        <div class="section-card chronicle-edit-context">
-          <p class="eyebrow">Navegacio</p>
-          <h3>${escapeHtml(current?.chapter || "Sense capitol")}</h3>
-          <p>${escapeHtml(current?.title || "Nova cronica")}</p>
-          <div class="book-controls chronicle-edit-nav">
-            <button type="button" class="secondary" data-chronicle-nav="prev">Cronica anterior</button>
-            <button type="button" data-chronicle-nav="next">Cronica seguent</button>
-          </div>
-        </div>
-        <div class="section-card chronicle-edit-context">
-          <p class="eyebrow">Lectura guardada</p>
-          <h3>Resum actual</h3>
-          <div class="rich-text">${renderChronicleRichText(current?.summary || "No hi ha resum disponible.")}</div>
-        </div>
-        <div class="section-card chronicle-edit-context">
-          <p class="eyebrow">Highlights</p>
-          <div class="rich-text">${renderChronicleRichText(current?.highlights || "Sense highlights encara.")}</div>
-        </div>
-        ${renderChronicleMedia(current)}
-        <div class="chronicle-edit-notes">
-          ${renderPlayerNotesFab()}
-          ${renderPlayerNotesPanel()}
-        </div>
-      </aside>
     </div>
   `;
 }
 
-function renderChronicleEditor(chronicle, characters, state) {
+function renderChronicleEditor(chronicle, state) {
   const draft = state.ui.drafts.chronicles[chronicle?.id || ""] || {};
-  const selected = new Set(readDraftArray(draft.characterIds, chronicle?.characterIds || []));
   const hasPendingDraft = Object.keys(draft).length > 0;
   const editorStatus = renderEditorStatus(state, "chronicles", chronicle?.id || "", hasPendingDraft);
 
@@ -248,11 +216,10 @@ function renderChronicleEditor(chronicle, characters, state) {
       ${renderEditorWorkspaceHeader(
         "Edicio de cronica",
         chronicle?.title || "Nova cronica",
-        "El mode edicio prioritza amplada i context. El relat, els recursos i el repartiment es treballen en un canvas propi, sense competir amb el llibre de lectura.",
+        "Aquest espai es centra en el relat de la sessio. Els recursos vinculats es mouran al glossari en una fase posterior.",
         [
           chronicle?.chapter || "Sense capitol",
-          `${(chronicle?.characterIds || []).length} personatges`,
-          `${(chronicle?.voiceNotes || []).length} notes de veu`,
+          chronicle?.date ? formatShortDate(chronicle.date) : "Sense data",
         ],
       )}
       ${editorStatus}
@@ -273,33 +240,11 @@ function renderChronicleEditor(chronicle, characters, state) {
               </div>
             `,
           )}
-          ${renderEditorCard(
-            "Escena, recursos i repartiment",
-            "Aquesta columna agrupa visuals, audio i personatges implicats sense barrejar-ho amb el relat.",
-            `
-              <div class="editor-grid">
-                ${renderTextareaField("imageNote", "Descripcio visual", readDraftValue(draft.imageNote, chronicle?.imageNote || ""), 4)}
-                ${renderTextareaField("imageAssets", "Imatges (una URL o ruta per linia)", readDraftValue(draft.imageAssets, (chronicle?.imageAssets || []).join("\n")), 5)}
-                ${renderTextareaField("voiceNotes", "Notes de veu (una URL o ruta per linia)", readDraftValue(draft.voiceNotes, (chronicle?.voiceNotes || []).join("\n")), 5)}
-                <div class="field span-2">
-                  <span>Personatges implicats</span>
-                  <p class="editor-field-copy">Selecciona el repartiment principal sense sortir del context de la sessio.</p>
-                  ${renderChoiceGrid(
-                    "characterIds",
-                    characters,
-                    selected,
-                    (character) => character.id,
-                    (character) => character.name,
-                    (character) => `${character.lineage} · ${character.className}`,
-                  )}
-                </div>
-              </div>
-            `,
-          )}
         </div>
         ${renderEditorActions(
           "Desa cronica",
           `
+            <button type="button" class="secondary" data-discard-chronicle-edit>Descarta canvis</button>
             <button type="button" class="secondary" data-delete-chronicle>Esborra cronica</button>
           `,
         )}
@@ -325,10 +270,6 @@ function getChronicleStatusPills(chronicle, state) {
 
 function readDraftValue(draftValue, fallback) {
   return draftValue !== undefined ? draftValue : fallback;
-}
-
-function readDraftArray(draftValue, fallback) {
-  return Array.isArray(draftValue) ? draftValue : fallback;
 }
 
 function renderEditorStatus(state, module, itemId, hasPendingDraft) {

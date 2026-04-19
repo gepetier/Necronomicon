@@ -315,12 +315,13 @@ textarea {
 }
 
 .main-content {
-  width: min(100%, var(--max-content));
+  width: 100%;
+  max-width: none;
   padding: var(--space-lg);
   display: grid;
   gap: var(--space-lg);
   align-content: start;
-  margin: 0 auto;
+  margin: 0;
   min-height: 100vh;
 }
 
@@ -391,6 +392,11 @@ textarea {
   display: grid;
   gap: var(--space-lg);
   align-content: start;
+}
+
+#chroniclesModule.module-view.active {
+  min-height: calc(100vh - (2 * var(--space-lg)));
+  align-content: stretch;
 }
 
 .save-notice {
@@ -1020,13 +1026,16 @@ history-list,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.editor-layout-chronicle,
 .editor-layout-glossary {
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.92fr);
 }
 
+.editor-layout-chronicle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .chronicles-editing .editor-layout-chronicle {
-  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .editor-panel {
@@ -1164,14 +1173,14 @@ history-list,
 
 .book-layout {
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr);
-  gap: 1.35rem;
+  grid-template-columns: 186px minmax(0, 1fr);
+  gap: 1.05rem;
   align-items: stretch;
 }
 
 .chronicle-edit-stage {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.78fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
   min-width: 0;
@@ -1210,20 +1219,37 @@ history-list,
 }
 
 .book-index {
+  display: grid;
+  grid-template-rows: auto 1fr;
   align-content: start;
+  align-self: stretch;
   position: sticky;
   top: var(--space-lg);
   gap: 1rem;
+  padding: 1rem;
+  min-height: 100%;
+  height: 100%;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(109, 62, 39, 0.38), rgba(63, 31, 20, 0.52)),
+    linear-gradient(145deg, rgba(114, 65, 39, 0.18), rgba(33, 17, 11, 0.12));
+  box-shadow:
+    inset 0 0 0 1px rgba(205, 160, 103, 0.12),
+    inset 0 16px 20px rgba(255, 232, 194, 0.04);
 }
 
 .chapter-list {
   display: grid;
+  align-self: stretch;
+  grid-auto-rows: min-content;
+  align-content: start;
   gap: 0.75rem;
 }
 
 .index-entry {
   position: relative;
   width: 100%;
+  display: grid;
   justify-content: flex-start;
   text-align: left;
   background:
@@ -1238,15 +1264,57 @@ history-list,
   border-radius: 18px;
 }
 
+.chapter-entry-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.chapter-entry-copy {
+  display: grid;
+  gap: 0.22rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .chapter-entry p {
   margin: 0;
   font-weight: 700;
-  padding-right: 6.25rem;
+  padding-right: 0;
 }
 
 .chapter-entry small {
   color: rgba(62, 38, 28, 0.72);
-  padding-right: 6.25rem;
+  padding-right: 0;
+}
+
+.chronicle-inline-edit {
+  width: 2.25rem;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.chronicle-inline-edit .module-action-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.chronicle-inline-edit .module-action-icon svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.chapter-entry-create {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding-block: 0.85rem;
+  font-weight: 700;
 }
 
 .index-entry.active {
@@ -1256,7 +1324,13 @@ history-list,
   transform: translateX(10px);
 }
 
+.index-entry.active .chapter-entry small {
+  color: rgba(255, 244, 226, 0.82);
+}
+
 .book-shell {
+  display: grid;
+  align-content: stretch;
   padding: 1.3rem;
   background:
     linear-gradient(180deg, rgba(26, 16, 11, 0.16), rgba(26, 16, 11, 0.08)),
@@ -1269,6 +1343,7 @@ history-list,
     0 30px 60px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 225, 182, 0.08);
   background-size: auto, 720px 720px, auto, auto, auto;
+  min-height: 100%;
 }
 
 .book-shell::after {
@@ -1426,6 +1501,7 @@ history-list,
   margin-left: 0.55rem;
   border-radius: 8px 18px 18px 8px;
   padding: 1.25rem 1.35rem 1rem 1rem;
+  grid-template-rows: auto auto auto auto 1fr auto;
 }
 
 .book-page::after {
@@ -1582,6 +1658,16 @@ history-list,
   right: 1.5rem;
   bottom: 1.5rem;
   z-index: 20;
+}
+
+.notes-fab-inline {
+  position: static;
+  right: auto;
+  bottom: auto;
+  justify-self: end;
+  align-self: end;
+  margin-top: 0.2rem;
+  z-index: auto;
 }
 
 .glossary-return-fab {
@@ -2384,6 +2470,14 @@ history-list,
     min-width: 132px;
     padding-inline: 1rem;
     bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .notes-fab-inline {
+    right: auto;
+    left: auto;
+    bottom: auto;
+    min-width: 0;
+    width: auto;
   }
 
   .glossary-return-fab {

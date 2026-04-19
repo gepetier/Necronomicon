@@ -43,7 +43,7 @@ function createContext(currentFrame) {
   const doc = currentFrame.contentDocument;
   const win = currentFrame.contentWindow;
   if (!doc || !win) {
-    throw new Error("No s'ha pogut accedir al document de l'aplicació.");
+    throw new Error("No s'ha pogut accedir al document de l'aplicacio.");
   }
 
   return {
@@ -116,7 +116,7 @@ async function runFunctionalSuite(context) {
   record(
     steps,
     context.doc.querySelector("#chroniclesModule.active") !== null && chapterEntries.length > 0,
-    "Navegació al mòdul de cròniques amb índex carregat",
+    "Navegacio al modul de croniques amb index carregat",
     { chapters: chapterEntries.length },
   );
 
@@ -131,7 +131,7 @@ async function runFunctionalSuite(context) {
   record(
     steps,
     glossaryBefore.length > 0 && glossaryAfter.length > 0 && glossaryAfter.length <= glossaryBefore.length,
-    "La cerca del glossari redueix o manté un subconjunt consistent",
+    "La cerca del glossari redueix o mante un subconjunt consistent",
     { before: glossaryBefore.length, after: glossaryAfter.length, searchTerm },
   );
 
@@ -141,7 +141,7 @@ async function runFunctionalSuite(context) {
   record(
     steps,
     glossaryTitle.length > 0,
-    "La selecció d'una entrada del glossari mostra el detall",
+    "La seleccio d'una entrada del glossari mostra el detall",
     { glossaryTitle },
   );
 
@@ -171,7 +171,7 @@ async function runUiSuite(context) {
     record(
       steps,
       gridColumns >= 2,
-      "La graella inicial de personatges mostra múltiples columnes a PC",
+      "La graella inicial de personatges mostra multiples columnes a PC",
       { gridColumns },
     );
 
@@ -182,20 +182,20 @@ async function runUiSuite(context) {
     record(
       steps,
       bookColumns >= 2,
-      "La vista de cròniques separa índex i llibre a PC",
+      "La vista de croniques separa index i llibre a PC",
       { bookColumns },
     );
   } else {
     record(
       steps,
       appDisplay === "block",
-      "Layout principal apilat a mòbil",
+      "Layout principal apilat a mobil",
       { display: appDisplay },
     );
     record(
       steps,
       gridColumns === 1,
-      "La graella inicial de personatges col·lapsa a una sola columna a mòbil",
+      "La graella inicial de personatges col-lapsa a una sola columna a mobil",
       { gridColumns },
     );
 
@@ -206,7 +206,7 @@ async function runUiSuite(context) {
     record(
       steps,
       bookColumns === 1,
-      "La vista de cròniques s'apila en una sola columna a mòbil",
+      "La vista de croniques s'apila en una sola columna a mobil",
       { bookColumns },
     );
   }
@@ -226,7 +226,7 @@ async function runEditSuite(context) {
   record(
     steps,
     context.doc.querySelector("[data-open-character-editor]") !== null,
-    "La vista de personatges exposa un accés local a l'edició",
+    "La vista de personatges exposa un acces local a l'edicio",
   );
 
   context.click("[data-open-character-editor]");
@@ -234,10 +234,10 @@ async function runEditSuite(context) {
   record(
     steps,
     context.doc.querySelector(".editor-workspace-character") !== null,
-    "L'editor de personatges s'obre des del mòdul",
+    "L'editor de personatges s'obre des del modul",
   );
 
-  context.type('form[data-form="character-overview"] input[name="title"]', "Títol QA");
+  context.type('form[data-form="character-overview"] input[name="title"]', "Titol QA");
   await delay(60);
   context.click('[data-module-link="chronicles"]');
   await delay(80);
@@ -246,8 +246,8 @@ async function runEditSuite(context) {
   const persistedCharacterDraft = context.doc.querySelector('form[data-form="character-overview"] input[name="title"]')?.value || "";
   record(
     steps,
-    persistedCharacterDraft === "Títol QA",
-    "El draft de personatge es manté en navegar entre mòduls",
+    persistedCharacterDraft === "Titol QA",
+    "El draft de personatge es mante en navegar entre moduls",
     { value: persistedCharacterDraft },
   );
 
@@ -256,7 +256,7 @@ async function runEditSuite(context) {
   record(
     steps,
     context.doc.querySelector("[data-create-chronicle]") !== null,
-    "Cròniques mostra una acció visible per crear noves entrades",
+    "Croniques mostra una accio visible per crear noves entrades",
   );
 
   context.click('[data-toggle-edit="chronicles"]');
@@ -264,10 +264,40 @@ async function runEditSuite(context) {
   record(
     steps,
     context.doc.querySelector(".editor-workspace-chronicle") !== null,
-    "L'editor de cròniques és visible en el layout actual",
+    "L'editor de croniques es visible en el layout actual",
+  );
+  record(
+    steps,
+    context.doc.querySelector(".chronicle-edit-sidebar") === null,
+    "L'editor de croniques no mostra la sidebar lateral antiga",
   );
 
-  context.type('form[data-form="chronicle"] input[name="title"]', "Crònica QA");
+  context.type('form[data-form="chronicle"] input[name="title"]', "Cronica QA");
+  await delay(60);
+  const originalConfirm = context.win.confirm;
+  context.win.confirm = () => false;
+  const nextChronicle = context.qsa("[data-chronicle-id]").find((element) => element.getAttribute("aria-selected") !== "true");
+  nextChronicle?.click();
+  await delay(80);
+  context.win.confirm = originalConfirm;
+  const selectedChronicleTitle = context.doc.querySelector('[data-chronicle-id][aria-selected="true"] .chapter-entry-copy p')?.textContent?.trim() || "";
+  record(
+    steps,
+    context.doc.querySelector(".editor-workspace-chronicle") === null && selectedChronicleTitle.length > 0,
+    "Canviar de cronica en edicio obliga a sortir del mode edicio i entrar a la seguent",
+    { selectedChronicleTitle },
+  );
+  context.click('[data-toggle-edit="chronicles"]');
+  await delay(80);
+  const switchedChronicleDraft = context.doc.querySelector('form[data-form="chronicle"] input[name="title"]')?.value || "";
+  record(
+    steps,
+    switchedChronicleDraft !== "Cronica QA",
+    "Canviar de cronica no arrastra l'esborrany de l'anterior",
+    { value: switchedChronicleDraft },
+  );
+
+  context.type('form[data-form="chronicle"] input[name="title"]', "Cronica QA");
   await delay(60);
   context.click('[data-module-link="glossary"]');
   await delay(80);
@@ -276,9 +306,25 @@ async function runEditSuite(context) {
   const persistedChronicleDraft = context.doc.querySelector('form[data-form="chronicle"] input[name="title"]')?.value || "";
   record(
     steps,
-    persistedChronicleDraft === "Crònica QA",
-    "El draft de crònica es conserva entre canvis de mòdul",
+    persistedChronicleDraft === "Cronica QA",
+    "El draft de cronica es conserva entre canvis de modul",
     { value: persistedChronicleDraft },
+  );
+  context.click('[data-discard-chronicle-edit]');
+  await delay(80);
+  record(
+    steps,
+    context.doc.querySelector(".editor-workspace-chronicle") === null,
+    "Descartar canvis tanca el mode edicio de croniques",
+  );
+  context.click('[data-toggle-edit="chronicles"]');
+  await delay(80);
+  const discardedChronicleDraft = context.doc.querySelector('form[data-form="chronicle"] input[name="title"]')?.value || "";
+  record(
+    steps,
+    discardedChronicleDraft !== "Cronica QA",
+    "Descartar canvis rebutja l'esborrany de la cronica actual",
+    { value: discardedChronicleDraft },
   );
 
   context.click('[data-module-link="glossary"]');
@@ -286,7 +332,7 @@ async function runEditSuite(context) {
   record(
     steps,
     context.doc.querySelector("[data-create-glossary]") !== null,
-    "Glossari mostra una acció visible per crear entrades",
+    "Glossari mostra una accio visible per crear entrades",
   );
 
   context.click('[data-toggle-edit="glossary"]');
@@ -294,7 +340,7 @@ async function runEditSuite(context) {
   record(
     steps,
     context.doc.querySelector(".editor-workspace-glossary") !== null,
-    "L'editor de glossari s'obre des del mòdul",
+    "L'editor de glossari s'obre des del modul",
   );
 
   context.type('form[data-form="glossary"] input[name="name"]', "Entrada QA");
