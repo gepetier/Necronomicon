@@ -32,6 +32,11 @@ import {
 let state = loadStoredState();
 let bookTurnTimer = null;
 let saveNoticeTimer = null;
+let persistStateTimer = null;
+let glossarySearchTimer = null;
+
+const referenceSuggestionTimers = new WeakMap();
+const richPreviewTimers = new WeakMap();
 
 const saveNoticeEl = document.querySelector("#saveNotice");
 const charactersModule = document.querySelector("#charactersModule");
@@ -49,6 +54,7 @@ function initialize() {
   document.addEventListener("submit", handleSubmit);
   document.addEventListener("input", handleInput);
   document.addEventListener("change", handleInput);
+  window.addEventListener("pagehide", flushPendingPersist);
 
   render();
 }
@@ -397,17 +403,16 @@ function buildFocusSelector(element) {
 function handleInput(event) {
   if (event.target?.name === "glossarySearch") {
     state.ui.glossarySearch = event.target.value.trim();
-    renderGlossaryModule();
-    storagePersistState(state);
+    scheduleGlossarySearchRender();
     return;
   }
 
   if (event.target instanceof HTMLTextAreaElement && event.target.dataset.refInput === "glossary") {
-    renderReferenceSuggestions(event.target);
+    scheduleReferenceSuggestions(event.target);
   }
 
   if (event.target instanceof HTMLTextAreaElement && event.target.dataset.richInput === "true") {
-    updateRichPreview(event.target);
+    scheduleRichPreview(event.target);
   }
 
   const form = event.target instanceof HTMLElement ? event.target.closest("form[data-form]") : null;
@@ -426,7 +431,7 @@ function handleKeyup(event) {
     return;
   }
 
-  renderReferenceSuggestions(target);
+  scheduleReferenceSuggestions(target);
 }
 
 function handleSubmit(event) {
@@ -748,8 +753,40 @@ function saveGlossary(formData) {
 }
 
 function persistAndRender() {
-  storagePersistState(state);
+  persistStateImmediately();
   render();
+}
+
+function schedulePersistState(delay = 180) {
+  window.clearTimeout(persistStateTimer);
+  persistStateTimer = window.setTimeout(() => {
+    persistStateTimer = null;
+    storagePersistState(state);
+  }, delay);
+}
+
+function flushPendingPersist() {
+  if (persistStateTimer === null) {
+    return;
+  }
+
+  window.clearTimeout(persistStateTimer);
+  persistStateTimer = null;
+  storagePersistState(state);
+}
+
+function persistStateImmediately() {
+  flushPendingPersist();
+  storagePersistState(state);
+}
+
+function scheduleGlossarySearchRender(delay = 120) {
+  window.clearTimeout(glossarySearchTimer);
+  glossarySearchTimer = window.setTimeout(() => {
+    glossarySearchTimer = null;
+    renderGlossaryModule();
+    schedulePersistState();
+  }, delay);
 }
 
 function showSaveNotice(message) {
@@ -906,7 +943,7 @@ function updateDraftFromForm(form) {
     }
   }
 
-  storagePersistState(state);
+  schedulePersistState();
 }
 
 function serializeFormDraft(form) {
@@ -1207,6 +1244,10 @@ function renderReferenceSuggestions(textarea) {
     .join("");
 }
 
+function scheduleReferenceSuggestions(textarea, delay = 90) {
+  scheduleTextareaTask(textarea, referenceSuggestionTimers, renderReferenceSuggestions, delay);
+}
+
 function getReferenceMatches(token) {
   const normalizedToken = normalizeReferenceToken(token);
   return state.glossary
@@ -1338,6 +1379,24 @@ function updateRichPreview(textarea) {
   }
 
   preview.innerHTML = renderRichText(textarea.value);
+}
+
+function scheduleRichPreview(textarea, delay = 120) {
+  scheduleTextareaTask(textarea, richPreviewTimers, updateRichPreview, delay);
+}
+
+function scheduleTextareaTask(textarea, timerStore, callback, delay) {
+  const previousTimer = timerStore.get(textarea);
+  if (previousTimer) {
+    window.clearTimeout(previousTimer);
+  }
+
+  const nextTimer = window.setTimeout(() => {
+    timerStore.delete(textarea);
+    callback(textarea);
+  }, delay);
+
+  timerStore.set(textarea, nextTimer);
 }
 
 function applyRichFormatting(textarea, action) {
