@@ -177,13 +177,19 @@ async function runUiSuite(context) {
 
     context.click('[data-module-link="chronicles"]');
     await delay(80);
+    const sidebarPanel = context.doc.querySelector("#sidebarContextPanel");
+    const sidebarIndex = sidebarPanel?.querySelector(".book-index-sidebar");
     const bookLayout = context.doc.querySelector(".book-layout");
     const bookColumns = readColumnCount(context, bookLayout);
     record(
       steps,
-      bookColumns >= 2,
-      "La vista de croniques separa index i llibre a PC",
-      { bookColumns },
+      Boolean(sidebarIndex) && !sidebarPanel?.hidden && bookColumns === 1,
+      "La vista de croniques mostra subindex lateral i llibre separat a PC",
+      {
+        sidebarIndex: Boolean(sidebarIndex),
+        sidebarHidden: sidebarPanel?.hidden ?? null,
+        bookColumns,
+      },
     );
   } else {
     record(

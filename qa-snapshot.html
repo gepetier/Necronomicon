@@ -59,6 +59,19 @@
           await wait(180);
         }
 
+        if (scenario === "chronicles-many") {
+          click('[data-module-link="chronicles"]');
+          await wait(180);
+
+          for (let count = doc.querySelectorAll("[data-chronicle-id]").length; count < 50; count += 1) {
+            click("[data-create-chronicle]");
+            await wait(45);
+          }
+
+          click('[data-toggle-edit="chronicles"]');
+          await wait(220);
+        }
+
         if (scenario === "chronicles-edit") {
           click('[data-module-link="chronicles"]');
           await wait(180);

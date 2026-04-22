@@ -29,27 +29,17 @@ export function renderChroniclesModule({
   rootEl.innerHTML = `
     <section class="book-shell ${state.ui.notesPanelOpen ? "notes-open" : ""} ${state.ui.editModes.chronicles ? "chronicles-editing" : ""}">
       <div class="book-layout">
-        <aside class="book-index">
-          <div class="module-section-header compact">
-            <div class="module-section-copy">
-              <p class="eyebrow">Index</p>
-              <h3>Capitols de campanya</h3>
-            </div>
-          </div>
-          <div class="chapter-list" role="listbox" aria-label="Capitols de campanya">
-            ${state.chronicles.map((chronicle) => renderChronicleIndexEntry(chronicle, state)).join("")}
-            <button type="button" class="chapter-entry index-entry chapter-entry-create" data-create-chronicle>
-              <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
-              <span>Nova cronica</span>
-            </button>
-          </div>
-        </aside>
+        ${renderChronicleIndexPanel(state, current, { variant: "inline" })}
         ${state.ui.editModes.chronicles
           ? renderChronicleEditingStage(current, state)
           : renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab)}
       </div>
     </section>
   `;
+}
+
+export function renderChronicleSidebarPanel(state, current) {
+  return renderChronicleIndexPanel(state, current, { variant: "sidebar" });
 }
 
 export function saveChronicle(formData, { getSelectedChronicle, showSaveNotice }) {
@@ -121,6 +111,7 @@ export function deleteChronicle(state) {
 
 function renderChronicleIndexEntry(chronicle, state) {
   const isActive = chronicle.id === state.ui.selectedChronicleId;
+  const dateLabel = formatShortDate(chronicle.date) || chronicle.date || "Sense data";
 
   return `
     <article
@@ -134,8 +125,9 @@ function renderChronicleIndexEntry(chronicle, state) {
       ${renderStatusPills(getChronicleStatusPills(chronicle, state))}
       <div class="chapter-entry-head">
         <div class="chapter-entry-copy">
-          <p>${escapeHtml(chronicle.chapter)} · ${escapeHtml(chronicle.title)}</p>
-          <small>${escapeHtml(chronicle.date)}</small>
+          <p class="chapter-entry-kicker">${escapeHtml(chronicle.chapter)}</p>
+          <strong>${escapeHtml(chronicle.title)}</strong>
+          <small>${escapeHtml(dateLabel)}</small>
         </div>
         ${isActive
           ? `
@@ -193,6 +185,68 @@ function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel
         ${renderPlayerNotesFab({ inline: true })}
       </article>
     </div>
+  `;
+}
+
+function renderChronicleIndexPanel(state, current, { variant }) {
+  const chronicleSearch = state.ui.chronicleIndexSearch?.trim().toLowerCase() || "";
+  const visibleChronicles = state.chronicles.filter((chronicle) => chronicleMatchesSearch(chronicle, chronicleSearch));
+  const totalChronicles = state.chronicles.length;
+  const searchMeta = chronicleSearch
+    ? `${visibleChronicles.length} de ${totalChronicles} capitols`
+    : `${totalChronicles} capitols`;
+  const selectedOutsideFilter = chronicleSearch && current && !chronicleMatchesSearch(current, chronicleSearch);
+  const panelClass = variant === "sidebar"
+    ? "book-index book-index-sidebar"
+    : "book-index book-index-inline";
+
+  return `
+    <aside class="${panelClass}">
+      <div class="module-section-header compact book-index-header">
+        <div class="module-section-copy">
+          <p class="eyebrow">Index</p>
+          <h3>Capitols de campanya</h3>
+          <p class="chapter-index-meta">${escapeHtml(searchMeta)}</p>
+        </div>
+      </div>
+      <div class="chapter-index-toolbar">
+        <input
+          type="search"
+          name="chronicleIndexSearch"
+          value="${escapeAttribute(state.ui.chronicleIndexSearch || "")}"
+          placeholder="Filtra sessions"
+          aria-label="Filtra les sessions de campanya"
+        />
+        ${chronicleSearch
+          ? `
+            <button type="button" class="secondary chapter-search-clear" data-clear-chronicle-search>
+              Neteja
+            </button>
+          `
+          : ""}
+      </div>
+      ${selectedOutsideFilter
+        ? `<p class="chapter-index-hint">La cronica oberta queda fora del filtre actual.</p>`
+        : ""}
+      <div class="chapter-list-shell">
+        <div class="chapter-list" role="listbox" aria-label="Capitols de campanya">
+          ${visibleChronicles.length
+            ? visibleChronicles.map((chronicle) => renderChronicleIndexEntry(chronicle, state)).join("")
+            : `
+              <div class="chapter-list-empty">
+                <p class="eyebrow">Sense coincidencies</p>
+                <p>Ajusta el filtre o crea una nova cronica per continuar.</p>
+              </div>
+            `}
+        </div>
+      </div>
+      <div class="chapter-index-actions">
+        <button type="button" class="chapter-create-button" data-create-chronicle>
+          <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
+          <span>Nova cronica</span>
+        </button>
+      </div>
+    </aside>
   `;
 }
 
@@ -304,4 +358,14 @@ function formatRelativeTime(value) {
   }
 
   return date.toLocaleTimeString("ca-ES", { hour: "2-digit", minute: "2-digit" });
+}
+
+function chronicleMatchesSearch(chronicle, search) {
+  if (!search) {
+    return true;
+  }
+
+  return [chronicle.chapter, chronicle.title, chronicle.date, chronicle.summary]
+    .filter(Boolean)
+    .some((value) => value.toLowerCase().includes(search));
 }

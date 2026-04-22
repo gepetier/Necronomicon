@@ -58,6 +58,9 @@
 - 2026-04-18: confirmed the dev server runs with `npm.cmd run dev` on `http://localhost:5173/`.
 - 2026-04-21: established mandatory screenshot-based validation for every UI change, with iteration required if the visual result is not satisfactory.
 - 2026-04-21: current working tree contains an in-progress UI art-direction pass in `styles.css` plus debounced state/preview updates in `main.js`; latest UI QA passed, but functional/edit QA and fuller screenshot review remain pending.
+- 2026-04-22: fixed the Ilu character detail view readability issues by restoring dark text on parchment panels, tightening the desktop portrait layout, and compacting the mobile header/portrait first fold after screenshot review.
+- 2026-04-22: reworked the chronicles index to scale better with many entries by adding search, an internal scroll region, and a separate high-contrast `Nova cronica` CTA validated in desktop/mobile screenshots and with a synthetic 50-entry snapshot.
+- 2026-04-22: moved the chronicles index into the global sidebar on desktop and kept a shorter inline mobile/tablet version with an internal scroll window sized for roughly three visible sessions.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

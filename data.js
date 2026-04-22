@@ -308,6 +308,7 @@ export const seedData = {
     selectedCharacterTab: "lore",
     showCharacterGrid: true,
     selectedChronicleId: "judici-acantilado",
+    chronicleIndexSearch: "",
     glossaryCategory: "Totes",
     glossarySearch: "",
     selectedGlossaryId: "acantilado-del-silencio",

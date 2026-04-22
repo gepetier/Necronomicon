@@ -7,6 +7,7 @@ import {
   createChronicle as createChronicleEntry,
   deleteChronicle as deleteChronicleEntry,
   renderChroniclesModule as renderChroniclesView,
+  renderChronicleSidebarPanel as renderChronicleSidebarView,
   saveChronicle as saveChronicleEntry,
 } from "./app/chronicles.js";
 import {
@@ -34,6 +35,7 @@ let bookTurnTimer = null;
 let saveNoticeTimer = null;
 let persistStateTimer = null;
 let glossarySearchTimer = null;
+let chronicleIndexSearchTimer = null;
 
 const referenceSuggestionTimers = new WeakMap();
 const richPreviewTimers = new WeakMap();
@@ -42,6 +44,7 @@ const saveNoticeEl = document.querySelector("#saveNotice");
 const charactersModule = document.querySelector("#charactersModule");
 const chroniclesModule = document.querySelector("#chroniclesModule");
 const glossaryModule = document.querySelector("#glossaryModule");
+const sidebarContextPanel = document.querySelector("#sidebarContextPanel");
 
 initialize();
 
@@ -142,6 +145,12 @@ function handleClick(event) {
   if (event.target.closest("[data-clear-glossary-filters]")) {
     state.ui.glossarySearch = "";
     state.ui.glossaryCategory = "Totes";
+    persistAndRender();
+    return;
+  }
+
+  if (event.target.closest("[data-clear-chronicle-search]")) {
+    state.ui.chronicleIndexSearch = "";
     persistAndRender();
     return;
   }
@@ -401,6 +410,12 @@ function buildFocusSelector(element) {
 }
 
 function handleInput(event) {
+  if (event.target?.name === "chronicleIndexSearch") {
+    state.ui.chronicleIndexSearch = event.target.value.trim();
+    scheduleChronicleIndexSearchRender();
+    return;
+  }
+
   if (event.target?.name === "glossarySearch") {
     state.ui.glossarySearch = event.target.value.trim();
     scheduleGlossarySearchRender();
@@ -496,6 +511,19 @@ function updateSidebar() {
     view.classList.toggle("active", isActive);
     view.hidden = !isActive;
   });
+
+  if (!sidebarContextPanel) {
+    return;
+  }
+
+  if (state.ui.currentModule === "chronicles") {
+    sidebarContextPanel.hidden = false;
+    sidebarContextPanel.innerHTML = renderChronicleSidebarView(state, getSelectedChronicle());
+    return;
+  }
+
+  sidebarContextPanel.hidden = true;
+  sidebarContextPanel.innerHTML = "";
 }
 
 function updateSaveNotice() {
@@ -789,6 +817,15 @@ function scheduleGlossarySearchRender(delay = 120) {
   }, delay);
 }
 
+function scheduleChronicleIndexSearchRender(delay = 120) {
+  window.clearTimeout(chronicleIndexSearchTimer);
+  chronicleIndexSearchTimer = window.setTimeout(() => {
+    chronicleIndexSearchTimer = null;
+    render();
+    schedulePersistState();
+  }, delay);
+}
+
 function showSaveNotice(message) {
   state.ui.saveNotice = message;
   state.ui.lastSaved = {
@@ -808,6 +845,7 @@ function showSaveNotice(message) {
 function createChronicle() {
   createChronicleEntry(state);
   state.ui.newChronicleId = state.ui.selectedChronicleId;
+  state.ui.chronicleIndexSearch = "";
   clearChronicleDraft(state.ui.selectedChronicleId);
   state.ui.editModes.chronicles = true;
   persistAndRender();
@@ -908,6 +946,7 @@ function ensureUiStateShape() {
   };
 
   state.ui.newChronicleId = typeof state.ui.newChronicleId === "string" ? state.ui.newChronicleId : "";
+  state.ui.chronicleIndexSearch = typeof state.ui.chronicleIndexSearch === "string" ? state.ui.chronicleIndexSearch : "";
 }
 
 function updateDraftFromForm(form) {
