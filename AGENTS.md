@@ -41,11 +41,12 @@
 - Maintain the current plain HTML/CSS/JS + Vite setup unless an explicit migration is requested.
 - Treat this file as the canonical restart note when the IDE session is reopened.
 - UI workflow decision: every UI-facing change requires screenshot-based review and iteration until the visual result is satisfactory.
+- Content workflow decision: when a user provides session prose for `Cròniques`, preserve the full incoming text verbatim in the chronicle body and move structure/order into summary, highlights, and glossary linking.
 
 ## Pending
-- Start or reuse the Vite server and capture fresh desktop + mobile screenshots for the current UI restyle, reviewing more than the first fold on mobile.
-- Re-run `npm.cmd run qa:functional` and `npm.cmd run qa:edit` because `main.js` now debounces persistence and live previews.
-- Decide whether the current restyle is ready to keep, then clean up or commit the pending visual artifacts and code changes.
+- Decide whether to keep the generated capture tooling (`capture-harness.html`, `capture-harness.js`, `capture-runner.mjs`) as part of the permanent UI workflow.
+- Clean up or commit the pending visual artifacts and code changes once the current restyle is considered stable.
+- Review whether future chronicle passes should also inline glossary links inside raw session prose, or keep verbatim input completely untouched there.
 
 ## Next steps
 - On next session start, read this file before inspecting code.
@@ -61,6 +62,13 @@
 - 2026-04-22: fixed the Ilu character detail view readability issues by restoring dark text on parchment panels, tightening the desktop portrait layout, and compacting the mobile header/portrait first fold after screenshot review.
 - 2026-04-22: reworked the chronicles index to scale better with many entries by adding search, an internal scroll region, and a separate high-contrast `Nova cronica` CTA validated in desktop/mobile screenshots and with a synthetic 50-entry snapshot.
 - 2026-04-22: moved the chronicles index into the global sidebar on desktop and kept a shorter inline mobile/tablet version with an internal scroll window sized for roughly three visible sessions.
+- 2026-04-24: added a reusable capture harness (`capture-harness.html`, `capture-harness.js`, `capture-runner.mjs`) to export desktop/mobile screenshots for the main UI states into `qa-results/captures/`.
+- 2026-04-24: reviewed the main characters/chronicles/glossary interfaces with fresh desktop + mobile screenshots, including second-fold mobile captures for longer views.
+- 2026-04-24: improved glossary card description/tag contrast and strengthened editor helper copy contrast; `npm.cmd run qa` passed after the UI retouch.
+- 2026-04-24: replaced the three seed chronicles with verbatim session prose for sessions 1-3, reorganized their summaries/highlights, expanded the glossary with the main locations, factions, NPCs, entities, and ritual objects, and added a storage migration for the new seed content.
+- 2026-04-24: added glossary image support in the detail panel, imported selected illustrations from the Meledar glossary doc into `resources/glossary/`, linked them to current-campaign glossary entries, and refreshed QA plus capture scenarios around glossary review.
+- 2026-04-24: exported the full set of source glossary illustrations into `Glossary/images/` as optimized PNGs with document-derived names for reuse outside the app runtime.
+- 2026-04-24: mirrored the current web image assets from `resources/imatges/` into `Glossary/images/` so the export folder now includes both document illustrations and in-app portrait assets.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

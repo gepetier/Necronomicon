@@ -52,6 +52,15 @@ export function migrateStoredState(payload) {
   if (version < 4) {
     nextState = migrateLocalEditingState(nextState);
   }
+  if (version < 5) {
+    nextState = migrateExpandedChroniclesAndGlossary(nextState);
+  }
+  if (version < 6) {
+    nextState = migrateGlossaryImages(nextState);
+  }
+  if (version < 7) {
+    nextState = migratePortadoresDelVeloDescription(nextState);
+  }
 
   return sanitizeState(nextState);
 }
@@ -138,6 +147,112 @@ function migrateLocalEditingState(candidate) {
   };
 
   delete next.ui.isEditMode;
+  return next;
+}
+
+function migrateExpandedChroniclesAndGlossary(candidate) {
+  const next = structuredClone(candidate);
+
+  if (shouldReplaceLegacyChronicles(next.chronicles)) {
+    next.chronicles = structuredClone(seedData.chronicles);
+  }
+
+  if (shouldReplaceLegacyGlossary(next.glossary)) {
+    next.glossary = structuredClone(seedData.glossary);
+  } else if (Array.isArray(next.glossary)) {
+    const existingIds = new Set(next.glossary.map((entry) => entry?.id).filter(Boolean));
+    seedData.glossary.forEach((entry) => {
+      if (!existingIds.has(entry.id)) {
+        next.glossary.push(structuredClone(entry));
+      }
+    });
+  }
+
+  return next;
+}
+
+function shouldReplaceLegacyChronicles(chronicles) {
+  if (!Array.isArray(chronicles) || chronicles.length !== 3) {
+    return false;
+  }
+
+  return (
+    chronicles[0]?.id === "judici-acantilado"
+    && chronicles[0]?.title === "Arribada a Acantilado del Silencio"
+    && String(chronicles[0]?.content || "").includes("El grup arriba a [[acantilado-del-silencio|Acantilado del Silencio]] escortat")
+    && chronicles[1]?.id === "ritual-fossa"
+    && chronicles[1]?.title === "Eclipsi sobre la Fossa"
+    && chronicles[2]?.id === "sagnatori"
+    && chronicles[2]?.title === "Sota la sang i la pedra"
+  );
+}
+
+function shouldReplaceLegacyGlossary(glossary) {
+  if (!Array.isArray(glossary) || glossary.length !== 4) {
+    return false;
+  }
+
+  const byId = new Map(glossary.map((entry) => [entry?.id, entry]));
+  return (
+    byId.has("acantilado-del-silencio")
+    && byId.has("kaelor")
+    && byId.has("zaher-ar-kal")
+    && byId.has("nishaar")
+    && String(byId.get("acantilado-del-silencio")?.description || "").includes("Ciutat aixecada sobre penya-segats blancs")
+    && String(byId.get("kaelor")?.description || "").includes("Nom sota el qual Acantilado del Silencio justifica penitència")
+  );
+}
+
+function migrateGlossaryImages(candidate) {
+  const next = structuredClone(candidate);
+  const imageSeedIds = new Set(
+    (seedData.glossary || [])
+      .filter((entry) => Array.isArray(entry?.imageAssets) && entry.imageAssets.length)
+      .map((entry) => entry.id),
+  );
+
+  next.glossary = Array.isArray(next.glossary)
+    ? next.glossary.map((entry) => {
+      if (!imageSeedIds.has(entry?.id)) {
+        return entry;
+      }
+
+      const seedEntry = seedData.glossary.find((item) => item.id === entry.id);
+      if (!seedEntry) {
+        return entry;
+      }
+
+      const hasImages = Array.isArray(entry?.imageAssets) && entry.imageAssets.length > 0;
+      return hasImages
+        ? entry
+        : {
+          ...entry,
+          imageAssets: structuredClone(seedEntry.imageAssets || []),
+        };
+    })
+    : next.glossary;
+
+  return next;
+}
+
+function migratePortadoresDelVeloDescription(candidate) {
+  const next = structuredClone(candidate);
+  const legacyDescription =
+    "Braç visible de l'ordre religiós d'Acantilado del Silencio: escorten presoners, custodien espais sagrats i imposen els rituals del clergat.";
+  const seedDescription = seedData.glossary.find((entry) => entry.id === "portadores-del-velo")?.description || "";
+
+  next.glossary = Array.isArray(next.glossary)
+    ? next.glossary.map((entry) => {
+      if (entry?.id !== "portadores-del-velo") {
+        return entry;
+      }
+
+      return String(entry.description || "").trim() === legacyDescription
+        ? { ...entry, description: seedDescription }
+        : entry;
+    })
+    : next.glossary;
+
   return next;
 }
 
@@ -239,6 +354,7 @@ function sanitizeGlossary(entry, fallback) {
     ...structuredClone(fallback),
     ...entry,
     tags: Array.isArray(entry?.tags) ? entry.tags : splitTags(entry?.tags || fallback.tags.join(", ")),
+    imageAssets: Array.isArray(entry?.imageAssets) ? entry.imageAssets : splitLines(entry?.imageAssets || fallback.imageAssets?.join("\n") || ""),
     characterIds: Array.isArray(entry?.characterIds) ? entry.characterIds : fallback.characterIds,
     chronicleIds: Array.isArray(entry?.chronicleIds) ? entry.chronicleIds : fallback.chronicleIds,
     playerNotes: sanitizePlayerNotes(entry?.playerNotes),

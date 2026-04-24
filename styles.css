@@ -986,7 +986,7 @@ history-list,
 .editor-summary,
 .editor-panel-copy,
 .editor-field-copy {
-  color: var(--ink-soft);
+  color: rgba(70, 46, 33, 0.84);
   font-size: 0.95rem;
   line-height: 1.55;
 }
@@ -1044,6 +1044,7 @@ history-list,
 
 .editor-panel h3 {
   font-size: 1.25rem;
+  color: #3a251c;
 }
 
 .editor-actions {
@@ -1988,8 +1989,8 @@ history-list,
   gap: 0.45rem;
   padding: 0.8rem 0.9rem;
   border-radius: 16px;
-  background: rgba(255, 248, 236, 0.72);
-  border: 1px solid rgba(122, 78, 42, 0.12);
+  background: rgba(255, 248, 236, 0.84);
+  border: 1px solid rgba(122, 78, 42, 0.16);
 }
 
 .rich-preview-label {
@@ -1997,7 +1998,7 @@ history-list,
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-soft);
+  color: rgba(78, 53, 38, 0.88);
 }
 
 .rich-preview {
@@ -2975,6 +2976,17 @@ select {
   padding-left: 0.8rem;
 }
 
+.glossary-entry p:not(.eyebrow) {
+  color: rgba(74, 48, 35, 0.82);
+  line-height: 1.55;
+}
+
+.glossary-entry .badge {
+  color: rgba(84, 55, 40, 0.9);
+  background: rgba(255, 248, 236, 0.76);
+  border-color: rgba(152, 109, 63, 0.18);
+}
+
 .glossary-entry:hover {
   transform: translateY(-3px);
   border-color: rgba(178, 133, 69, 0.24);
@@ -2992,12 +3004,20 @@ select {
 
 .glossary-detail-hero {
   min-height: 250px;
+  display: grid;
+  gap: 1rem;
+  align-items: start;
   padding: 1.55rem;
   border-radius: 26px;
   background:
     linear-gradient(180deg, rgba(14, 10, 9, 0.18), rgba(14, 10, 9, 0.62)),
     radial-gradient(circle at top left, rgba(255, 233, 188, 0.18), transparent 28%),
     linear-gradient(135deg, color-mix(in srgb, var(--portrait-a) 76%, #f0d6a8), var(--portrait-b));
+}
+
+.glossary-detail-copy {
+  display: grid;
+  gap: 0.8rem;
 }
 
 .glossary-detail-hero h3 {
@@ -3007,6 +3027,30 @@ select {
 
 .glossary-detail-hero .eyebrow {
   color: rgba(255, 230, 184, 0.9);
+}
+
+.glossary-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.95rem;
+}
+
+.glossary-media-frame {
+  margin: 0;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(245, 225, 188, 0.24);
+  background: rgba(18, 12, 10, 0.24);
+  box-shadow: 0 16px 28px rgba(20, 12, 9, 0.18);
+  min-height: 220px;
+}
+
+.glossary-media-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 420px;
+  object-fit: cover;
 }
 
 .item-grid {
@@ -3100,6 +3144,10 @@ select {
   .hero-stat-grid,
   .item-grid,
   .glossary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .glossary-media-grid {
     grid-template-columns: 1fr;
   }
 

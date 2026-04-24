@@ -1,0 +1,66 @@
+PROMPTS DE CRÒNIQUES
+
+BLOC DE COHERÈNCIA GLOBAL
+
+Use the four existing character portraits as strict visual references:
+Ilu = older human illusion wizard, gaunt face, dark graying hair, short stubble, scholar-mage robes, subtle blue illusion energy.
+Nelthan = stern blond elf paladin-ranger, long hair tied back, dark travel armor, green cloak, greatsword.
+Dámakos = heavily built male tiefling warrior, curved horns, dark hair, short beard, dark heavy armor, violet psionic energy.
+Elatoris = elegant dark-haired half-elf bard-swordsman, refined but worn noble clothing, rapier and/or lute.
+
+Maintain exact facial identity, body type, age read, silhouette, costume logic, horn shape, ear shape, hair color and hairstyle across every image. Do not redesign them. Same world, same cast, same dark medieval fantasy painterly realism in all scenes.
+
+Use the glossary art as secondary reference where relevant:
+Mijo = frail old halfling prisoner.
+Portadores del Velo = hooded zealots with blood-and-thorn iconography.
+Kaelor = stitched-mouth thorn symbol.
+Nisha'ar / avatar = black cat with violet eyes and cosmic-dark energy.
+Reina Elisabeth = red-haired queen in ornate regal dress and hidden authority.
+Varron Thayne = severe cleric-warrior with ritual staff and book.
+
+Dark medieval fantasy, grounded realism, cinematic painterly illustration, old-book atmosphere, dramatic torchlight, wet stone, iron, blood-red ritual accents, restrained magic. No anime, no cartoon, no glossy MMO armor, no random redesigns, no identity drift between images.
+
+
+1. SESSIÓ 1, ARRIBADA
+
+Create a vertical chronicle illustration for Session 1: the four protagonists arrive chained in a prisoner cart at Acantilado del Silencio under rain. Six Portadores del Velo escort them through hostile streets toward the black cathedral on the cliff. The mood is judicial, oppressive, ritualistic, and cold. Show the city, the cathedral, iron chains, hostile silence, and readable faces for all four protagonists. Cinematic composition, foreground cart, looming city behind, old-book dark fantasy tone.
+
+
+2. SESSIÓ 1, PACTE
+
+Create a vertical dark fantasy illustration of the moment the protagonists first encounter Nisha'ar above the abyss of the Fossa ritual. Ilu, Nelthan, Dámakos, and Elatoris hang suspended in infinite darkness after obeying the command to jump. Mijo is absent from the fall. Around them spreads a cosmic void with faint stars and impossible depth. Nisha'ar manifests as a vast shadow-entity beyond clear form, ancient, intelligent, and predatory, speaking directly into their minds. The scene must feel metaphysical, terrifying, and intimate, with the four protagonists still perfectly matching their reference identities.
+
+
+3. SESSIÓ 1, FUGA
+
+Create a vertical chronicle illustration of the prison escape beneath the cathedral. The protagonists force open the sewer entrance, discover the barred edge of the Fossa beyond, and realize they are trapped between stone, rusted iron, darkness, and sacrificial architecture. Dámakos is physically opening the way, Ilu is guiding with sharp intelligence, Nelthan is tense and vigilant, Elatoris is alert and ready, and Mijo is nearby in fear. Wet stone, torchlight, sewer grime, ritual dread, strong depth, cinematic realism.
+
+
+4. SESSIÓ 2, RITUAL
+
+Create a vertical chronicle illustration for Session 2: the ritual square above the Fossa at night, packed with clergy, nobles, torches, thorn amulets, and a sacrificial urn. A giant iron symbol of Kaelor hangs over the tribune. Queen Elisabeth is visible among the nobles. The four protagonists are in the crowd moments before chaos erupts. The false Voz is about to be exposed. The image must feel tense, ceremonial, blood-charged, and seconds away from catastrophe.
+
+
+5. SESSIÓ 2, MÀSCARA
+
+Create a vertical action illustration of Elatoris reaching the tribune and tearing the mask from the false Voz of Kaelor in front of the crowd. Zaher-Ar'Kal is being revealed as a demonic impostor. Around them, members of the Círculo, clergy, soldiers, and panicked citizens are caught between shock and violence. Ilu, Nelthan, and Dámakos are fighting to open the path and must remain visible and consistent with their portraits. The moment should feel like the exact second a false religion collapses into open horror.
+
+
+6. SESSIÓ 2, MAR DE SANG
+
+Create a vertical apocalyptic illustration of Acantilado del Silencio being overtaken by a rising sea of blood. Thorn amulets activate across the city, citizens collapse, panic spreads, and a crimson sphere forms above the Fossa. The four protagonists, Queen Elisabeth, soldiers, clergy, and civilians are all being dragged toward the abyss by the blood tide. Zaher-Ar'Kal has already broken subtlety. The mood is catastrophic, infernal, and overwhelming, with strong red-black lighting and the city visibly dying.
+
+
+7. SESSIÓ 3, AUDIÈNCIA AMB NISHA'AR
+
+Create a vertical illustration of the second audience with Nisha'ar after the fall. The protagonists float in a calmer cosmic darkness under a strange star-filled night. Nisha'ar appears more clearly than before, vast and eldritch, while the black cat avatar with violet eyes marks the group. Dámakos is visibly the most wounded but being restored. The scene must communicate pact, manipulation, survival, and the beginning of a deeper descent into Ish'Nael's domains. Keep the four protagonists perfectly consistent with their reference portraits.
+
+
+8. SESSIÓ 3, ENTRADA AL SAGNATORI
+
+Create a vertical chronicle illustration for Session 3: the four protagonists inside the Sagnatori after surviving the fall, surrounded by red crystals, piles of corpses, organic remains, carved stone, hidden passages, and hints of a vast sea of blood deeper below. The group is exhausted but alert. The environment must feel like a subterranean demonic processing world beneath the city, with horror, discovery, and escalation. Painterly realism, strong red-black atmosphere, readable faces, no character drift.
+
+
+9. SESSIÓ 3, RITUAL FINAL
+
+Create a vertical dark fantasy illustration of the final ritual observed from above in the Sagnatori. A vast sea of blood fills a colossal chamber. Zaher-Ar'Kal stands with another mysterious entity while six chained half-ethereal, half-demonic figures are dragged onto a platform by abominations. From the glowing blood, a weightless incolor luminous essence rises upward out of sight. The four protagonists watch hidden from an upper passage, horrified but alive, realizing they have uncovered something worse than the massacre above. Massive scale, ritual precision, cosmic dread, painterly realism.

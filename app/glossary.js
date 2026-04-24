@@ -232,12 +232,31 @@ function renderGlossaryEmptyDetail() {
 }
 
 function renderGlossaryDetail(entry, state, findCharacter) {
+  const images = (entry.imageAssets || []).filter(Boolean);
+
   return `
     <article class="glossary-detail" style="${paletteStyle(entry.palette)}">
       <div class="glossary-detail-hero">
-        <p class="eyebrow">${escapeHtml(entry.category)}</p>
-        <h3>${escapeHtml(entry.name)}</h3>
-        <div class="rich-text">${renderRichText(entry.description)}</div>
+        <div class="glossary-detail-copy">
+          <p class="eyebrow">${escapeHtml(entry.category)}</p>
+          <h3>${escapeHtml(entry.name)}</h3>
+          <div class="rich-text">${renderRichText(entry.description)}</div>
+        </div>
+        ${images.length
+          ? `
+            <div class="glossary-media-grid">
+              ${images
+                .map(
+                  (source, index) => `
+                    <figure class="glossary-media-frame">
+                      <img src="${escapeAttribute(source)}" alt="${escapeAttribute(`${entry.name} ${index + 1}`)}" loading="lazy" />
+                    </figure>
+                  `,
+                )
+                .join("")}
+            </div>
+          `
+          : ""}
       </div>
       <div class="item-grid">
         ${renderTextCard("Etiquetes", (entry.tags || []).join(", ") || "Sense etiquetes")}
