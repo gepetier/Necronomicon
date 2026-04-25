@@ -128,14 +128,54 @@ async function runFunctionalSuite(context) {
   context.type('input[name="glossarySearch"]', searchTerm);
   await delay(80);
   const glossaryAfter = context.qsa(".glossary-entry");
+  const glossarySearchFocusName = context.doc.activeElement?.getAttribute?.("name") || "";
+  const glossarySearchValue = context.doc.querySelector('input[name="glossarySearch"]')?.value || "";
   record(
     steps,
-    glossaryBefore.length > 0 && glossaryAfter.length > 0 && glossaryAfter.length <= glossaryBefore.length,
+    glossaryBefore.length > 0
+      && glossaryAfter.length > 0
+      && glossaryAfter.length <= glossaryBefore.length
+      && glossarySearchFocusName === "glossarySearch"
+      && glossarySearchValue === searchTerm,
     "La cerca del glossari redueix o mante un subconjunt consistent",
-    { before: glossaryBefore.length, after: glossaryAfter.length, searchTerm },
+    {
+      before: glossaryBefore.length,
+      after: glossaryAfter.length,
+      searchTerm,
+      glossarySearchFocusName,
+      glossarySearchValue,
+    },
   );
 
-  glossaryAfter[0]?.click();
+  context.type('input[name="glossarySearch"]', "religio");
+  await delay(80);
+  const accentInsensitiveResults = context.qsa(".glossary-entry h3").map((element) => element.textContent?.trim() || "");
+  record(
+    steps,
+    accentInsensitiveResults.includes("Kaelor, el Portador del Silenci"),
+    "La cerca del glossari es tolerant a accents i troba categories",
+    { accentInsensitiveResults },
+  );
+
+  context.type('input[name="glossarySearch"]', "");
+  await delay(80);
+  context.click('input[data-glossary-session="judici-acantilado"]');
+  await delay(80);
+  const sessionResults = context.qsa(".glossary-entry h3").map((element) => element.textContent?.trim() || "");
+  const sessionChecked = context.doc.querySelector('input[data-glossary-session="judici-acantilado"]')?.checked || false;
+  record(
+    steps,
+    sessionResults.length > 0
+      && sessionResults.includes("Acantilado del Silencio")
+      && !sessionResults.includes("Sagnatori")
+      && sessionChecked,
+    "El filtre de sessions del glossari mostra nomes entrades referenciades a la sessio marcada",
+    { sessionResults, sessionChecked },
+  );
+
+  context.click("[data-clear-glossary-filters]");
+  await delay(80);
+  context.qsa(".glossary-entry")[0]?.click();
   await delay(80);
   const glossaryTitle = context.doc.querySelector(".glossary-detail h3")?.textContent?.trim() || "";
   record(
@@ -143,6 +183,63 @@ async function runFunctionalSuite(context) {
     glossaryTitle.length > 0,
     "La seleccio d'una entrada del glossari mostra el detall",
     { glossaryTitle },
+  );
+
+  context.click('[data-glossary-filter="Altres"]');
+  await delay(80);
+  context.click('[data-glossary-id="uric"]');
+  await delay(80);
+  const glossaryLatestCopy = context.doc.querySelector(".glossary-latest-copy")?.textContent?.trim() || "";
+  const glossaryLatestChronicle = context.doc.querySelector(".glossary-latest-chronicle")?.textContent?.trim() || "";
+  record(
+    steps,
+    glossaryLatestCopy.includes("Probablement mort")
+      && glossaryLatestChronicle.includes("Ultima vegada vist a:")
+      && glossaryLatestChronicle.includes("Sessió 2"),
+    "El detall del glossari mostra l'estat actual i l'ultima sessio rellevant",
+    { glossaryLatestCopy, glossaryLatestChronicle },
+  );
+
+  context.click('[data-glossary-filter="Religió"]');
+  await delay(80);
+  context.click('input[data-glossary-session="sagnatori"]');
+  await delay(80);
+  context.click('[data-module-link="chronicles"]');
+  await delay(80);
+  context.click('[data-glossary-jump="acantilado-del-silencio"]');
+  await delay(80);
+  const jumpedGlossaryTitle = context.doc.querySelector(".glossary-detail h3")?.textContent?.trim() || "";
+  const activeGlossaryCardTitle = context.doc.querySelector(".glossary-entry.active h3")?.textContent?.trim() || "";
+  const jumpedGlossarySearch = context.doc.querySelector('input[name="glossarySearch"]')?.value || "";
+  const activeGlossaryFilter = context.doc.querySelector('[data-glossary-filter][aria-selected="true"]')?.getAttribute("data-glossary-filter") || "";
+  const activeGlossarySessions = context.qsa('input[data-glossary-session]:checked').map((element) => element.getAttribute("data-glossary-session") || "");
+  record(
+    steps,
+    context.doc.querySelector("#glossaryModule.active") !== null
+      && jumpedGlossaryTitle === "Acantilado del Silencio"
+      && activeGlossaryCardTitle === "Acantilado del Silencio"
+      && jumpedGlossarySearch === ""
+      && activeGlossaryFilter === "Totes"
+      && activeGlossarySessions.length === 0
+      && context.doc.querySelector("[data-return-to-chronicle]") !== null,
+    "El salt des de croniques obre el terme del glossari i neteja filtres incompatibles",
+    {
+      jumpedGlossaryTitle,
+      activeGlossaryCardTitle,
+      jumpedGlossarySearch,
+      activeGlossaryFilter,
+      activeGlossarySessions,
+    },
+  );
+
+  context.click("[data-return-to-chronicle]");
+  await delay(80);
+  const selectedChronicleId = context.doc.querySelector('[data-chronicle-id][aria-selected="true"]')?.getAttribute("data-chronicle-id") || "";
+  record(
+    steps,
+    context.doc.querySelector("#chroniclesModule.active") !== null && selectedChronicleId === "judici-acantilado",
+    "El retorn des del glossari recupera la cronica d'origen",
+    { selectedChronicleId },
   );
 
   return {
@@ -257,6 +354,16 @@ async function runEditSuite(context) {
     { value: persistedCharacterDraft },
   );
 
+  context.click("[data-save-character]");
+  await delay(80);
+  const savedCharacterTitle = context.doc.querySelector(".detail-portrait-inner p:last-child")?.textContent?.trim() || "";
+  record(
+    steps,
+    context.doc.querySelector(".editor-workspace-character") === null && savedCharacterTitle === "Titol QA",
+    "Desar el personatge aplica els canvis i tanca el mode edicio",
+    { savedCharacterTitle },
+  );
+
   context.click('[data-module-link="chronicles"]');
   await delay(80);
   record(
@@ -333,6 +440,18 @@ async function runEditSuite(context) {
     { value: discardedChronicleDraft },
   );
 
+  context.type('form[data-form="chronicle"] input[name="title"]', "Cronica desada QA");
+  await delay(60);
+  context.submit('form[data-form="chronicle"]');
+  await delay(80);
+  const savedChronicleTitle = context.doc.querySelector(".page-header h3")?.textContent?.trim() || "";
+  record(
+    steps,
+    context.doc.querySelector(".editor-workspace-chronicle") === null && savedChronicleTitle === "Cronica desada QA",
+    "Desar una cronica tanca el mode edicio",
+    { savedChronicleTitle },
+  );
+
   context.click('[data-module-link="glossary"]');
   await delay(80);
   record(
@@ -341,24 +460,32 @@ async function runEditSuite(context) {
     "Glossari mostra una accio visible per crear entrades",
   );
 
-  context.click('[data-toggle-edit="glossary"]');
+  context.click("[data-edit-glossary-card]");
   await delay(80);
   record(
     steps,
-    context.doc.querySelector(".editor-workspace-glossary") !== null,
-    "L'editor de glossari s'obre des del modul",
+    context.doc.querySelector(".editor-workspace-glossary") !== null
+      && context.doc.querySelector('input[data-glossary-image-picker]') !== null,
+    "L'editor de glossari s'obre des de la targeta de resultat",
   );
 
   context.type('form[data-form="glossary"] input[name="name"]', "Entrada QA");
+  context.type(
+    'form[data-form="glossary"] textarea[name="imageAssets"]',
+    'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="%23c68f57"/></svg>',
+  );
   await delay(60);
   context.submit('form[data-form="glossary"]');
   await delay(80);
   const saveNotice = context.doc.querySelector("#saveNotice")?.textContent?.trim() || "";
+  const glossaryImageSrc = context.doc.querySelector(".glossary-detail img")?.getAttribute("src") || "";
   record(
     steps,
-    saveNotice.length > 0,
-    "El desat mostra feedback visible a l'usuari",
-    { notice: saveNotice },
+    saveNotice.length > 0
+      && context.doc.querySelector(".editor-workspace-glossary") === null
+      && glossaryImageSrc.startsWith("data:image/svg+xml"),
+    "Desar una entrada del glossari mostra feedback, tanca el mode edicio i persisteix imatges",
+    { notice: saveNotice, glossaryImageSrc },
   );
 
   return {

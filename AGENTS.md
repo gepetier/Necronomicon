@@ -42,6 +42,17 @@
 - Treat this file as the canonical restart note when the IDE session is reopened.
 - UI workflow decision: every UI-facing change requires screenshot-based review and iteration until the visual result is satisfactory.
 - Content workflow decision: when a user provides session prose for `Cròniques`, preserve the full incoming text verbatim in the chronicle body and move structure/order into summary, highlights, and glossary linking.
+- Glossary jumps from `Croniques` must reveal the referenced entry by clearing incompatible glossary filters/search while preserving the return path to the source chronicle.
+- Glossary search should be accent-insensitive and also match entry categories, not only names/descriptions/tags.
+- Glossary search rerenders the module live, so it must explicitly preserve input focus and caret position while typing.
+- Character editing uses a single shared save action for the whole character, and editor save actions should close edit mode after persisting changes.
+- Glossary navigation now uses a 3-zone flow: discovery rail (search/category/session), result list, and detail panel, with category and chronicle-session filters acting as the primary navigation controls.
+- Glossary result cards should stay minimal: name only plus inline `Edita` / `Esborra` actions, while `Nova entrada` lives under the glossary search box.
+- Glossary result rows must only expose action icons on the active row, and the list layout should reserve stable space for wrapped titles instead of compressing cards vertically.
+- Glossary session filtering is driven by each entry's `chronicleIds`; checking a session should keep only entries referenced by that session, and glossary jumps from chronicles must clear incompatible session filters too.
+- Glossary entries now expose editable `imageAssets` in the glossary editor as newline-separated paths or URLs, because the detail view already supports multiple images and the app has no upload backend.
+- Glossary detail entries now surface a short "situacio actual" summary plus a manually editable "ultima vegada vist/visitat a" session marker, with `Llocs` using the visit wording and other categories using seen wording.
+- Glossary image insertion now uses the browser's native file picker in the editor, converting selected files into persisted inline data so no manual path entry is required for normal use.
 
 ## Pending
 - Decide whether to keep the generated capture tooling (`capture-harness.html`, `capture-harness.js`, `capture-runner.mjs`) as part of the permanent UI workflow.
@@ -69,6 +80,17 @@
 - 2026-04-24: added glossary image support in the detail panel, imported selected illustrations from the Meledar glossary doc into `resources/glossary/`, linked them to current-campaign glossary entries, and refreshed QA plus capture scenarios around glossary review.
 - 2026-04-24: exported the full set of source glossary illustrations into `Glossary/images/` as optimized PNGs with document-derived names for reuse outside the app runtime.
 - 2026-04-24: mirrored the current web image assets from `resources/imatges/` into `Glossary/images/` so the export folder now includes both document illustrations and in-app portrait assets.
+- 2026-04-25: aligned glossary selection with visible filtered results and added QA coverage for `Croniques -> Glossari -> Croniques` reference navigation.
+- 2026-04-25: made glossary search accent-insensitive and added QA coverage for searching `religio` against `Religió`.
+- 2026-04-25: fixed glossary search focus loss after each keystroke by restoring focus and caret after live rerender.
+- 2026-04-25: consolidated character editing into a single save button and made chronicle/glossary saves close edit mode automatically.
+- 2026-04-25: redesigned glossary navigation around search, category menu and alphabetical submenu, with updated functional QA coverage.
+- 2026-04-25: simplified glossary result cards to title-only actions and moved glossary creation into the search panel.
+- 2026-04-25: corrected glossary result row layout so long titles no longer overlap, widened the central list, and restricted edit/delete icons to the active row after screenshot review.
+- 2026-04-25: replaced the glossary alphabetical submenu with session checkboxes backed by `chronicleIds`, added functional QA for session-only filtering, and verified the new UI in desktop/mobile captures.
+- 2026-04-25: added glossary image editing support through newline-separated image paths/URLs in the glossary editor, with QA coverage ensuring the saved image renders in the detail view.
+- 2026-04-25: added glossary "situacio actual" and "ultima vegada vist/visitat a" metadata to the detail hero, seeded key entries like Acantilado, Uric, Mijo and Reina Elisabeth, and added migration + QA coverage for the new state summary.
+- 2026-04-25: replaced manual glossary image entry with a native file-picker flow plus preview/remove controls, while keeping serialized `imageAssets` under the hood for persistence and QA.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

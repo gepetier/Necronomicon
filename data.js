@@ -1,5 +1,5 @@
 ﻿export const STORAGE_KEY = "campaign-compendium";
-export const DATA_VERSION = 7;
+export const DATA_VERSION = 8;
 
 
 const CHARACTER_PORTRAITS = {
@@ -284,6 +284,9 @@ export const seedData = {
       tags: ["ciutat", "catedral", "ritual"],
       notes:
         "És l'escenari del judici inicial, de la gran cerimònia sacrificial i del desastre que envia els protagonistes al món subterrani.",
+      latestStatus:
+        "La ciutat ha quedat enrere després de la massacre ritual i la caiguda del grup al món subterrani; no hi han tornat a entrar des d'aleshores.",
+      lastSeenChronicleId: "ritual-fossa",
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
       chronicleIds: ["judici-acantilado", "ritual-fossa", "sagnatori"],
@@ -484,6 +487,9 @@ export const seedData = {
       tags: ["reina", "andoras", "cop d'estat"],
       notes:
         "Intenta desposseir el clergat del poder, però sense prova concloent no convenç el poble. Elatoris la salva quan una fera es llança sobre ella.",
+      latestStatus:
+        "Desapareguda després de la massacre de la plaça; el grup no sap on és des que Elatoris la va salvar enmig del caos.",
+      lastSeenChronicleId: "ritual-fossa",
       imageAssets: [GLOSSARY_ILLUSTRATIONS.reinaElisabeth],
       playerNotes: [],
       characterIds: ["elatoris", "ilu", "nelthan"],
@@ -499,6 +505,9 @@ export const seedData = {
       tags: ["mediano", "presó", "supervivència"],
       notes:
         "No salta amb el grup durant el primer pacte, desapareix en la segona línia temporal, reapareix sacrificat a la plaça i finalment només torna com a cos deformat al Sagnatori.",
+      latestStatus:
+        "Mort. L'última informació rellevant del grup és que només el tornen a trobar com un cos deformat dins la pila de cadàvers del Sagnatori.",
+      lastSeenChronicleId: "sagnatori",
       imageAssets: [GLOSSARY_ILLUSTRATIONS.mijo],
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
@@ -514,9 +523,12 @@ export const seedData = {
       tags: ["presoner", "judici", "condemnat"],
       notes:
         "Després del judici reapareix a les gàbies de la festivitat pública, convertit també en part del dispositiu sacrificial.",
+      latestStatus:
+        "Probablement mort durant el ritual o la massacre posterior; l'última vegada que el grup el veu encara és empresonat a les gàbies de la festivitat.",
+      lastSeenChronicleId: "ritual-fossa",
       playerNotes: [],
       characterIds: ["nelthan", "damakos"],
-      chronicleIds: ["judici-acantilado"],
+      chronicleIds: ["judici-acantilado", "ritual-fossa"],
       palette: ["#5a493f", "#b88960"],
     },
     {
@@ -657,6 +669,7 @@ export const seedData = {
     selectedChronicleId: "judici-acantilado",
     chronicleIndexSearch: "",
     glossaryCategory: "Totes",
+    glossaryChronicleIds: [],
     glossarySearch: "",
     selectedGlossaryId: "acantilado-del-silencio",
     editModes: {
@@ -684,5 +697,4 @@ export const seedData = {
     },
   },
 };
-
 

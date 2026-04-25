@@ -145,6 +145,7 @@ function handleClick(event) {
   if (event.target.closest("[data-clear-glossary-filters]")) {
     state.ui.glossarySearch = "";
     state.ui.glossaryCategory = "Totes";
+    state.ui.glossaryChronicleIds = [];
     persistAndRender();
     return;
   }
@@ -152,6 +153,37 @@ function handleClick(event) {
   if (event.target.closest("[data-clear-chronicle-search]")) {
     state.ui.chronicleIndexSearch = "";
     persistAndRender();
+    return;
+  }
+
+  const glossaryEditCard = event.target.closest("[data-edit-glossary-card]");
+  if (glossaryEditCard) {
+    openGlossaryEditor(glossaryEditCard.dataset.editGlossaryCard || "");
+    return;
+  }
+
+  const glossaryDeleteCard = event.target.closest("[data-delete-glossary-card]");
+  if (glossaryDeleteCard) {
+    deleteGlossaryEntryById(glossaryDeleteCard.dataset.deleteGlossaryCard || "");
+    return;
+  }
+
+  if (event.target.closest("[data-open-glossary-image-picker]")) {
+    const form = event.target.closest('form[data-form="glossary"]');
+    const picker = form?.querySelector("[data-glossary-image-picker]");
+    if (picker instanceof HTMLInputElement) {
+      picker.click();
+    }
+    return;
+  }
+
+  const glossaryRemoveImage = event.target.closest("[data-remove-glossary-image]");
+  if (glossaryRemoveImage) {
+    const glossaryId = glossaryRemoveImage.dataset.glossaryId || "";
+    const imageIndex = Number.parseInt(glossaryRemoveImage.dataset.removeGlossaryImage || "-1", 10);
+    if (glossaryId && Number.isInteger(imageIndex) && imageIndex >= 0) {
+      updateGlossaryDraftImageAssets(glossaryId, (images) => images.filter((_, index) => index !== imageIndex));
+    }
     return;
   }
 
@@ -169,10 +201,16 @@ function handleClick(event) {
   const glossaryJump = event.target.closest("[data-glossary-jump]");
   if (glossaryJump) {
     const glossaryId = glossaryJump.dataset.glossaryJump;
-    if (glossaryId && findGlossaryEntry(glossaryId)) {
+    const glossaryEntry = glossaryId ? findGlossaryEntry(glossaryId) : null;
+    if (glossaryEntry) {
       if (state.ui.currentModule === "chronicles") {
         state.ui.glossaryReturnView = captureCurrentViewState();
         state.ui.glossaryReturnTargetId = glossaryId;
+        if (!doesGlossaryEntryMatchCurrentFilters(glossaryEntry)) {
+          state.ui.glossarySearch = "";
+          state.ui.glossaryCategory = "Totes";
+          state.ui.glossaryChronicleIds = [];
+        }
       } else {
         state.ui.glossaryReturnView = null;
         state.ui.glossaryReturnTargetId = "";
@@ -180,6 +218,7 @@ function handleClick(event) {
       state.ui.currentModule = "glossary";
       state.ui.selectedGlossaryId = glossaryId;
       persistAndRender();
+      revealGlossaryEntry(glossaryId);
     }
     return;
   }
@@ -237,6 +276,11 @@ function handleClick(event) {
 
   if (event.target.closest("[data-delete-glossary]")) {
     deleteGlossaryEntry();
+    return;
+  }
+
+  if (event.target.closest("[data-save-character]")) {
+    saveCharacterEdits();
     return;
   }
 
@@ -417,8 +461,30 @@ function handleInput(event) {
   }
 
   if (event.target?.name === "glossarySearch") {
-    state.ui.glossarySearch = event.target.value.trim();
-    scheduleGlossarySearchRender();
+    const searchInput = event.target instanceof HTMLInputElement ? event.target : null;
+    const selectionStart = searchInput?.selectionStart ?? null;
+    const selectionEnd = searchInput?.selectionEnd ?? null;
+
+    state.ui.glossarySearch = searchInput?.value || "";
+    scheduleGlossarySearchRender(selectionStart, selectionEnd);
+    return;
+  }
+
+  if (event.target instanceof HTMLInputElement && event.target.dataset.glossarySession) {
+    const chronicleId = event.target.dataset.glossarySession;
+    const activeChronicleIds = new Set(state.ui.glossaryChronicleIds || []);
+    if (event.target.checked) {
+      activeChronicleIds.add(chronicleId);
+    } else {
+      activeChronicleIds.delete(chronicleId);
+    }
+    state.ui.glossaryChronicleIds = [...activeChronicleIds];
+    persistAndRender();
+    return;
+  }
+
+  if (event.target instanceof HTMLInputElement && event.target.dataset.glossaryImagePicker !== undefined) {
+    void handleGlossaryImageSelection(event.target);
     return;
   }
 
@@ -460,14 +526,12 @@ function handleSubmit(event) {
   const formData = new FormData(form);
 
   if (form.dataset.form === "character-overview") {
-    clearCharacterOverviewDraft(readString(formData, "id"));
-    saveCharacterOverview(formData);
+    updateDraftFromForm(form);
     return;
   }
 
   if (form.dataset.form === "character-tab") {
-    clearCharacterTabDraft(readString(formData, "id"), readString(formData, "tab"));
-    saveCharacterTab(formData);
+    updateDraftFromForm(form);
     return;
   }
 
@@ -554,16 +618,41 @@ function renderChroniclesModule() {
 }
 
 function renderGlossaryModule() {
+  const entries = getFilteredGlossaryEntries();
+  syncGlossarySelection(entries);
+
   renderGlossaryView({
     state,
     rootEl: glossaryModule,
-    getFilteredGlossaryEntries,
+    getFilteredGlossaryEntries: () => entries,
     findGlossaryEntry,
     findCharacter,
     renderPlayerNotesPanel,
     shouldShowGlossaryReturnFab,
     getViewStateLabel,
   });
+}
+
+function restoreGlossarySearchFocus(selectionStart, selectionEnd) {
+  const applyFocus = () => {
+    const searchInput = document.querySelector('input[name="glossarySearch"]');
+    if (!(searchInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    searchInput.focus({ preventScroll: true });
+    if (selectionStart === null || selectionEnd === null) {
+      return;
+    }
+
+    searchInput.setSelectionRange(
+      Math.min(selectionStart, searchInput.value.length),
+      Math.min(selectionEnd, searchInput.value.length),
+    );
+  };
+
+  applyFocus();
+  requestAnimationFrame(applyFocus);
 }
 
 function renderPlayerNotesPanel() {
@@ -651,11 +740,91 @@ function saveCharacterTab(formData) {
   saveCharacterTabEntry(formData, { getSelectedCharacter, showSaveNotice });
 }
 
+function saveCharacterEdits() {
+  const character = getSelectedCharacter();
+  if (!character) {
+    return;
+  }
+
+  applyCharacterOverviewDraft(character);
+  applyCharacterTabDrafts(character);
+  clearCharacterDrafts(character.id);
+  state.ui.editModes.characters = false;
+  showSaveNotice("Personatge desat");
+}
+
+function applyCharacterOverviewDraft(character) {
+  const draft = state.ui.drafts.characters.overview[character.id] || {};
+  const formData = new FormData();
+  formData.set("id", character.id);
+  formData.set("name", draft.name !== undefined ? String(draft.name) : character.name || "");
+  formData.set("title", draft.title !== undefined ? String(draft.title) : character.title || "");
+  formData.set("lineage", draft.lineage !== undefined ? String(draft.lineage) : character.lineage || "");
+  formData.set("className", draft.className !== undefined ? String(draft.className) : character.className || "");
+  formData.set("level", draft.level !== undefined ? String(draft.level) : String(character.level || 1));
+  formData.set("sigil", draft.sigil !== undefined ? String(draft.sigil) : character.sigil || "");
+  formData.set("summary", draft.summary !== undefined ? String(draft.summary) : character.summary || "");
+  formData.set("quickNotes", draft.quickNotes !== undefined ? String(draft.quickNotes) : character.quickNotes || "");
+
+  saveCharacterOverviewEntry(formData, {
+    getSelectedCharacter: () => character,
+    showSaveNotice: () => {},
+  });
+}
+
+function applyCharacterTabDrafts(character) {
+  const tabDrafts = state.ui.drafts.characters.tabs[character.id] || {};
+
+  ["lore", "sheet", "inventory", "history"].forEach((tab) => {
+    const draft = tabDrafts[tab] || {};
+    const formData = new FormData();
+    formData.set("id", character.id);
+    formData.set("tab", tab);
+
+    if (tab === "lore") {
+      formData.set("origin", draft.origin !== undefined ? String(draft.origin) : character.lore.origin || "");
+      formData.set("bonds", draft.bonds !== undefined ? String(draft.bonds) : character.lore.bonds || "");
+      formData.set("secrets", draft.secrets !== undefined ? String(draft.secrets) : character.lore.secrets || "");
+      formData.set("goals", draft.goals !== undefined ? String(draft.goals) : character.lore.goals || "");
+      formData.set("wounds", draft.wounds !== undefined ? String(draft.wounds) : character.lore.wounds || "");
+    }
+
+    if (tab === "sheet") {
+      formData.set("ac", draft.ac !== undefined ? String(draft.ac) : character.sheet.ac || "");
+      formData.set("hp", draft.hp !== undefined ? String(draft.hp) : character.sheet.hp || "");
+      formData.set("proficiency", draft.proficiency !== undefined ? String(draft.proficiency) : character.sheet.proficiency || "");
+      formData.set("abilities", draft.abilities !== undefined ? String(draft.abilities) : character.sheet.abilities || "");
+      formData.set("features", draft.features !== undefined ? String(draft.features) : character.sheet.features || "");
+    }
+
+    if (tab === "inventory") {
+      formData.set("items", draft.items !== undefined ? String(draft.items) : character.inventory.items || "");
+      formData.set("currency", draft.currency !== undefined ? String(draft.currency) : character.inventory.currency || "");
+      formData.set("artifacts", draft.artifacts !== undefined ? String(draft.artifacts) : character.inventory.artifacts || "");
+      formData.set("notes", draft.notes !== undefined ? String(draft.notes) : character.inventory.notes || "");
+    }
+
+    if (tab === "history") {
+      formData.set("history", draft.history !== undefined ? String(draft.history) : character.history || "");
+    }
+
+    saveCharacterTabEntry(formData, {
+      getSelectedCharacter: () => character,
+      showSaveNotice: () => {},
+    });
+  });
+}
+
 function saveChronicle(formData) {
-  saveChronicleEntry(formData, { getSelectedChronicle, showSaveNotice });
+  saveChronicleEntry(formData, {
+    getSelectedChronicle,
+    showSaveNotice: () => {},
+  });
   if (state.ui.newChronicleId === state.ui.selectedChronicleId) {
     state.ui.newChronicleId = "";
   }
+  state.ui.editModes.chronicles = false;
+  showSaveNotice("Cronica desada");
 }
 
 function switchChronicleSelection(nextId, direction = "next") {
@@ -777,6 +946,7 @@ function deletePlayerNote(noteId) {
 
 function saveGlossary(formData) {
   saveGlossaryEntry(formData, { findGlossaryEntry });
+  state.ui.editModes.glossary = false;
   showSaveNotice("Entrada desada");
 }
 
@@ -808,11 +978,12 @@ function persistStateImmediately() {
   storagePersistState(state);
 }
 
-function scheduleGlossarySearchRender(delay = 120) {
+function scheduleGlossarySearchRender(selectionStart = null, selectionEnd = null, delay = 120) {
   window.clearTimeout(glossarySearchTimer);
   glossarySearchTimer = window.setTimeout(() => {
     glossarySearchTimer = null;
     renderGlossaryModule();
+    restoreGlossarySearchFocus(selectionStart, selectionEnd);
     schedulePersistState();
   }, delay);
 }
@@ -901,6 +1072,25 @@ function deleteGlossaryEntry() {
   persistAndRender();
 }
 
+function openGlossaryEditor(glossaryId) {
+  if (!glossaryId || !findGlossaryEntry(glossaryId)) {
+    return;
+  }
+
+  state.ui.selectedGlossaryId = glossaryId;
+  state.ui.editModes.glossary = true;
+  persistAndRender();
+}
+
+function deleteGlossaryEntryById(glossaryId) {
+  if (!glossaryId || !findGlossaryEntry(glossaryId)) {
+    return;
+  }
+
+  state.ui.selectedGlossaryId = glossaryId;
+  deleteGlossaryEntry();
+}
+
 function toggleModuleEdit(module) {
   if (!module || !Object.prototype.hasOwnProperty.call(state.ui.editModes, module)) {
     return;
@@ -945,6 +1135,12 @@ function ensureUiStateShape() {
     ...(state.ui.lastSaved || {}),
   };
 
+  state.ui.glossaryCategory = typeof state.ui.glossaryCategory === "string" ? state.ui.glossaryCategory : "Totes";
+  const validChronicleIds = new Set(state.chronicles.map((chronicle) => chronicle.id));
+  state.ui.glossaryChronicleIds = Array.isArray(state.ui.glossaryChronicleIds)
+    ? state.ui.glossaryChronicleIds.map(String).filter((id) => validChronicleIds.has(id))
+    : [];
+  state.ui.glossarySearch = typeof state.ui.glossarySearch === "string" ? state.ui.glossarySearch : "";
   state.ui.newChronicleId = typeof state.ui.newChronicleId === "string" ? state.ui.newChronicleId : "";
   state.ui.chronicleIndexSearch = typeof state.ui.chronicleIndexSearch === "string" ? state.ui.chronicleIndexSearch : "";
 }
@@ -1038,6 +1234,15 @@ function clearCharacterOverviewDraft(characterId) {
   }
 }
 
+function clearCharacterDrafts(characterId) {
+  if (!characterId) {
+    return;
+  }
+
+  clearCharacterOverviewDraft(characterId);
+  delete state.ui.drafts.characters.tabs[characterId];
+}
+
 function clearCharacterTabDraft(characterId, tab) {
   if (!characterId || !tab) {
     return;
@@ -1064,6 +1269,69 @@ function clearGlossaryDraft(glossaryId) {
   if (glossaryId) {
     delete state.ui.drafts.glossary[glossaryId];
   }
+}
+
+function updateGlossaryDraftImageAssets(glossaryId, updater) {
+  const entry = findGlossaryEntry(glossaryId);
+  if (!entry || typeof updater !== "function") {
+    return;
+  }
+
+  const draft = state.ui.drafts.glossary[glossaryId] || {};
+  const currentImages = normalizeGlossaryDraftImageAssets(draft.imageAssets, entry.imageAssets || []);
+  const nextImages = updater([...currentImages]).map((image) => String(image || "").trim()).filter(Boolean);
+
+  state.ui.drafts.glossary[glossaryId] = {
+    ...draft,
+    imageAssets: nextImages.join("\n"),
+  };
+
+  schedulePersistState();
+  renderGlossaryModule();
+}
+
+async function handleGlossaryImageSelection(input) {
+  const form = input.closest('form[data-form="glossary"]');
+  const glossaryId = form?.querySelector('input[name="id"]')?.value || input.dataset.glossaryId || "";
+  const files = Array.from(input.files || []).filter((file) => file instanceof File);
+
+  if (!glossaryId || !files.length) {
+    input.value = "";
+    return;
+  }
+
+  const imageDataUrls = (await Promise.all(files.map(readFileAsDataUrl))).filter(Boolean);
+  if (imageDataUrls.length) {
+    updateGlossaryDraftImageAssets(glossaryId, (images) => [...images, ...imageDataUrls]);
+  }
+
+  input.value = "";
+}
+
+function normalizeGlossaryDraftImageAssets(draftValue, fallback) {
+  if (Array.isArray(draftValue)) {
+    return draftValue.map((value) => String(value || "").trim()).filter(Boolean);
+  }
+
+  if (typeof draftValue === "string") {
+    return draftValue
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
+  return Array.isArray(fallback)
+    ? fallback.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(typeof reader.result === "string" ? reader.result : ""));
+    reader.addEventListener("error", () => resolve(""));
+    reader.readAsDataURL(file);
+  });
 }
 
 function hasModuleDrafts(module) {
@@ -1213,15 +1481,47 @@ function getAdjacentChronicleId(direction) {
 }
 
 function getFilteredGlossaryEntries() {
-  const search = state.ui.glossarySearch.toLowerCase();
+  const search = normalizeGlossarySearchValue(state.ui.glossarySearch);
   return state.glossary.filter((entry) => {
-    const matchesCategory = state.ui.glossaryCategory === "Totes" || entry.category === state.ui.glossaryCategory;
-    const matchesSearch = !search
-      || entry.name.toLowerCase().includes(search)
-      || entry.description.toLowerCase().includes(search)
-      || entry.tags.some((tag) => tag.toLowerCase().includes(search));
-    return matchesCategory && matchesSearch;
+    return doesGlossaryEntryMatchCurrentFilters(entry, search);
   });
+}
+
+function doesGlossaryEntryMatchCurrentFilters(entry, normalizedSearch = normalizeGlossarySearchValue(state.ui.glossarySearch)) {
+  if (!entry) {
+    return false;
+  }
+
+  const matchesCategory = state.ui.glossaryCategory === "Totes" || entry.category === state.ui.glossaryCategory;
+  const activeChronicleIds = state.ui.glossaryChronicleIds || [];
+  const matchesChronicle = !activeChronicleIds.length
+    || activeChronicleIds.some((chronicleId) => (entry.chronicleIds || []).includes(chronicleId));
+  const matchesSearch = !normalizedSearch
+    || normalizeGlossarySearchValue(entry.name).includes(normalizedSearch)
+    || normalizeGlossarySearchValue(entry.category).includes(normalizedSearch)
+    || normalizeGlossarySearchValue(entry.description).includes(normalizedSearch)
+    || (entry.tags || []).some((tag) => normalizeGlossarySearchValue(tag).includes(normalizedSearch));
+
+  return matchesCategory && matchesChronicle && matchesSearch;
+}
+
+function normalizeGlossarySearchValue(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replaceAll(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
+}
+
+function syncGlossarySelection(entries = getFilteredGlossaryEntries()) {
+  if (!entries.length) {
+    return;
+  }
+
+  const hasVisibleSelection = entries.some((entry) => entry.id === state.ui.selectedGlossaryId);
+  if (!hasVisibleSelection) {
+    state.ui.selectedGlossaryId = entries[0].id;
+  }
 }
 
 function animateBook(direction = "next") {
@@ -1244,6 +1544,28 @@ function findCharacter(id) {
 
 function findGlossaryEntry(id) {
   return state.glossary.find((entry) => entry.id === id);
+}
+
+function revealGlossaryEntry(glossaryId) {
+  if (!glossaryId) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    const escapedId = CSS.escape(glossaryId);
+    const detail = document.querySelector(`[data-glossary-detail="${escapedId}"]`);
+    const card = document.querySelector(`[data-glossary-id="${escapedId}"]`);
+    const target = detail instanceof HTMLElement ? detail : card;
+
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    target.scrollIntoView({ block: "start", inline: "nearest" });
+    if (typeof target.focus === "function") {
+      target.focus({ preventScroll: true });
+    }
+  });
 }
 
 function renderReferenceSuggestions(textarea) {

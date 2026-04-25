@@ -5,7 +5,6 @@ import {
   paletteStyle,
   readString,
   renderModuleActionIcon,
-  renderEditorActions,
   renderEditorCard,
   renderEditorWorkspaceHeader,
   renderInputField,
@@ -119,6 +118,9 @@ export function renderCharactersModule({ state, rootEl, getSelectedCharacter }) 
           </div>
           ${state.ui.editModes.characters ? renderCharacterEditor(character, state.ui.selectedCharacterTab, state) : ""}
         </div>
+      </div>
+      <div class="editor-actions">
+        <button type="button" data-save-character>Desa personatge</button>
       </div>
     </section>
   `;
@@ -330,7 +332,6 @@ function renderCharacterEditor(character, tab, state) {
                   <textarea name="quickNotes" rows="4">${escapeHtml(readDraftValue(overviewDraft.quickNotes, character.quickNotes))}</textarea>
                 </label>
               </div>
-              ${renderEditorActions("Desa capçalera")}
             </form>
           `,
         )}
@@ -344,7 +345,6 @@ function renderCharacterEditor(character, tab, state) {
               <div class="editor-grid">
                 ${renderCharacterTabEditor(character, tab, tabDraft)}
               </div>
-              ${renderEditorActions(`Desa ${characterTabLabel(tab).toLowerCase()}`)}
             </form>
           `,
         )}

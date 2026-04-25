@@ -61,6 +61,9 @@ export function migrateStoredState(payload) {
   if (version < 7) {
     nextState = migratePortadoresDelVeloDescription(nextState);
   }
+  if (version < 8) {
+    nextState = migrateGlossaryLatestState(nextState);
+  }
 
   return sanitizeState(nextState);
 }
@@ -250,6 +253,42 @@ function migratePortadoresDelVeloDescription(candidate) {
       return String(entry.description || "").trim() === legacyDescription
         ? { ...entry, description: seedDescription }
         : entry;
+    })
+    : next.glossary;
+
+  return next;
+}
+
+function migrateGlossaryLatestState(candidate) {
+  const next = structuredClone(candidate);
+
+  next.glossary = Array.isArray(next.glossary)
+    ? next.glossary.map((entry) => {
+      const seedEntry = seedData.glossary.find((item) => item.id === entry?.id);
+      if (!seedEntry) {
+        return entry;
+      }
+
+      const nextEntry = { ...entry };
+
+      if (!String(nextEntry.latestStatus || "").trim() && String(seedEntry.latestStatus || "").trim()) {
+        nextEntry.latestStatus = seedEntry.latestStatus;
+      }
+
+      if (!String(nextEntry.lastSeenChronicleId || "").trim() && String(seedEntry.lastSeenChronicleId || "").trim()) {
+        nextEntry.lastSeenChronicleId = seedEntry.lastSeenChronicleId;
+      }
+
+      if (
+        nextEntry.id === "uric"
+        && Array.isArray(nextEntry.chronicleIds)
+        && nextEntry.chronicleIds.length === 1
+        && nextEntry.chronicleIds[0] === "judici-acantilado"
+      ) {
+        nextEntry.chronicleIds = structuredClone(seedEntry.chronicleIds || nextEntry.chronicleIds);
+      }
+
+      return nextEntry;
     })
     : next.glossary;
 
