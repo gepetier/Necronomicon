@@ -367,7 +367,7 @@ function renderGlossaryLatestPanel(entry, state) {
   return `
     <aside class="glossary-latest-panel">
       <p class="eyebrow">Situacio actual</p>
-      <p class="glossary-latest-copy">${escapeHtml(latestStatus)}</p>
+      <div class="glossary-latest-copy rich-text">${renderRichText(latestStatus)}</div>
       <p class="glossary-latest-chronicle">
         <strong>${escapeHtml(lastSeenLabel)}:</strong> ${escapeHtml(lastSeenValue)}
       </p>
@@ -433,11 +433,15 @@ function renderGlossaryEditor(entry, state) {
                 ${renderRichTextareaField("description", "Descripcio", readDraftValue(draft.description, entry?.description || ""), 6)}
                 ${renderInputField("tags", "Etiquetes (separades per comes)", readDraftValue(draft.tags, (entry?.tags || []).join(", ")))}
                 ${renderRichTextareaField("notes", "Notes", readDraftValue(draft.notes, entry?.notes || ""), 6)}
-                <label class="field span-2">
-                  <span>Ultima informacio rellevant</span>
-                  <textarea name="latestStatus" rows="3">${escapeHtml(readDraftValue(draft.latestStatus, entry?.latestStatus || ""))}</textarea>
-                  <small class="field-help">Resumeix l'estat actual de l'element: mort, desaparegut, controlat, visitat, perdut, etc.</small>
-                </label>
+                ${renderRichTextareaField(
+                  "latestStatus",
+                  "Ultima informacio rellevant",
+                  readDraftValue(draft.latestStatus, entry?.latestStatus || ""),
+                  4,
+                  {
+                    help: "Resumeix l'estat actual de l'element: mort, desaparegut, controlat, visitat, perdut, etc.",
+                  },
+                )}
                 <label class="field">
                   <span>Ultima sessio vista o visitada</span>
                   <select name="lastSeenChronicleId">

@@ -3,18 +3,26 @@ import {
   escapeAttribute,
   escapeHtml,
   paletteStyle,
+  plainTextFromRichText,
   readString,
   renderModuleActionIcon,
   renderEditorCard,
   renderEditorWorkspaceHeader,
   renderInputField,
+  renderRichText,
+  renderRichTextareaField,
   renderStatusPills,
   renderTextCard,
-  renderTextareaField,
   shortText,
 } from "./utils.js";
 
-export function renderCharactersModule({ state, rootEl, getSelectedCharacter }) {
+export function renderCharactersModule({
+  state,
+  rootEl,
+  getSelectedCharacter,
+  renderPlayerNotesPanel,
+  renderPlayerNotesFab,
+}) {
   if (state.ui.showCharacterGrid) {
     rootEl.innerHTML = `
       <section class="module-surface module-surface-characters">
@@ -42,12 +50,12 @@ export function renderCharactersModule({ state, rootEl, getSelectedCharacter }) 
   const character = getSelectedCharacter();
   if (!character) {
     state.ui.showCharacterGrid = true;
-    renderCharactersModule({ state, rootEl, getSelectedCharacter });
+    renderCharactersModule({ state, rootEl, getSelectedCharacter, renderPlayerNotesPanel, renderPlayerNotesFab });
     return;
   }
 
   rootEl.innerHTML = `
-    <section class="detail-card">
+    <section class="detail-card ${state.ui.notesPanelOpen ? "notes-open" : ""}">
       <div class="detail-header-actions">
         <button id="backToGridButtonInline" type="button" class="secondary" data-back-to-grid>
           Torna a les cartes
@@ -77,7 +85,7 @@ export function renderCharactersModule({ state, rootEl, getSelectedCharacter }) 
           <div class="parchment-block">
             <p class="eyebrow">Resum</p>
             <h3>${escapeHtml(character.name)}</h3>
-            <p>${escapeHtml(character.summary)}</p>
+            <div class="rich-text">${renderRichText(character.summary)}</div>
             <div class="card-tags">
               <span class="badge">Nivell ${escapeHtml(String(character.level))}</span>
               <span class="badge">${escapeHtml(character.lineage)}</span>
@@ -86,7 +94,7 @@ export function renderCharactersModule({ state, rootEl, getSelectedCharacter }) 
           </div>
           <div class="section-card">
             <p class="eyebrow">Capacitats ràpides</p>
-            <p>${escapeHtml(character.quickNotes)}</p>
+            <div class="rich-text">${renderRichText(character.quickNotes)}</div>
           </div>
           <div class="tab-strip" role="tablist" aria-label="Seccions del personatge">
             ${["lore", "sheet", "inventory", "history"]
@@ -119,6 +127,8 @@ export function renderCharactersModule({ state, rootEl, getSelectedCharacter }) 
           ${state.ui.editModes.characters ? renderCharacterEditor(character, state.ui.selectedCharacterTab, state) : ""}
         </div>
       </div>
+      ${renderPlayerNotesPanel()}
+      ${renderPlayerNotesFab()}
       <div class="editor-actions">
         <button type="button" data-save-character>Desa personatge</button>
       </div>
@@ -213,10 +223,10 @@ function renderCharacterCard(character, state) {
         <p class="eyebrow">${escapeHtml(character.lineage)} · ${escapeHtml(character.className)}</p>
         <h3>${escapeHtml(character.name)}</h3>
         <p class="character-card-title">${escapeHtml(character.title)}</p>
-        <p class="character-card-summary">${escapeHtml(shortText(character.summary, 124))}</p>
+        <p class="character-card-summary">${escapeHtml(shortText(plainTextFromRichText(character.summary), 124))}</p>
         <div class="card-tags">
           <span class="badge">Nivell ${escapeHtml(String(character.level))}</span>
-          <span class="badge">${escapeHtml(shortText(character.quickNotes, 42))}</span>
+          <span class="badge">${escapeHtml(shortText(plainTextFromRichText(character.quickNotes), 42))}</span>
         </div>
       </div>
     </article>
@@ -226,11 +236,11 @@ function renderCharacterCard(character, state) {
 function renderCharacterTabContent(character, tab) {
   if (tab === "lore") {
     return `
-      ${renderTextCard("Origen", character.lore.origin)}
-      ${renderTextCard("Vincles", character.lore.bonds)}
-      ${renderTextCard("Secrets", character.lore.secrets)}
-      ${renderTextCard("Objectius", character.lore.goals)}
-      ${renderTextCard("Ferides", character.lore.wounds)}
+      ${renderTextCard("Origen", character.lore.origin, { rich: true })}
+      ${renderTextCard("Vincles", character.lore.bonds, { rich: true })}
+      ${renderTextCard("Secrets", character.lore.secrets, { rich: true })}
+      ${renderTextCard("Objectius", character.lore.goals, { rich: true })}
+      ${renderTextCard("Ferides", character.lore.wounds, { rich: true })}
     `;
   }
 
@@ -243,25 +253,25 @@ function renderCharacterTabContent(character, tab) {
           <div class="stat-chip"><span>HP</span><strong>${escapeHtml(character.sheet.hp)}</strong></div>
           <div class="stat-chip"><span>Proficiència</span><strong>${escapeHtml(character.sheet.proficiency)}</strong></div>
         </div>
-        <p><strong>Atributs:</strong> ${escapeHtml(character.sheet.abilities)}</p>
-        <p><strong>Trets:</strong> ${escapeHtml(character.sheet.features)}</p>
+        <div class="rich-text"><p><strong>Atributs:</strong></p>${renderRichText(character.sheet.abilities)}</div>
+        <div class="rich-text"><p><strong>Trets:</strong></p>${renderRichText(character.sheet.features)}</div>
       </article>
     `;
   }
 
   if (tab === "inventory") {
     return `
-      ${renderTextCard("Objectes", character.inventory.items)}
+      ${renderTextCard("Objectes", character.inventory.items, { rich: true })}
       ${renderTextCard("Moneda", character.inventory.currency)}
-      ${renderTextCard("Artefactes", character.inventory.artifacts)}
-      ${renderTextCard("Notes", character.inventory.notes)}
+      ${renderTextCard("Artefactes", character.inventory.artifacts, { rich: true })}
+      ${renderTextCard("Notes", character.inventory.notes, { rich: true })}
     `;
   }
 
   return `
     <article class="section-card">
       <p class="eyebrow">Història personal</p>
-      <p>${escapeHtml(character.history)}</p>
+      <div class="rich-text">${renderRichText(character.history)}</div>
     </article>
   `;
 }
@@ -323,14 +333,8 @@ function renderCharacterEditor(character, tab, state) {
                   <span>Sigil</span>
                   <input name="sigil" maxlength="2" value="${escapeAttribute(readDraftValue(overviewDraft.sigil, character.sigil))}" />
                 </label>
-                <label class="field span-2">
-                  <span>Resum curt</span>
-                  <textarea name="summary" rows="4">${escapeHtml(readDraftValue(overviewDraft.summary, character.summary))}</textarea>
-                </label>
-                <label class="field span-2">
-                  <span>Capacitats ràpides</span>
-                  <textarea name="quickNotes" rows="4">${escapeHtml(readDraftValue(overviewDraft.quickNotes, character.quickNotes))}</textarea>
-                </label>
+                ${renderRichTextareaField("summary", "Resum curt", readDraftValue(overviewDraft.summary, character.summary), 4)}
+                ${renderRichTextareaField("quickNotes", "Capacitats ràpides", readDraftValue(overviewDraft.quickNotes, character.quickNotes), 4)}
               </div>
             </form>
           `,
@@ -356,11 +360,11 @@ function renderCharacterEditor(character, tab, state) {
 function renderCharacterTabEditor(character, tab, draft) {
   if (tab === "lore") {
     return `
-      ${renderTextareaField("origin", "Origen", readDraftValue(draft.origin, character.lore.origin))}
-      ${renderTextareaField("bonds", "Vincles", readDraftValue(draft.bonds, character.lore.bonds))}
-      ${renderTextareaField("secrets", "Secrets", readDraftValue(draft.secrets, character.lore.secrets))}
-      ${renderTextareaField("goals", "Objectius", readDraftValue(draft.goals, character.lore.goals))}
-      ${renderTextareaField("wounds", "Ferides", readDraftValue(draft.wounds, character.lore.wounds))}
+      ${renderRichTextareaField("origin", "Origen", readDraftValue(draft.origin, character.lore.origin), 4)}
+      ${renderRichTextareaField("bonds", "Vincles", readDraftValue(draft.bonds, character.lore.bonds), 4)}
+      ${renderRichTextareaField("secrets", "Secrets", readDraftValue(draft.secrets, character.lore.secrets), 4)}
+      ${renderRichTextareaField("goals", "Objectius", readDraftValue(draft.goals, character.lore.goals), 4)}
+      ${renderRichTextareaField("wounds", "Ferides", readDraftValue(draft.wounds, character.lore.wounds), 4)}
     `;
   }
 
@@ -369,21 +373,21 @@ function renderCharacterTabEditor(character, tab, draft) {
       ${renderInputField("ac", "CA", readDraftValue(draft.ac, character.sheet.ac))}
       ${renderInputField("hp", "HP", readDraftValue(draft.hp, character.sheet.hp))}
       ${renderInputField("proficiency", "Proficiència", readDraftValue(draft.proficiency, character.sheet.proficiency))}
-      ${renderTextareaField("abilities", "Atributs", readDraftValue(draft.abilities, character.sheet.abilities))}
-      ${renderTextareaField("features", "Capacitats i trets", readDraftValue(draft.features, character.sheet.features))}
+      ${renderRichTextareaField("abilities", "Atributs", readDraftValue(draft.abilities, character.sheet.abilities), 4)}
+      ${renderRichTextareaField("features", "Capacitats i trets", readDraftValue(draft.features, character.sheet.features), 4)}
     `;
   }
 
   if (tab === "inventory") {
     return `
-      ${renderTextareaField("items", "Objectes", readDraftValue(draft.items, character.inventory.items))}
+      ${renderRichTextareaField("items", "Objectes", readDraftValue(draft.items, character.inventory.items), 4)}
       ${renderInputField("currency", "Moneda", readDraftValue(draft.currency, character.inventory.currency))}
-      ${renderTextareaField("artifacts", "Artefactes", readDraftValue(draft.artifacts, character.inventory.artifacts))}
-      ${renderTextareaField("notes", "Notes", readDraftValue(draft.notes, character.inventory.notes))}
+      ${renderRichTextareaField("artifacts", "Artefactes", readDraftValue(draft.artifacts, character.inventory.artifacts), 4)}
+      ${renderRichTextareaField("notes", "Notes", readDraftValue(draft.notes, character.inventory.notes), 4)}
     `;
   }
 
-  return renderTextareaField("history", "Història personal", readDraftValue(draft.history, character.history));
+  return renderRichTextareaField("history", "Història personal", readDraftValue(draft.history, character.history), 6);
 }
 
 function readDraftValue(draftValue, fallback) {

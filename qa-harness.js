@@ -144,6 +144,37 @@ async function runFunctionalSuite(context) {
     { expected: firstName, actual: detailName },
   );
 
+  context.click("[data-toggle-notes]");
+  await delay(80);
+  const characterNotesTitle = context.doc.querySelector(".notes-panel h3")?.textContent?.trim() || "";
+  record(
+    steps,
+    context.doc.querySelector(".notes-panel.open") !== null && characterNotesTitle === firstName,
+    "La fitxa de personatge pot obrir el panell de notes de jugadors",
+    { characterNotesTitle },
+  );
+
+  context.type('.notes-panel-form input[name="author"]', "QA");
+  context.type('.notes-panel-form textarea[name="text"]', "Nota de personatge");
+  await delay(60);
+  context.submit('form[data-form="player-note"]');
+  await delay(80);
+  const characterNoteText = context.doc.querySelector(".player-note-card p")?.textContent?.trim() || "";
+  record(
+    steps,
+    characterNoteText === "Nota de personatge",
+    "Les notes de jugador es poden desar des de la fitxa de personatge",
+    { characterNoteText },
+  );
+
+  context.click("[data-close-notes]");
+  await delay(80);
+  record(
+    steps,
+    context.doc.querySelector(".notes-panel.open") === null,
+    "El panell de notes del personatge es pot tancar",
+  );
+
   context.click('[data-module-link="chronicles"]');
   await delay(80);
   const chapterEntries = context.qsa(".chapter-entry");
@@ -373,6 +404,19 @@ async function runEditSuite(context) {
     context.doc.querySelector(".editor-workspace-character") !== null,
     "L'editor de personatges s'obre des del modul",
   );
+  context.type('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
+  await delay(80);
+  context.selectText('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
+  await delay(80);
+  const characterEditorSuggestions = context.qsa(".reference-suggestions .suggestion-chip")
+    .map((element) => element.textContent?.trim() || "");
+  record(
+    steps,
+    characterEditorSuggestions.some((label) => label.includes("Catedral del Silencio"))
+      && characterEditorSuggestions.some((label) => label.includes("Multimedia")),
+    "L'editor de personatges mostra referències temàtiques i l'opció de multimedia quan hi ha text seleccionat",
+    { characterEditorSuggestions },
+  );
 
   context.type('form[data-form="character-overview"] input[name="title"]', "Titol QA");
   await delay(60);
@@ -433,6 +477,7 @@ async function runEditSuite(context) {
   record(
     steps,
     glossaryReferenceSuggestions.some((label) => label.includes("Catedral del Silencio"))
+      && glossaryReferenceSuggestions.some((label) => label.includes("Multimedia"))
       && referencedChronicleContent === "[[catedral-del-silencio|Catedral]]",
     "La referència de glossari conserva el text seleccionat i només canvia el destí de la referència",
     { glossaryReferenceSuggestions, referencedChronicleContent },
@@ -545,6 +590,19 @@ async function runEditSuite(context) {
     context.doc.querySelector(".editor-workspace-glossary") !== null
       && context.doc.querySelector('input[data-glossary-image-picker]') !== null,
     "L'editor de glossari s'obre des de la targeta de resultat",
+  );
+  context.type('form[data-form="glossary"] textarea[name="description"]', "Catedral");
+  await delay(80);
+  context.selectText('form[data-form="glossary"] textarea[name="description"]', "Catedral");
+  await delay(80);
+  const glossaryEditorSuggestions = context.qsa(".reference-suggestions .suggestion-chip")
+    .map((element) => element.textContent?.trim() || "");
+  record(
+    steps,
+    glossaryEditorSuggestions.some((label) => label.includes("Catedral del Silencio"))
+      && glossaryEditorSuggestions.some((label) => label.includes("Multimedia")),
+    "L'editor de glossari mostra referències temàtiques i l'opció de multimedia quan hi ha text seleccionat",
+    { glossaryEditorSuggestions },
   );
 
   context.type('form[data-form="glossary"] input[name="name"]', "Entrada QA");

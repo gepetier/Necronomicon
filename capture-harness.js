@@ -59,6 +59,20 @@ function createContext(currentFrame) {
       target.dispatchEvent(new win.Event("change", { bubbles: true }));
       await delay(180);
     },
+    async selectText(selector, value) {
+      const target = doc.querySelector(selector);
+      if (!(target instanceof win.HTMLInputElement) && !(target instanceof win.HTMLTextAreaElement)) {
+        throw new Error(`Camp no trobat per seleccionar text: ${selector}`);
+      }
+      const start = target.value.indexOf(value);
+      if (start === -1) {
+        throw new Error(`Text no trobat al camp ${selector}: ${value}`);
+      }
+      target.focus();
+      target.setSelectionRange(start, start + value.length);
+      target.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+      await delay(180);
+    },
     query(selector) {
       return doc.querySelector(selector);
     },
@@ -89,9 +103,19 @@ async function runScenario(context, scenarioName) {
       await openCharacter(context);
       await context.click('[data-character-tab="history"]');
     },
+    "character-notes": async () => {
+      await openCharacter(context);
+      await context.click("[data-toggle-notes]");
+    },
     "character-editor": async () => {
       await openCharacter(context);
       await context.click('[data-toggle-edit="characters"]');
+    },
+    "character-editor-references": async () => {
+      await openCharacter(context);
+      await context.click('[data-toggle-edit="characters"]');
+      await context.type('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
+      await context.selectText('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
     },
     "chronicles-read": async () => {
       await context.click('[data-module-link="chronicles"]');
@@ -103,7 +127,8 @@ async function runScenario(context, scenarioName) {
     "chronicles-edit-references": async () => {
       await context.click('[data-module-link="chronicles"]');
       await context.click('[data-toggle-edit="chronicles"]');
-      await context.type('form[data-form="chronicle"] textarea[name="content"]', "Ilu");
+      await context.type('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
+      await context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
     },
     "chronicles-search-empty": async () => {
       await context.click('[data-module-link="chronicles"]');
@@ -128,7 +153,15 @@ async function runScenario(context, scenarioName) {
       await context.click('[data-module-link="glossary"]');
       await context.click('[data-glossary-filter="Faccions"]');
       await context.click('[data-glossary-id="portadores-del-velo"]');
-      await context.click('[data-toggle-edit="glossary"]');
+      await context.click("[data-edit-glossary-card]");
+    },
+    "glossary-edit-references": async () => {
+      await context.click('[data-module-link="glossary"]');
+      await context.click('[data-glossary-filter="Faccions"]');
+      await context.click('[data-glossary-id="portadores-del-velo"]');
+      await context.click("[data-edit-glossary-card]");
+      await context.type('form[data-form="glossary"] textarea[name="description"]', "Catedral");
+      await context.selectText('form[data-form="glossary"] textarea[name="description"]', "Catedral");
     },
     "glossary-filter-empty": async () => {
       await context.click('[data-module-link="glossary"]');

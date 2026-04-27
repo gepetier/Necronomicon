@@ -96,6 +96,7 @@
 - 2026-04-27: extended chronicle inline references so editor suggestions include main characters as well as glossary entries, preserving the selected label text while pointing to either target type, with edit QA and capture review updated accordingly.
 - 2026-04-27: expanded final-pass QA coverage to include image lightbox open/close behavior, protection against accidental detail opens from image clicks, and saved chronicle jumps into main character sheets.
 - 2026-04-27: added category-based color coding shared between chronicle glossary references, reference suggestions, and glossary category filters, with visual review in desktop and mobile captures.
+- 2026-04-27: enabled player notes on character detail views as well, with functional QA covering open/save/close and dedicated desktop/mobile note captures.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

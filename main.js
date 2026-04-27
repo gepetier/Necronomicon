@@ -48,8 +48,10 @@ const glossaryModule = document.querySelector("#glossaryModule");
 const sidebarContextPanel = document.querySelector("#sidebarContextPanel");
 const imageLightbox = document.querySelector("#imageLightbox");
 const imageLightboxMedia = document.querySelector("#imageLightboxMedia");
+const richMediaPicker = document.querySelector("#richMediaPicker");
 
 let lastLightboxTrigger = null;
+let pendingRichMediaInsert = null;
 
 initialize();
 
@@ -83,7 +85,7 @@ function handleClick(event) {
     return;
   }
 
-  const suggestionButton = event.target.closest("[data-insert-reference], [data-insert-glossary-ref]");
+  const suggestionButton = event.target.closest("[data-insert-reference], [data-insert-glossary-ref], [data-insert-media]");
   const referenceTextarea = event.target.closest("textarea[data-ref-input='glossary']");
   if (!suggestionButton && !referenceTextarea) {
     clearAllReferenceSuggestions();
@@ -267,6 +269,16 @@ function handleClick(event) {
   if (suggestionButton) {
     const textarea = document.querySelector(`#${suggestionButton.dataset.inputId}`);
     if (textarea instanceof HTMLTextAreaElement) {
+      if (suggestionButton.dataset.insertMedia === "true") {
+        openRichMediaPicker({
+          textareaId: textarea.id,
+          referenceLabel: suggestionButton.dataset.referenceLabel || "",
+          referenceStart: suggestionButton.dataset.referenceStart || "",
+          referenceEnd: suggestionButton.dataset.referenceEnd || "",
+        });
+        return;
+      }
+
       insertReference(
         textarea,
         suggestionButton.dataset.insertReference || suggestionButton.dataset.insertGlossaryRef || "",
@@ -527,6 +539,11 @@ function handleInput(event) {
     return;
   }
 
+  if (event.target instanceof HTMLInputElement && event.target.dataset.richMediaPicker !== undefined) {
+    void handleRichMediaSelection(event.target);
+    return;
+  }
+
   if (event.target instanceof HTMLTextAreaElement && event.target.dataset.refInput === "glossary") {
     scheduleReferenceSuggestions(event.target);
   }
@@ -644,6 +661,8 @@ function renderCharactersModule() {
     state,
     rootEl: charactersModule,
     getSelectedCharacter,
+    renderPlayerNotesPanel,
+    renderPlayerNotesFab,
   });
 }
 
@@ -1385,6 +1404,94 @@ async function handleGlossaryImageSelection(input) {
   input.value = "";
 }
 
+function openRichMediaPicker(insertContext) {
+  if (!richMediaPicker) {
+    return;
+  }
+
+  pendingRichMediaInsert = insertContext;
+  richMediaPicker.click();
+}
+
+async function handleRichMediaSelection(input) {
+  const file = Array.from(input.files || []).find((item) => item instanceof File) || null;
+  const pendingInsert = pendingRichMediaInsert;
+
+  pendingRichMediaInsert = null;
+  input.value = "";
+
+  if (!file || !pendingInsert?.textareaId) {
+    return;
+  }
+
+  const textarea = document.querySelector(`#${pendingInsert.textareaId}`);
+  if (!(textarea instanceof HTMLTextAreaElement)) {
+    return;
+  }
+
+  const mediaSource = await readFileAsDataUrl(file);
+  if (!mediaSource) {
+    return;
+  }
+
+  insertMediaReference(
+    textarea,
+    resolveMediaKind(file, mediaSource),
+    mediaSource,
+    pendingInsert.referenceLabel || "",
+    pendingInsert.referenceStart || "",
+    pendingInsert.referenceEnd || "",
+    file.name || "",
+  );
+}
+
+function insertMediaReference(textarea, mediaKind, mediaSource, referenceLabel, referenceStart, referenceEnd, fileName) {
+  const referenceContext = resolveReferenceInsertContext(
+    textarea,
+    referenceLabel,
+    referenceStart,
+    referenceEnd,
+  );
+  if (!referenceContext) {
+    return;
+  }
+
+  const label = sanitizeMediaLabel(referenceContext.label || fileName || "Multimedia");
+  const mediaToken = `{{media:${mediaKind}|${label}|${mediaSource}}}`;
+  const prefix = referenceContext.start > 0 && textarea.value[referenceContext.start - 1] !== "\n" ? "\n" : "";
+  const suffix = referenceContext.end < textarea.value.length && textarea.value[referenceContext.end] !== "\n" ? "\n" : "";
+  const mediaReplacement = `${prefix}${mediaToken}${suffix}`;
+  const nextValue = `${textarea.value.slice(0, referenceContext.start)}${mediaReplacement}${textarea.value.slice(referenceContext.end)}`;
+  textarea.value = nextValue;
+  const nextCursor = referenceContext.start + mediaReplacement.length;
+  textarea.focus();
+  textarea.selectionStart = nextCursor;
+  textarea.selectionEnd = nextCursor;
+  clearAllReferenceSuggestions();
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function resolveMediaKind(file, mediaSource) {
+  const mimeType = String(file?.type || mediaSource.match(/^data:([^;]+)/)?.[1] || "").toLowerCase();
+  if (mimeType.startsWith("image/")) {
+    return "image";
+  }
+  if (mimeType.startsWith("audio/")) {
+    return "audio";
+  }
+  if (mimeType.startsWith("video/")) {
+    return "video";
+  }
+  return "file";
+}
+
+function sanitizeMediaLabel(value) {
+  return String(value || "Multimedia")
+    .replaceAll(/[|{}]/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim() || "Multimedia";
+}
+
 function normalizeGlossaryDraftImageAssets(draftValue, fallback) {
   if (Array.isArray(draftValue)) {
     return draftValue.map((value) => String(value || "").trim()).filter(Boolean);
@@ -1514,6 +1621,21 @@ function shouldShowGlossaryReturnFab(currentEntryId) {
 }
 
 function getCurrentPlayerNoteContext() {
+  if (state.ui.currentModule === "characters") {
+    const character = getSelectedCharacter();
+    if (!character || state.ui.showCharacterGrid) {
+      return null;
+    }
+
+    return {
+      item: character,
+      title: character.name || "Personatge",
+      contextLabel: `${character.lineage || "Companyia"} · ${character.className || "Fitxa activa"}`,
+      buttonLabel: "Notes de jugadors",
+      emptyMessage: "Encara no hi ha notes de jugadors per aquest personatge.",
+    };
+  }
+
   if (state.ui.currentModule === "chronicles") {
     const chronicle = getSelectedChronicle();
     if (!chronicle) {
@@ -1652,22 +1774,24 @@ function renderReferenceSuggestions(textarea) {
     return;
   }
 
+  const selectedReference = getSelectedReferenceContext(textarea);
   const referenceContext = getReferenceContext(textarea);
-  if (!referenceContext || referenceContext.token.length < 2) {
+  if (!referenceContext || (referenceContext.token.length < 2 && !selectedReference)) {
     container.innerHTML = "";
     return;
   }
 
-  const matches = getReferenceMatches(referenceContext.token);
+  const matches = referenceContext.token.length >= 2
+    ? getReferenceMatches(referenceContext.token)
+    : [];
 
-  if (!matches.length) {
+  if (!matches.length && !selectedReference) {
     container.innerHTML = "";
     return;
   }
 
-  container.innerHTML = matches
-    .map(
-      (entry) => `
+  const matchButtons = matches.map(
+    (entry) => `
         <button
           type="button"
           class="suggestion-chip"
@@ -1682,8 +1806,35 @@ function renderReferenceSuggestions(textarea) {
           <span class="suggestion-chip-meta">${escapeHtml(entry.category)}</span>
         </button>
       `,
-    )
-    .join("");
+  );
+
+  if (selectedReference) {
+    matchButtons.push(`
+      <button
+        type="button"
+        class="suggestion-chip suggestion-chip-media"
+        data-insert-media="true"
+        data-reference-theme="all"
+        data-reference-label="${escapeAttribute(referenceContext.label)}"
+        data-reference-start="${referenceContext.start}"
+        data-reference-end="${referenceContext.end}"
+        data-input-id="${escapeAttribute(textarea.id)}"
+      >
+        <span class="suggestion-chip-title">
+          <span class="suggestion-chip-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M4.5 6.25A1.75 1.75 0 0 1 6.25 4.5h11.5A1.75 1.75 0 0 1 19.5 6.25v11.5a1.75 1.75 0 0 1-1.75 1.75H6.25A1.75 1.75 0 0 1 4.5 17.75Zm2.5 1.5a1.25 1.25 0 1 0 0 2.5a1.25 1.25 0 0 0 0-2.5Zm9.75 8.75l-3.2-4.2a.75.75 0 0 0-1.17-.02l-1.9 2.38l-1.02-1.18a.75.75 0 0 0-1.13.01L6.5 16.5Z" fill="currentColor"/>
+              <path d="M16.75 5.25h2v2h-2Zm0 3h2v2h-2Z" fill="currentColor"/>
+            </svg>
+          </span>
+          Multimedia
+        </span>
+        <span class="suggestion-chip-meta">Afegeix imatge, audio, video o fitxer</span>
+      </button>
+    `);
+  }
+
+  container.innerHTML = matchButtons.join("");
 }
 
 function scheduleReferenceSuggestions(textarea, delay = 90) {

@@ -26,6 +26,22 @@ export function shortText(value, maxLength) {
   return `${value.slice(0, maxLength - 1)}…`;
 }
 
+export function plainTextFromRichText(value) {
+  return String(value || "")
+    .replaceAll(/\{\{media:(image|audio|video|file)\|([^|{}]+)\|([^{}]+)\}\}/g, "$2")
+    .replaceAll(/\[\[([a-zA-Z0-9-_]+)\|([^\]]+)\]\]/g, "$2")
+    .replaceAll(/^#{1,3}\s+/gm, "")
+    .replaceAll(/^>\s+/gm, "")
+    .replaceAll(/^[-*]\s+/gm, "")
+    .replaceAll(/^\d+\.\s+/gm, "")
+    .replaceAll(/\*\*([^*\n]+)\*\*/g, "$1")
+    .replaceAll(/\*([^*\n]+)\*/g, "$1")
+    .replaceAll(/`([^`\n]+)`/g, "$1")
+    .replaceAll(/^---+$/gm, "")
+    .replaceAll(/\s+/g, " ")
+    .trim();
+}
+
 export function formatShortDate(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -125,7 +141,7 @@ export function renderReferenceTextareaField(name, label, value, rows = 3) {
         data-suggestion-target="${inputId}-suggestions"
       >${escapeHtml(value)}</textarea>
       <div id="${inputId}-suggestions" class="reference-suggestions"></div>
-      <small class="field-help">Escriu un terme del glossari o un personatge principal i selecciona la suggerència per inserir una referència clicable.</small>
+      <small class="field-help">Escriu un terme del glossari o un personatge principal i selecciona la suggerència per inserir una referència clicable. Si selecciones text, també pots afegir multimedia.</small>
     </label>
   `;
 }
@@ -158,7 +174,7 @@ export function renderRichTextareaField(name, label, value, rows = 4, options = 
           ${enableReferences ? `data-ref-input="glossary" data-suggestion-target="${inputId}-suggestions"` : ""}
         >${escapeHtml(value)}</textarea>
         ${enableReferences ? `<div id="${inputId}-suggestions" class="reference-suggestions"></div>` : ""}
-        <small class="field-help">${escapeHtml(help)}${enableReferences ? " Escriu un terme del glossari o un personatge principal per veure suggerències de referència." : ""}</small>
+        <small class="field-help">${escapeHtml(help)}${enableReferences ? " Escriu un terme del glossari o un personatge principal per veure suggerències de referència. Si selecciones text, també pots afegir multimedia." : ""}</small>
         <div class="rich-preview-frame">
           <div class="rich-preview-label">Preview</div>
           <div id="${previewId}" class="rich-preview rich-text">${renderRichText(value)}</div>
@@ -299,6 +315,12 @@ export function renderRichText(text) {
       continue;
     }
 
+    const mediaBlock = parseRichMediaToken(trimmed);
+    if (mediaBlock) {
+      blocks.push(renderRichMediaBlock(mediaBlock));
+      continue;
+    }
+
     if (/^###\s+/.test(trimmed)) {
       blocks.push(`<h5>${renderRichInline(trimmed.replace(/^###\s+/, ""))}</h5>`);
       continue;
@@ -385,6 +407,11 @@ function renderRichInline(value) {
 
   let html = escapeHtml(value);
   html = html.replace(
+    /\{\{media:(image|audio|video|file)\|([^|{}]+)\|([^{}]+)\}\}/g,
+    (_full, mediaKind, label, source) =>
+      stash(`<a class="rich-media-inline-link" href="${escapeAttribute(source)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`),
+  );
+  html = html.replace(
     /\[\[([a-zA-Z0-9-_]+)\|([^\]]+)\]\]/g,
     (_full, id, label) =>
       stash(`<button type="button" class="glossary-inline-link" data-reference-jump="${id}">${escapeHtml(label)}</button>`),
@@ -408,6 +435,54 @@ function renderRichToolbarButton(inputId, action, label, title) {
     >
       ${escapeHtml(label)}
     </button>
+  `;
+}
+
+function parseRichMediaToken(value) {
+  const match = String(value || "").match(/^\{\{media:(image|audio|video|file)\|([^|{}]+)\|([^{}]+)\}\}$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    kind: match[1],
+    label: match[2],
+    source: match[3],
+  };
+}
+
+function renderRichMediaBlock(media) {
+  if (media.kind === "image") {
+    return `
+      <figure class="rich-media-block rich-media-image">
+        <img src="${escapeAttribute(media.source)}" alt="${escapeAttribute(media.label)}" loading="lazy" />
+        <figcaption>${escapeHtml(media.label)}</figcaption>
+      </figure>
+    `;
+  }
+
+  if (media.kind === "audio") {
+    return `
+      <figure class="rich-media-block rich-media-audio">
+        <audio controls preload="none" src="${escapeAttribute(media.source)}"></audio>
+        <figcaption>${escapeHtml(media.label)}</figcaption>
+      </figure>
+    `;
+  }
+
+  if (media.kind === "video") {
+    return `
+      <figure class="rich-media-block rich-media-video">
+        <video controls preload="metadata" src="${escapeAttribute(media.source)}"></video>
+        <figcaption>${escapeHtml(media.label)}</figcaption>
+      </figure>
+    `;
+  }
+
+  return `
+    <p class="rich-media-block rich-media-file">
+      <a href="${escapeAttribute(media.source)}" target="_blank" rel="noreferrer">${escapeHtml(media.label)}</a>
+    </p>
   `;
 }
 
