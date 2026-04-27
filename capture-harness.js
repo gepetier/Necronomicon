@@ -71,6 +71,9 @@ function createContext(currentFrame) {
 async function runScenario(context, scenarioName) {
   const handlers = {
     "characters-grid": async () => {},
+    "characters-grid-lightbox": async () => {
+      await context.click(".portrait-media");
+    },
     "character-detail-lore": async () => {
       await openCharacter(context);
     },
@@ -97,6 +100,11 @@ async function runScenario(context, scenarioName) {
       await context.click('[data-module-link="chronicles"]');
       await context.click('[data-toggle-edit="chronicles"]');
     },
+    "chronicles-edit-references": async () => {
+      await context.click('[data-module-link="chronicles"]');
+      await context.click('[data-toggle-edit="chronicles"]');
+      await context.type('form[data-form="chronicle"] textarea[name="content"]', "Ilu");
+    },
     "chronicles-search-empty": async () => {
       await context.click('[data-module-link="chronicles"]');
       await context.type('input[name="chronicleIndexSearch"]', "zzzzzz");
@@ -109,6 +117,12 @@ async function runScenario(context, scenarioName) {
       await context.click('[data-module-link="glossary"]');
       await context.click('[data-glossary-filter="Faccions"]');
       await context.click('[data-glossary-id="portadores-del-velo"]');
+    },
+    "glossary-detail-lightbox": async () => {
+      await context.click('[data-module-link="glossary"]');
+      await context.click('[data-glossary-filter="Faccions"]');
+      await context.click('[data-glossary-id="portadores-del-velo"]');
+      await context.click(".glossary-media-frame img");
     },
     "glossary-edit": async () => {
       await context.click('[data-module-link="glossary"]');

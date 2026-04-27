@@ -53,7 +53,6 @@ export function saveChronicle(formData, { getSelectedChronicle, showSaveNotice }
   chronicle.date = readString(formData, "date");
   chronicle.summary = readString(formData, "summary");
   chronicle.content = readString(formData, "content");
-  chronicle.highlights = readString(formData, "highlights");
 
   if (formData.has("imageNote")) {
     chronicle.imageNote = readString(formData, "imageNote");
@@ -174,10 +173,6 @@ function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel
           <button type="button" data-chronicle-nav="next">Pagina seguent</button>
         </div>
         <div class="chapter-body rich-text">${renderChronicleRichText(current?.content || "Encara no hi ha cos de capitol.")}</div>
-        <div class="chapter-highlights">
-          <p class="eyebrow">Highlights</p>
-          <div class="rich-text">${renderChronicleRichText(current?.highlights || "Sense highlights encara.")}</div>
-        </div>
         ${renderChronicleMedia(current)}
         <div class="link-list">
           ${renderPlayerNotesPanel()}
@@ -290,7 +285,6 @@ function renderChronicleEditor(chronicle, state) {
                 ${renderInputField("date", "Data", readDraftValue(draft.date, chronicle?.date || ""))}
                 ${renderRichTextareaField("summary", "Resum principal", readDraftValue(draft.summary, chronicle?.summary || ""), 5)}
                 ${renderRichTextareaField("content", "Cos del capitol", readDraftValue(draft.content, chronicle?.content || ""), 10)}
-                ${renderRichTextareaField("highlights", "Highlights", readDraftValue(draft.highlights, chronicle?.highlights || ""), 5)}
               </div>
             `,
           )}

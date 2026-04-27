@@ -25,6 +25,7 @@ import {
   escapeAttribute,
   escapeHtml,
   formatShortDate,
+  getGlossaryCategoryTheme,
   readOptionalString,
   renderRichText,
   readString,
@@ -45,6 +46,10 @@ const charactersModule = document.querySelector("#charactersModule");
 const chroniclesModule = document.querySelector("#chroniclesModule");
 const glossaryModule = document.querySelector("#glossaryModule");
 const sidebarContextPanel = document.querySelector("#sidebarContextPanel");
+const imageLightbox = document.querySelector("#imageLightbox");
+const imageLightboxMedia = document.querySelector("#imageLightboxMedia");
+
+let lastLightboxTrigger = null;
 
 initialize();
 
@@ -63,7 +68,22 @@ function initialize() {
 }
 
 function handleClick(event) {
-  const suggestionButton = event.target.closest("[data-insert-glossary-ref]");
+  if (event.target.closest("[data-close-image-lightbox]")) {
+    closeImageLightbox();
+    return;
+  }
+
+  const clickedImage = event.target instanceof HTMLImageElement
+    ? event.target
+    : event.target.closest("img");
+  if (clickedImage instanceof HTMLImageElement && !clickedImage.closest("#imageLightbox")) {
+    event.preventDefault();
+    event.stopPropagation();
+    openImageLightbox(clickedImage);
+    return;
+  }
+
+  const suggestionButton = event.target.closest("[data-insert-reference], [data-insert-glossary-ref]");
   const referenceTextarea = event.target.closest("textarea[data-ref-input='glossary']");
   if (!suggestionButton && !referenceTextarea) {
     clearAllReferenceSuggestions();
@@ -198,14 +218,14 @@ function handleClick(event) {
     return;
   }
 
-  const glossaryJump = event.target.closest("[data-glossary-jump]");
-  if (glossaryJump) {
-    const glossaryId = glossaryJump.dataset.glossaryJump;
-    const glossaryEntry = glossaryId ? findGlossaryEntry(glossaryId) : null;
+  const referenceJump = event.target.closest("[data-reference-jump], [data-glossary-jump]");
+  if (referenceJump) {
+    const referenceId = referenceJump.dataset.referenceJump || referenceJump.dataset.glossaryJump || "";
+    const glossaryEntry = referenceId ? findGlossaryEntry(referenceId) : null;
     if (glossaryEntry) {
       if (state.ui.currentModule === "chronicles") {
         state.ui.glossaryReturnView = captureCurrentViewState();
-        state.ui.glossaryReturnTargetId = glossaryId;
+        state.ui.glossaryReturnTargetId = referenceId;
         if (!doesGlossaryEntryMatchCurrentFilters(glossaryEntry)) {
           state.ui.glossarySearch = "";
           state.ui.glossaryCategory = "Totes";
@@ -216,9 +236,20 @@ function handleClick(event) {
         state.ui.glossaryReturnTargetId = "";
       }
       state.ui.currentModule = "glossary";
-      state.ui.selectedGlossaryId = glossaryId;
+      state.ui.selectedGlossaryId = referenceId;
       persistAndRender();
-      revealGlossaryEntry(glossaryId);
+      revealGlossaryEntry(referenceId);
+      return;
+    }
+
+    const character = referenceId ? findCharacter(referenceId) : null;
+    if (character) {
+      state.ui.glossaryReturnView = null;
+      state.ui.glossaryReturnTargetId = "";
+      state.ui.currentModule = "characters";
+      state.ui.selectedCharacterId = referenceId;
+      state.ui.showCharacterGrid = false;
+      persistAndRender();
     }
     return;
   }
@@ -236,10 +267,12 @@ function handleClick(event) {
   if (suggestionButton) {
     const textarea = document.querySelector(`#${suggestionButton.dataset.inputId}`);
     if (textarea instanceof HTMLTextAreaElement) {
-      insertGlossaryReference(
+      insertReference(
         textarea,
-        suggestionButton.dataset.insertGlossaryRef || "",
-        suggestionButton.dataset.glossaryLabel || "",
+        suggestionButton.dataset.insertReference || suggestionButton.dataset.insertGlossaryRef || "",
+        suggestionButton.dataset.referenceLabel || "",
+        suggestionButton.dataset.referenceStart || "",
+        suggestionButton.dataset.referenceEnd || "",
       );
     }
     return;
@@ -304,6 +337,12 @@ function handleClick(event) {
 
 function handleKeydown(event) {
   if (event.defaultPrevented) {
+    return;
+  }
+
+  if (event.key === "Escape" && isImageLightboxOpen()) {
+    event.preventDefault();
+    closeImageLightbox();
     return;
   }
 
@@ -558,6 +597,7 @@ function render() {
   renderCharactersModule();
   renderChroniclesModule();
   renderGlossaryModule();
+  applyReferenceThemes();
 }
 
 function updateSidebar() {
@@ -1011,6 +1051,43 @@ function showSaveNotice(message) {
     state.ui.saveNotice = "";
     persistAndRender();
   }, 1800);
+}
+
+function openImageLightbox(image) {
+  const source = image.currentSrc || image.src;
+  if (!source || !imageLightbox || !imageLightboxMedia) {
+    return;
+  }
+
+  lastLightboxTrigger = image;
+  imageLightboxMedia.src = source;
+  imageLightboxMedia.alt = image.alt || "";
+  imageLightbox.hidden = false;
+  document.body.classList.add("lightbox-open");
+  const closeButton = imageLightbox.querySelector(".image-lightbox-close");
+  if (closeButton instanceof HTMLButtonElement) {
+    closeButton.focus();
+  }
+}
+
+function closeImageLightbox() {
+  if (!imageLightbox || !imageLightboxMedia || imageLightbox.hidden) {
+    return;
+  }
+
+  imageLightbox.hidden = true;
+  imageLightboxMedia.removeAttribute("src");
+  imageLightboxMedia.alt = "";
+  document.body.classList.remove("lightbox-open");
+
+  if (lastLightboxTrigger instanceof HTMLElement) {
+    lastLightboxTrigger.focus?.();
+  }
+  lastLightboxTrigger = null;
+}
+
+function isImageLightboxOpen() {
+  return Boolean(imageLightbox && !imageLightbox.hidden);
 }
 
 function createChronicle() {
@@ -1575,13 +1652,13 @@ function renderReferenceSuggestions(textarea) {
     return;
   }
 
-  const activeToken = getActiveToken(textarea);
-  if (!activeToken || activeToken.token.length < 2) {
+  const referenceContext = getReferenceContext(textarea);
+  if (!referenceContext || referenceContext.token.length < 2) {
     container.innerHTML = "";
     return;
   }
 
-  const matches = getReferenceMatches(activeToken.token);
+  const matches = getReferenceMatches(referenceContext.token);
 
   if (!matches.length) {
     container.innerHTML = "";
@@ -1594,11 +1671,15 @@ function renderReferenceSuggestions(textarea) {
         <button
           type="button"
           class="suggestion-chip"
-          data-insert-glossary-ref="${entry.id}"
-          data-glossary-label="${escapeAttribute(entry.name)}"
+          data-insert-reference="${entry.id}"
+          data-reference-theme="${getGlossaryCategoryTheme(entry.category)}"
+          data-reference-label="${escapeAttribute(referenceContext.label)}"
+          data-reference-start="${referenceContext.start}"
+          data-reference-end="${referenceContext.end}"
           data-input-id="${escapeAttribute(textarea.id)}"
         >
-          ${escapeHtml(entry.name)} · ${escapeHtml(entry.category)}
+          <span class="suggestion-chip-title">${escapeHtml(entry.name)}</span>
+          <span class="suggestion-chip-meta">${escapeHtml(entry.category)}</span>
         </button>
       `,
     )
@@ -1611,15 +1692,41 @@ function scheduleReferenceSuggestions(textarea, delay = 90) {
 
 function getReferenceMatches(token) {
   const normalizedToken = normalizeReferenceToken(token);
-  return state.glossary
+  return getReferenceEntries()
     .map((entry) => ({
-      entry,
+      ...entry,
       score: getReferenceMatchScore(entry.name, normalizedToken),
     }))
     .filter((item) => item.score !== null)
-    .sort((left, right) => left.score - right.score || left.entry.name.localeCompare(right.entry.name, "ca"))
+    .sort(
+      (left, right) =>
+        left.score - right.score
+        || getReferenceTargetPriority(left.targetType) - getReferenceTargetPriority(right.targetType)
+        || left.name.localeCompare(right.name, "ca"),
+    )
     .slice(0, 6)
-    .map((item) => item.entry);
+    .map(({ score, ...entry }) => entry);
+}
+
+function getReferenceEntries() {
+  return [
+    ...state.characters.map((character) => ({
+      id: character.id,
+      name: character.name,
+      category: "Personatge",
+      targetType: "character",
+    })),
+    ...state.glossary.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      category: entry.category,
+      targetType: "glossary",
+    })),
+  ];
+}
+
+function getReferenceTargetPriority(targetType) {
+  return targetType === "character" ? 0 : 1;
 }
 
 function getReferenceMatchScore(name, token) {
@@ -1671,6 +1778,32 @@ function getActiveToken(textarea) {
   return token ? { token, start, end } : null;
 }
 
+function getReferenceContext(textarea) {
+  const selectedReference = getSelectedReferenceContext(textarea);
+  if (selectedReference) {
+    return selectedReference;
+  }
+
+  const activeToken = getActiveToken(textarea);
+  return activeToken ? { ...activeToken, label: activeToken.token } : null;
+}
+
+function getSelectedReferenceContext(textarea) {
+  const start = textarea.selectionStart ?? 0;
+  const end = textarea.selectionEnd ?? 0;
+  if (start === end) {
+    return null;
+  }
+
+  const label = textarea.value.slice(start, end);
+  const token = label.trim();
+  if (!token || !/[\p{L}0-9]/u.test(token)) {
+    return null;
+  }
+
+  return { token, label, start, end };
+}
+
 function resolveTokenIndex(source, cursor) {
   if (cursor < source.length && isReferenceTokenChar(source[cursor])) {
     return cursor;
@@ -1692,36 +1825,37 @@ function getCurrentToken(textarea) {
   const match = before.match(/([\p{L}0-9'’-]{2,})$/u);
 }
 
-function insertGlossaryReference(textarea, glossaryId, glossaryName) {
-  const activeToken = getActiveToken(textarea);
-  if (!activeToken) {
+function insertReference(textarea, referenceId, referenceLabel, referenceStart, referenceEnd) {
+  const referenceContext = resolveReferenceInsertContext(
+    textarea,
+    referenceLabel,
+    referenceStart,
+    referenceEnd,
+  );
+  if (!referenceContext) {
     return;
   }
 
-  const glossaryReplacement = `[[${glossaryId}|${glossaryName}]]`;
-  const nextReferenceValue = `${textarea.value.slice(0, activeToken.start)}${glossaryReplacement}${textarea.value.slice(activeToken.end)}`;
+  const referenceReplacement = `[[${referenceId}|${referenceContext.label}]]`;
+  const nextReferenceValue = `${textarea.value.slice(0, referenceContext.start)}${referenceReplacement}${textarea.value.slice(referenceContext.end)}`;
   textarea.value = nextReferenceValue;
-  const nextReferenceCursor = activeToken.start + glossaryReplacement.length;
+  const nextReferenceCursor = referenceContext.start + referenceReplacement.length;
+  textarea.focus();
   textarea.selectionStart = nextReferenceCursor;
   textarea.selectionEnd = nextReferenceCursor;
+  clearAllReferenceSuggestions();
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  return;
+}
 
-  const cursor = textarea.selectionStart || 0;
-  const before = textarea.value.slice(0, cursor);
-  const after = textarea.value.slice(cursor);
-  const match = before.match(/([\p{L}0-9'’-]{2,})$/u);
-  if (!match) {
-    return;
+function resolveReferenceInsertContext(textarea, referenceLabel, referenceStart, referenceEnd) {
+  const start = Number.parseInt(String(referenceStart), 10);
+  const end = Number.parseInt(String(referenceEnd), 10);
+  if (Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end >= start && end <= textarea.value.length) {
+    const label = referenceLabel || textarea.value.slice(start, end);
+    return label ? { label, start, end } : null;
   }
 
-  const replacement = `[[${glossaryId}|${glossaryName}]]`;
-  const nextValue = `${before.slice(0, before.length - match[1].length)}${replacement}${after}`;
-  textarea.value = nextValue;
-  const nextCursor = before.slice(0, before.length - match[1].length).length + replacement.length;
-  textarea.selectionStart = nextCursor;
-  textarea.selectionEnd = nextCursor;
-  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  return getReferenceContext(textarea);
 }
 
 function clearAllReferenceSuggestions() {
@@ -1740,10 +1874,41 @@ function updateRichPreview(textarea) {
   }
 
   preview.innerHTML = renderRichText(textarea.value);
+  applyReferenceThemes(preview);
 }
 
 function scheduleRichPreview(textarea, delay = 120) {
   scheduleTextareaTask(textarea, richPreviewTimers, updateRichPreview, delay);
+}
+
+function applyReferenceThemes(scope = document) {
+  if (!scope || typeof scope.querySelectorAll !== "function") {
+    return;
+  }
+
+  scope.querySelectorAll("[data-reference-jump]").forEach((referenceButton) => {
+    if (!(referenceButton instanceof HTMLElement)) {
+      return;
+    }
+
+    const referenceId = referenceButton.dataset.referenceJump || "";
+    const referenceCategory = getReferenceCategory(referenceId);
+    referenceButton.dataset.referenceTheme = getGlossaryCategoryTheme(referenceCategory);
+  });
+}
+
+function getReferenceCategory(referenceId) {
+  const glossaryEntry = referenceId ? findGlossaryEntry(referenceId) : null;
+  if (glossaryEntry?.category) {
+    return glossaryEntry.category;
+  }
+
+  const character = referenceId ? findCharacter(referenceId) : null;
+  if (character) {
+    return "Personatge";
+  }
+
+  return "";
 }
 
 function scheduleTextareaTask(textarea, timerStore, callback, delay) {

@@ -1,6 +1,7 @@
 import {
   escapeAttribute,
   escapeHtml,
+  getGlossaryCategoryTheme,
   paletteStyle,
   readString,
   renderChoiceGrid,
@@ -189,6 +190,7 @@ function renderGlossaryCategoryMenu(state, categories) {
           type="button"
           class="glossary-menu-item ${isActive ? "active" : ""}"
           data-glossary-filter="${escapeAttribute(category)}"
+          data-reference-theme="${getGlossaryCategoryTheme(category)}"
           id="glossary-filter-${buildGlossarySlug(category)}"
           role="tab"
           aria-selected="${isActive ? "true" : "false"}"

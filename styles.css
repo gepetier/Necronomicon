@@ -428,6 +428,65 @@ textarea {
   transform: translateY(0);
 }
 
+body.lightbox-open {
+  overflow: hidden;
+}
+
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+}
+
+.image-lightbox[hidden] {
+  display: none;
+}
+
+.image-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 6, 5, 0.88);
+  backdrop-filter: blur(4px);
+}
+
+.image-lightbox-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(96vw, 1400px);
+  max-height: calc(100vh - 2.5rem);
+  display: grid;
+  place-items: center;
+}
+
+.image-lightbox-close {
+  position: fixed;
+  top: 1rem;
+  right: 2.4rem;
+  z-index: 2;
+  min-height: 40px;
+  padding: 0.7rem 1rem;
+  background: linear-gradient(180deg, rgba(166, 110, 56, 0.94), rgba(94, 40, 25, 0.96));
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.32);
+}
+
+.image-lightbox-media {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: calc(100vh - 2.5rem);
+  object-fit: contain;
+  border-radius: 20px;
+  box-shadow: 0 26px 54px rgba(0, 0, 0, 0.45);
+  background: rgba(16, 10, 8, 0.82);
+}
+
+img {
+  cursor: zoom-in;
+}
+
 .module-hero {
   min-height: 180px;
 }
@@ -648,10 +707,9 @@ textarea {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center 22%;
+  object-fit: contain;
+  object-position: center top;
   filter: saturate(0.98) contrast(1.04) brightness(0.98);
-  transform: scale(1.02);
 }
 
 .card-portrait::before {
@@ -847,7 +905,7 @@ textarea {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center top;
   filter: saturate(0.9) contrast(1.04) brightness(0.72);
 }
@@ -1639,7 +1697,8 @@ history-list,
 .book-image-media {
   width: 100%;
   height: 248px;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   border-radius: 14px;
   margin: 0.15rem 0;
   box-shadow:
@@ -1855,12 +1914,150 @@ history-list,
   flex: 0 0 auto;
 }
 
+.glossary-inline-link,
+.suggestion-chip,
+.glossary-menu-item {
+  --reference-ink: #6d492c;
+  --reference-meta: #8b6344;
+  --reference-bg: rgba(173, 125, 66, 0.12);
+  --reference-bg-hover: rgba(173, 125, 66, 0.2);
+  --reference-border: rgba(173, 125, 66, 0.26);
+  --reference-strong-a: #cb9b5d;
+  --reference-strong-b: #8b512c;
+  --reference-strong-text: #fff7ea;
+}
+
+[data-reference-theme="all"] {
+  --reference-ink: #7b5737;
+  --reference-meta: #956b47;
+  --reference-bg: rgba(185, 141, 84, 0.13);
+  --reference-bg-hover: rgba(185, 141, 84, 0.2);
+  --reference-border: rgba(185, 141, 84, 0.28);
+  --reference-strong-a: #d1a564;
+  --reference-strong-b: #91562f;
+}
+
+[data-reference-theme="locations"] {
+  --reference-ink: #2f5f88;
+  --reference-meta: #4a769d;
+  --reference-bg: rgba(72, 118, 173, 0.12);
+  --reference-bg-hover: rgba(72, 118, 173, 0.2);
+  --reference-border: rgba(72, 118, 173, 0.3);
+  --reference-strong-a: #6f96c2;
+  --reference-strong-b: #35587d;
+  --reference-strong-text: #f7fbff;
+}
+
+[data-reference-theme="faith"] {
+  --reference-ink: #6f4f96;
+  --reference-meta: #8a68ad;
+  --reference-bg: rgba(120, 92, 164, 0.12);
+  --reference-bg-hover: rgba(120, 92, 164, 0.2);
+  --reference-border: rgba(120, 92, 164, 0.3);
+  --reference-strong-a: #9b7bc3;
+  --reference-strong-b: #634686;
+  --reference-strong-text: #fbf7ff;
+}
+
+[data-reference-theme="factions"] {
+  --reference-ink: #3c6a4a;
+  --reference-meta: #56805f;
+  --reference-bg: rgba(84, 126, 95, 0.12);
+  --reference-bg-hover: rgba(84, 126, 95, 0.2);
+  --reference-border: rgba(84, 126, 95, 0.28);
+  --reference-strong-a: #739b71;
+  --reference-strong-b: #45674a;
+  --reference-strong-text: #f7fff7;
+}
+
+[data-reference-theme="npcs"] {
+  --reference-ink: #8a3f46;
+  --reference-meta: #a15a60;
+  --reference-bg: rgba(153, 71, 81, 0.12);
+  --reference-bg-hover: rgba(153, 71, 81, 0.2);
+  --reference-border: rgba(153, 71, 81, 0.28);
+  --reference-strong-a: #b96c67;
+  --reference-strong-b: #85393a;
+}
+
+[data-reference-theme="antagonists"] {
+  --reference-ink: #8b2f2f;
+  --reference-meta: #a24b4b;
+  --reference-bg: rgba(150, 53, 53, 0.12);
+  --reference-bg-hover: rgba(150, 53, 53, 0.2);
+  --reference-border: rgba(150, 53, 53, 0.3);
+  --reference-strong-a: #b95a50;
+  --reference-strong-b: #7c2626;
+}
+
+[data-reference-theme="entities"] {
+  --reference-ink: #45589a;
+  --reference-meta: #6071ae;
+  --reference-bg: rgba(83, 101, 173, 0.13);
+  --reference-bg-hover: rgba(83, 101, 173, 0.2);
+  --reference-border: rgba(83, 101, 173, 0.3);
+  --reference-strong-a: #7487c8;
+  --reference-strong-b: #475699;
+  --reference-strong-text: #f7f8ff;
+}
+
+[data-reference-theme="objects"] {
+  --reference-ink: #8b6229;
+  --reference-meta: #a1783c;
+  --reference-bg: rgba(163, 121, 53, 0.13);
+  --reference-bg-hover: rgba(163, 121, 53, 0.2);
+  --reference-border: rgba(163, 121, 53, 0.3);
+  --reference-strong-a: #c09555;
+  --reference-strong-b: #875725;
+}
+
+[data-reference-theme="monsters"] {
+  --reference-ink: #5d6c27;
+  --reference-meta: #74863e;
+  --reference-bg: rgba(107, 128, 53, 0.13);
+  --reference-bg-hover: rgba(107, 128, 53, 0.2);
+  --reference-border: rgba(107, 128, 53, 0.3);
+  --reference-strong-a: #8ba54f;
+  --reference-strong-b: #586b2c;
+  --reference-strong-text: #fbfff2;
+}
+
+[data-reference-theme="races"] {
+  --reference-ink: #7b5a46;
+  --reference-meta: #93705b;
+  --reference-bg: rgba(133, 98, 76, 0.12);
+  --reference-bg-hover: rgba(133, 98, 76, 0.2);
+  --reference-border: rgba(133, 98, 76, 0.26);
+  --reference-strong-a: #ae8567;
+  --reference-strong-b: #7a5641;
+}
+
+[data-reference-theme="heroes"] {
+  --reference-ink: #7c5433;
+  --reference-meta: #966a47;
+  --reference-bg: rgba(148, 102, 62, 0.12);
+  --reference-bg-hover: rgba(148, 102, 62, 0.2);
+  --reference-border: rgba(148, 102, 62, 0.28);
+  --reference-strong-a: #bb875b;
+  --reference-strong-b: #7b4f2e;
+}
+
+[data-reference-theme="neutral"] {
+  --reference-ink: #6d492c;
+  --reference-meta: #8b6344;
+  --reference-bg: rgba(173, 125, 66, 0.12);
+  --reference-bg-hover: rgba(173, 125, 66, 0.2);
+  --reference-border: rgba(173, 125, 66, 0.26);
+  --reference-strong-a: #cb9b5d;
+  --reference-strong-b: #8b512c;
+}
+
 .glossary-inline-link {
   display: inline;
-  border: 0;
+  border: 1px solid var(--reference-border);
   border-radius: 8px;
-  background: rgba(165, 110, 56, 0.18);
-  color: #5c351f;
+  background: var(--reference-bg);
+  color: var(--reference-ink);
   box-shadow: none;
   padding: 0.12rem 0.38rem;
   min-height: auto;
@@ -1871,7 +2068,7 @@ history-list,
   transform: none;
   box-shadow: none;
   filter: none;
-  background: rgba(165, 110, 56, 0.28);
+  background: var(--reference-bg-hover);
 }
 
 .chronicle-media-card {
@@ -1892,7 +2089,8 @@ history-list,
 .chronicle-image-grid img {
   width: 100%;
   height: 120px;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   border-radius: 10px;
   border: 1px solid rgba(95, 62, 38, 0.2);
 }
@@ -1940,9 +2138,16 @@ history-list,
   min-height: auto;
   padding: 0.6rem 0.75rem;
   border-radius: 12px;
-  background: rgba(165, 110, 56, 0.08);
-  color: #5d3c2e;
-  border: 1px solid rgba(95, 62, 38, 0.2);
+  background: var(--reference-bg);
+  color: var(--reference-ink);
+  border: 1px solid var(--reference-border);
+}
+
+.suggestion-chip:hover {
+  background: var(--reference-bg-hover);
+  transform: none;
+  filter: none;
+  box-shadow: none;
 }
 
 .suggestion-chip-title,
@@ -1956,7 +2161,7 @@ history-list,
 
 .suggestion-chip-meta {
   font-size: 0.76rem;
-  color: var(--ink-soft);
+  color: var(--reference-meta);
 }
 
 .field-help {
@@ -2891,6 +3096,9 @@ select {
 
 .book-page {
   border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 247, 0.99), rgba(242, 232, 214, 0.96)),
+    linear-gradient(135deg, rgba(200, 154, 88, 0.04), transparent 46%);
 }
 
 .page-header {
@@ -2912,7 +3120,21 @@ select {
 
 .chapter-summary,
 .chapter-body {
-  color: rgba(54, 35, 26, 0.88);
+  color: #2e1d15;
+  font-size: 1.08rem;
+  line-height: 1.78;
+  text-wrap: pretty;
+}
+
+.chapter-summary h3,
+.chapter-summary h4,
+.chapter-summary h5,
+.chapter-body h3,
+.chapter-body h4,
+.chapter-body h5,
+.chapter-summary strong,
+.chapter-body strong {
+  color: #2a1811;
 }
 
 .chapter-summary > p:first-child::first-letter,
@@ -2923,14 +3145,6 @@ select {
   margin-right: 0.35rem;
   font-family: "Baskerville Old Face", "Palatino Linotype", serif;
   color: #8f5d36;
-}
-
-.chapter-highlights {
-  border-radius: 20px;
-  background:
-    linear-gradient(180deg, rgba(116, 56, 40, 0.08), rgba(116, 56, 40, 0.04)),
-    linear-gradient(135deg, rgba(200, 154, 88, 0.08), transparent 42%);
-  border-left: 4px solid rgba(178, 133, 69, 0.52);
 }
 
 .book-controls button {
@@ -3050,7 +3264,8 @@ select {
   width: 100%;
   height: 100%;
   max-height: 420px;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
 }
 
 .item-grid {
@@ -3471,6 +3686,24 @@ select {
     max-width: none;
   }
 
+  .image-lightbox {
+    padding: 0.85rem;
+  }
+
+  .image-lightbox-dialog {
+    width: 100%;
+    max-height: calc(100vh - 1.7rem);
+  }
+
+  .image-lightbox-close {
+    display: none;
+  }
+
+  .image-lightbox-media {
+    max-height: calc(100vh - 1.7rem);
+    border-radius: 16px;
+  }
+
   .detail-grid {
     gap: 0.9rem;
   }
@@ -3617,23 +3850,23 @@ select {
   width: 100%;
   padding: 0.8rem 0.95rem;
   border-radius: 16px;
-  border: 1px solid rgba(111, 45, 33, 0.12);
-  background: rgba(255, 249, 238, 0.76);
-  color: var(--ink);
+  border: 1px solid var(--reference-border);
+  background: var(--reference-bg);
+  color: var(--reference-ink);
   box-shadow: none;
   text-align: left;
 }
 
 .glossary-menu-item strong {
-  color: #8f5b32;
+  color: var(--reference-meta);
   font-size: 0.95rem;
 }
 
 .glossary-menu-item.active,
 .glossary-menu-item:hover {
-  background: linear-gradient(135deg, rgba(165, 110, 56, 0.94), rgba(111, 45, 33, 0.92));
-  color: #fff6e7;
-  border-color: rgba(111, 45, 33, 0.3);
+  background: linear-gradient(135deg, var(--reference-strong-a), var(--reference-strong-b));
+  color: var(--reference-strong-text);
+  border-color: var(--reference-border);
 }
 
 .glossary-menu-item.active strong,
@@ -3879,7 +4112,8 @@ select {
   width: 100%;
   height: 100%;
   max-height: 220px;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
 }
 
 .glossary-editor-media-remove {
@@ -4049,6 +4283,11 @@ select {
   .save-notice,
   .save-notice.visible {
     transform: none !important;
+  }
+
+  .image-lightbox-backdrop,
+  .image-lightbox-media {
+    backdrop-filter: none;
   }
 
   .character-card,

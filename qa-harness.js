@@ -58,6 +58,9 @@ function createContext(currentFrame) {
       }
       target.click();
     },
+    pressKey(key) {
+      doc.dispatchEvent(new win.KeyboardEvent("keydown", { key, bubbles: true }));
+    },
     type(selector, value) {
       const target = doc.querySelector(selector);
       if (!(target instanceof win.HTMLInputElement) && !(target instanceof win.HTMLTextAreaElement)) {
@@ -67,6 +70,21 @@ function createContext(currentFrame) {
       target.value = value;
       target.dispatchEvent(new win.Event("input", { bubbles: true }));
       target.dispatchEvent(new win.Event("change", { bubbles: true }));
+    },
+    selectText(selector, value) {
+      const target = doc.querySelector(selector);
+      if (!(target instanceof win.HTMLInputElement) && !(target instanceof win.HTMLTextAreaElement)) {
+        throw new Error(`Camp no trobat per seleccionar text: ${selector}`);
+      }
+
+      const start = target.value.indexOf(value);
+      if (start === -1) {
+        throw new Error(`Text no trobat al camp ${selector}: ${value}`);
+      }
+
+      target.focus();
+      target.setSelectionRange(start, start + value.length);
+      target.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
     },
     submit(selector) {
       const form = doc.querySelector(selector);
@@ -90,6 +108,22 @@ async function runFunctionalSuite(context) {
     initialCards.length === 4,
     "Render inicial amb 4 cartes de personatge",
     { cards: initialCards.length },
+  );
+
+  context.click(".portrait-media");
+  await delay(80);
+  record(
+    steps,
+    context.doc.querySelector("#imageLightbox:not([hidden])") !== null
+      && context.doc.querySelector(".detail-card") === null,
+    "Clicar la imatge d'una targeta obre el lightbox sense entrar al detall del personatge",
+  );
+  context.pressKey("Escape");
+  await delay(80);
+  record(
+    steps,
+    context.doc.querySelector("#imageLightbox[hidden]") !== null,
+    "La tecla Escape tanca el lightbox d'imatges",
   );
 
   const firstName = initialCards[0]?.querySelector("h3")?.textContent?.trim() || "";
@@ -206,7 +240,7 @@ async function runFunctionalSuite(context) {
   await delay(80);
   context.click('[data-module-link="chronicles"]');
   await delay(80);
-  context.click('[data-glossary-jump="acantilado-del-silencio"]');
+  context.click('[data-reference-jump="acantilado-del-silencio"]');
   await delay(80);
   const jumpedGlossaryTitle = context.doc.querySelector(".glossary-detail h3")?.textContent?.trim() || "";
   const activeGlossaryCardTitle = context.doc.querySelector(".glossary-entry.active h3")?.textContent?.trim() || "";
@@ -387,6 +421,38 @@ async function runEditSuite(context) {
 
   context.type('form[data-form="chronicle"] input[name="title"]', "Cronica QA");
   await delay(60);
+  context.type('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
+  await delay(80);
+  context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
+  await delay(80);
+  const glossaryReferenceSuggestions = context.qsa(".reference-suggestions .suggestion-chip")
+    .map((element) => element.textContent?.trim() || "");
+  context.click('[data-insert-reference="catedral-del-silencio"]');
+  await delay(80);
+  const referencedChronicleContent = context.doc.querySelector('form[data-form="chronicle"] textarea[name="content"]')?.value || "";
+  record(
+    steps,
+    glossaryReferenceSuggestions.some((label) => label.includes("Catedral del Silencio"))
+      && referencedChronicleContent === "[[catedral-del-silencio|Catedral]]",
+    "La referència de glossari conserva el text seleccionat i només canvia el destí de la referència",
+    { glossaryReferenceSuggestions, referencedChronicleContent },
+  );
+  context.type('form[data-form="chronicle"] textarea[name="content"]', "Ilu");
+  await delay(80);
+  context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Ilu");
+  await delay(80);
+  const characterReferenceSuggestions = context.qsa(".reference-suggestions .suggestion-chip")
+    .map((element) => element.textContent?.trim() || "");
+  context.click('[data-insert-reference="ilu"]');
+  await delay(80);
+  const referencedCharacterContent = context.doc.querySelector('form[data-form="chronicle"] textarea[name="content"]')?.value || "";
+  record(
+    steps,
+    characterReferenceSuggestions.some((label) => label.includes("Ilu") && label.includes("Personatge"))
+      && referencedCharacterContent === "[[ilu|Ilu]]",
+    "La referÃ¨ncia de personatge conserva el text seleccionat i apunta a la fitxa principal",
+    { characterReferenceSuggestions, referencedCharacterContent },
+  );
   const originalConfirm = context.win.confirm;
   context.win.confirm = () => false;
   const nextChronicle = context.qsa("[data-chronicle-id]").find((element) => element.getAttribute("aria-selected") !== "true");
@@ -442,6 +508,8 @@ async function runEditSuite(context) {
 
   context.type('form[data-form="chronicle"] input[name="title"]', "Cronica desada QA");
   await delay(60);
+  context.type('form[data-form="chronicle"] textarea[name="content"]', "[[ilu|Ilu]]");
+  await delay(60);
   context.submit('form[data-form="chronicle"]');
   await delay(80);
   const savedChronicleTitle = context.doc.querySelector(".page-header h3")?.textContent?.trim() || "";
@@ -450,6 +518,16 @@ async function runEditSuite(context) {
     context.doc.querySelector(".editor-workspace-chronicle") === null && savedChronicleTitle === "Cronica desada QA",
     "Desar una cronica tanca el mode edicio",
     { savedChronicleTitle },
+  );
+  context.click('[data-reference-jump="ilu"]');
+  await delay(80);
+  const jumpedCharacterTitle = context.doc.querySelector(".detail-summary h3")?.textContent?.trim() || "";
+  record(
+    steps,
+    context.doc.querySelector("#charactersModule.active") !== null
+      && jumpedCharacterTitle === "Ilu",
+    "Una referència de personatge desada dins una cronica obre la fitxa principal corresponent",
+    { jumpedCharacterTitle },
   );
 
   context.click('[data-module-link="glossary"]');

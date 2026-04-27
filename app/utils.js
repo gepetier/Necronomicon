@@ -57,6 +57,22 @@ export function paletteStyle(palette) {
   return `--portrait-a: ${palette[0]}; --portrait-b: ${palette[1]};`;
 }
 
+export function getGlossaryCategoryTheme(category) {
+  return {
+    Totes: "all",
+    "Llocs": "locations",
+    "Religió": "faith",
+    "Faccions": "factions",
+    "Altres": "npcs",
+    "Antagonistes": "antagonists",
+    "Entitats": "entities",
+    "Objectes": "objects",
+    "Monstres": "monsters",
+    "Races": "races",
+    "Personatge": "heroes",
+  }[category] || "neutral";
+}
+
 export function characterTabLabel(tab) {
   return {
     lore: "Lore",
@@ -109,7 +125,7 @@ export function renderReferenceTextareaField(name, label, value, rows = 3) {
         data-suggestion-target="${inputId}-suggestions"
       >${escapeHtml(value)}</textarea>
       <div id="${inputId}-suggestions" class="reference-suggestions"></div>
-      <small class="field-help">Escriu un nom del glossari i selecciona la suggerència per inserir una referència clicable.</small>
+      <small class="field-help">Escriu un terme del glossari o un personatge principal i selecciona la suggerència per inserir una referència clicable.</small>
     </label>
   `;
 }
@@ -142,7 +158,7 @@ export function renderRichTextareaField(name, label, value, rows = 4, options = 
           ${enableReferences ? `data-ref-input="glossary" data-suggestion-target="${inputId}-suggestions"` : ""}
         >${escapeHtml(value)}</textarea>
         ${enableReferences ? `<div id="${inputId}-suggestions" class="reference-suggestions"></div>` : ""}
-        <small class="field-help">${escapeHtml(help)}${enableReferences ? " Escriu un terme del glossari per veure suggerències de referència." : ""}</small>
+        <small class="field-help">${escapeHtml(help)}${enableReferences ? " Escriu un terme del glossari o un personatge principal per veure suggerències de referència." : ""}</small>
         <div class="rich-preview-frame">
           <div class="rich-preview-label">Preview</div>
           <div id="${previewId}" class="rich-preview rich-text">${renderRichText(value)}</div>
@@ -355,7 +371,7 @@ export function replaceGlossaryReferences(value) {
   return escapeHtml(value).replaceAll(
     /\[\[([a-zA-Z0-9-_]+)\|([^\]]+)\]\]/g,
     (_full, id, label) =>
-      `<button type="button" class="glossary-inline-link" data-glossary-jump="${id}">${escapeHtml(label)}</button>`,
+      `<button type="button" class="glossary-inline-link" data-reference-jump="${id}">${escapeHtml(label)}</button>`,
   );
 }
 
@@ -371,7 +387,7 @@ function renderRichInline(value) {
   html = html.replace(
     /\[\[([a-zA-Z0-9-_]+)\|([^\]]+)\]\]/g,
     (_full, id, label) =>
-      stash(`<button type="button" class="glossary-inline-link" data-glossary-jump="${id}">${escapeHtml(label)}</button>`),
+      stash(`<button type="button" class="glossary-inline-link" data-reference-jump="${id}">${escapeHtml(label)}</button>`),
   );
   html = html.replace(/`([^`\n]+)`/g, (_full, content) => stash(`<code>${content}</code>`));
   html = html.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");

@@ -42,6 +42,7 @@
 - Treat this file as the canonical restart note when the IDE session is reopened.
 - UI workflow decision: every UI-facing change requires screenshot-based review and iteration until the visual result is satisfactory.
 - Content workflow decision: when a user provides session prose for `Cròniques`, preserve the full incoming text verbatim in the chronicle body and move structure/order into summary, highlights, and glossary linking.
+- Chronicle inline references keep the shared `[[id|label]]` syntax and may target either glossary entries or main character sheets.
 - Glossary jumps from `Croniques` must reveal the referenced entry by clearing incompatible glossary filters/search while preserving the return path to the source chronicle.
 - Glossary search should be accent-insensitive and also match entry categories, not only names/descriptions/tags.
 - Glossary search rerenders the module live, so it must explicitly preserve input focus and caret position while typing.
@@ -58,6 +59,7 @@
 - Decide whether to keep the generated capture tooling (`capture-harness.html`, `capture-harness.js`, `capture-runner.mjs`) as part of the permanent UI workflow.
 - Clean up or commit the pending visual artifacts and code changes once the current restyle is considered stable.
 - Review whether future chronicle passes should also inline glossary links inside raw session prose, or keep verbatim input completely untouched there.
+- Decide whether character-reference jumps from `Cròniques` should eventually mirror the glossary return-to-chronicle affordance.
 
 ## Next steps
 - On next session start, read this file before inspecting code.
@@ -91,6 +93,9 @@
 - 2026-04-25: added glossary image editing support through newline-separated image paths/URLs in the glossary editor, with QA coverage ensuring the saved image renders in the detail view.
 - 2026-04-25: added glossary "situacio actual" and "ultima vegada vist/visitat a" metadata to the detail hero, seeded key entries like Acantilado, Uric, Mijo and Reina Elisabeth, and added migration + QA coverage for the new state summary.
 - 2026-04-25: replaced manual glossary image entry with a native file-picker flow plus preview/remove controls, while keeping serialized `imageAssets` under the hood for persistence and QA.
+- 2026-04-27: extended chronicle inline references so editor suggestions include main characters as well as glossary entries, preserving the selected label text while pointing to either target type, with edit QA and capture review updated accordingly.
+- 2026-04-27: expanded final-pass QA coverage to include image lightbox open/close behavior, protection against accidental detail opens from image clicks, and saved chronicle jumps into main character sheets.
+- 2026-04-27: added category-based color coding shared between chronicle glossary references, reference suggestions, and glossary category filters, with visual review in desktop and mobile captures.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.
