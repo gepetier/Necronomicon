@@ -30,6 +30,26 @@ import {
   renderRichText,
   readString,
 } from "./app/utils.js";
+import {
+  collectAssetTokensFromState,
+  collectEmbeddedDataUrlsFromState,
+  inferAssetKindFromMimeType,
+  isAssetToken,
+  replaceAssetSourcesInState,
+} from "./app/assets.js";
+import {
+  clearAssetStore,
+  exportAssetBundle,
+  hydrateAssetReferences,
+  importAssetBundle,
+  storeAssetDataUrl,
+  storeAssetFile,
+} from "./app/asset-store.js";
+import {
+  createBackupPayload,
+  readBackupAssetBundle,
+  readBackupStatePayload,
+} from "./app/backup.js";
 
 let state = loadStoredState();
 let bookTurnTimer = null;
@@ -49,9 +69,29 @@ const sidebarContextPanel = document.querySelector("#sidebarContextPanel");
 const imageLightbox = document.querySelector("#imageLightbox");
 const imageLightboxMedia = document.querySelector("#imageLightboxMedia");
 const richMediaPicker = document.querySelector("#richMediaPicker");
+const backupImportPicker = document.querySelector("#backupImportPicker");
 
 let lastLightboxTrigger = null;
 let pendingRichMediaInsert = null;
+
+const RENDER_PARTS = {
+  sidebar: "sidebar",
+  notice: "notice",
+  characters: "characters",
+  chronicles: "chronicles",
+  glossary: "glossary",
+  themes: "themes",
+  assets: "assets",
+};
+const FULL_RENDER_PARTS = [
+  RENDER_PARTS.sidebar,
+  RENDER_PARTS.notice,
+  RENDER_PARTS.characters,
+  RENDER_PARTS.chronicles,
+  RENDER_PARTS.glossary,
+  RENDER_PARTS.themes,
+  RENDER_PARTS.assets,
+];
 
 initialize();
 
@@ -67,6 +107,8 @@ function initialize() {
   window.addEventListener("pagehide", flushPendingPersist);
 
   render();
+  installQaHooks();
+  void migrateEmbeddedAssets({ announce: false });
 }
 
 function handleClick(event) {
@@ -95,6 +137,16 @@ function handleClick(event) {
     requestAnimationFrame(() => {
       renderReferenceSuggestions(referenceTextarea);
     });
+  }
+
+  if (event.target.closest("[data-export-backup]")) {
+    void exportCampaignBackup();
+    return;
+  }
+
+  if (event.target.closest("[data-import-backup]")) {
+    backupImportPicker?.click();
+    return;
   }
 
   const moduleLink = event.target.closest("[data-module-link]");
@@ -505,6 +557,11 @@ function buildFocusSelector(element) {
 }
 
 function handleInput(event) {
+  if (event.target === backupImportPicker && event.target instanceof HTMLInputElement) {
+    void importCampaignBackup(event.target);
+    return;
+  }
+
   if (event.target?.name === "chronicleIndexSearch") {
     state.ui.chronicleIndexSearch = event.target.value.trim();
     scheduleChronicleIndexSearchRender();
@@ -608,13 +665,42 @@ function handleSubmit(event) {
   }
 }
 
-function render() {
-  updateSidebar();
-  updateSaveNotice();
-  renderCharactersModule();
-  renderChroniclesModule();
-  renderGlossaryModule();
-  applyReferenceThemes();
+function render(parts = FULL_RENDER_PARTS) {
+  const renderSet = new Set(parts);
+
+  if (renderSet.has(RENDER_PARTS.sidebar)) {
+    updateSidebar();
+  }
+  if (renderSet.has(RENDER_PARTS.notice)) {
+    updateSaveNotice();
+  }
+  if (renderSet.has(RENDER_PARTS.characters)) {
+    renderCharactersModule();
+  }
+  if (renderSet.has(RENDER_PARTS.chronicles)) {
+    renderChroniclesModule();
+  }
+  if (renderSet.has(RENDER_PARTS.glossary)) {
+    renderGlossaryModule();
+  }
+  if (renderSet.has(RENDER_PARTS.themes)) {
+    applyReferenceThemes();
+  }
+  if (renderSet.has(RENDER_PARTS.assets)) {
+    void hydrateAssetReferences(document);
+  }
+}
+
+function currentModuleRenderParts() {
+  if (state.ui.currentModule === "characters") {
+    return [RENDER_PARTS.notice, RENDER_PARTS.characters, RENDER_PARTS.themes, RENDER_PARTS.assets];
+  }
+
+  if (state.ui.currentModule === "chronicles") {
+    return [RENDER_PARTS.notice, RENDER_PARTS.sidebar, RENDER_PARTS.chronicles, RENDER_PARTS.themes, RENDER_PARTS.assets];
+  }
+
+  return [RENDER_PARTS.notice, RENDER_PARTS.glossary, RENDER_PARTS.themes, RENDER_PARTS.assets];
 }
 
 function updateSidebar() {
@@ -884,6 +970,7 @@ function saveChronicle(formData) {
   }
   state.ui.editModes.chronicles = false;
   showSaveNotice("Cronica desada");
+  void migrateEmbeddedAssets({ announce: false, renderParts: currentModuleRenderParts() });
 }
 
 function switchChronicleSelection(nextId, direction = "next") {
@@ -1007,11 +1094,12 @@ function saveGlossary(formData) {
   saveGlossaryEntry(formData, { findGlossaryEntry });
   state.ui.editModes.glossary = false;
   showSaveNotice("Entrada desada");
+  void migrateEmbeddedAssets({ announce: false, renderParts: currentModuleRenderParts() });
 }
 
-function persistAndRender() {
+function persistAndRender(parts = FULL_RENDER_PARTS) {
   persistStateImmediately();
-  render();
+  render(parts);
 }
 
 function schedulePersistState(delay = 180) {
@@ -1041,7 +1129,7 @@ function scheduleGlossarySearchRender(selectionStart = null, selectionEnd = null
   window.clearTimeout(glossarySearchTimer);
   glossarySearchTimer = window.setTimeout(() => {
     glossarySearchTimer = null;
-    renderGlossaryModule();
+    render([RENDER_PARTS.glossary, RENDER_PARTS.themes, RENDER_PARTS.assets]);
     restoreGlossarySearchFocus(selectionStart, selectionEnd);
     schedulePersistState();
   }, delay);
@@ -1051,7 +1139,7 @@ function scheduleChronicleIndexSearchRender(delay = 120) {
   window.clearTimeout(chronicleIndexSearchTimer);
   chronicleIndexSearchTimer = window.setTimeout(() => {
     chronicleIndexSearchTimer = null;
-    render();
+    render([RENDER_PARTS.sidebar, RENDER_PARTS.notice, RENDER_PARTS.chronicles, RENDER_PARTS.themes, RENDER_PARTS.assets]);
     schedulePersistState();
   }, delay);
 }
@@ -1065,10 +1153,10 @@ function showSaveNotice(message) {
     message,
   };
   window.clearTimeout(saveNoticeTimer);
-  persistAndRender();
+  persistAndRender(currentModuleRenderParts());
   saveNoticeTimer = window.setTimeout(() => {
     state.ui.saveNotice = "";
-    persistAndRender();
+    render([RENDER_PARTS.notice]);
   }, 1800);
 }
 
@@ -1383,7 +1471,7 @@ function updateGlossaryDraftImageAssets(glossaryId, updater) {
   };
 
   schedulePersistState();
-  renderGlossaryModule();
+  render([RENDER_PARTS.glossary, RENDER_PARTS.themes, RENDER_PARTS.assets]);
 }
 
 async function handleGlossaryImageSelection(input) {
@@ -1396,9 +1484,9 @@ async function handleGlossaryImageSelection(input) {
     return;
   }
 
-  const imageDataUrls = (await Promise.all(files.map(readFileAsDataUrl))).filter(Boolean);
-  if (imageDataUrls.length) {
-    updateGlossaryDraftImageAssets(glossaryId, (images) => [...images, ...imageDataUrls]);
+  const assetTokens = (await Promise.all(files.map((file) => storeAssetFile(file)))).filter(Boolean);
+  if (assetTokens.length) {
+    updateGlossaryDraftImageAssets(glossaryId, (images) => [...images, ...assetTokens]);
   }
 
   input.value = "";
@@ -1429,7 +1517,8 @@ async function handleRichMediaSelection(input) {
     return;
   }
 
-  const mediaSource = await readFileAsDataUrl(file);
+  const assetToken = await storeAssetFile(file);
+  const mediaSource = assetToken || await readFileAsDataUrl(file);
   if (!mediaSource) {
     return;
   }
@@ -1472,7 +1561,11 @@ function insertMediaReference(textarea, mediaKind, mediaSource, referenceLabel, 
 }
 
 function resolveMediaKind(file, mediaSource) {
-  const mimeType = String(file?.type || mediaSource.match(/^data:([^;]+)/)?.[1] || "").toLowerCase();
+  const mimeType = String(
+    file?.type
+    || (isAssetToken(mediaSource) ? "" : mediaSource.match(/^data:([^;]+)/)?.[1])
+    || "",
+  ).toLowerCase();
   if (mimeType.startsWith("image/")) {
     return "image";
   }
@@ -1518,6 +1611,114 @@ function readFileAsDataUrl(file) {
   });
 }
 
+async function migrateEmbeddedAssets(options = {}) {
+  const dataUrls = collectEmbeddedDataUrlsFromState(state);
+  if (!dataUrls.length) {
+    return false;
+  }
+
+  const replacements = new Map();
+  for (const dataUrl of dataUrls) {
+    if (replacements.has(dataUrl)) {
+      continue;
+    }
+
+    const mimeType = dataUrl.match(/^data:([^;]+)/)?.[1] || "";
+    const token = await storeAssetDataUrl(dataUrl, {
+      kind: inferAssetKindFromMimeType(mimeType),
+      mimeType,
+    });
+    if (token) {
+      replacements.set(dataUrl, token);
+    }
+  }
+
+  if (!replacements.size) {
+    return false;
+  }
+
+  const migrated = replaceAssetSourcesInState(state, (source) => replacements.get(source) || source);
+  if (!migrated.changed) {
+    return false;
+  }
+
+  state = migrated.state;
+  ensureUiStateShape();
+  persistStateImmediately();
+  render(options.renderParts || FULL_RENDER_PARTS);
+
+  if (options.announce) {
+    showSaveNotice(options.message || "Assets localitzats fora del desat principal");
+  }
+
+  return true;
+}
+
+async function exportCampaignBackup() {
+  const payload = await createCurrentBackupPayload();
+  downloadTextFile(
+    `necronomicon-backup-${new Date().toISOString().slice(0, 10)}.json`,
+    `${JSON.stringify(payload, null, 2)}\n`,
+    "application/json",
+  );
+  showSaveNotice("Backup exportat");
+}
+
+async function importCampaignBackup(input) {
+  const file = Array.from(input.files || []).find((item) => item instanceof File) || null;
+  input.value = "";
+
+  if (!file) {
+    return;
+  }
+
+  if (!window.confirm("Vols substituir la campanya actual per la copia importada?")) {
+    return;
+  }
+
+  try {
+    const rawPayload = JSON.parse(await file.text());
+    await restoreBackupPayload(rawPayload);
+  } catch {
+    window.alert("No s'ha pogut importar el fitxer JSON seleccionat.");
+  }
+}
+
+async function createCurrentBackupPayload() {
+  await migrateEmbeddedAssets({ announce: false });
+  const assetBundle = await exportAssetBundle(collectAssetTokensFromState(state));
+  return createBackupPayload(state, assetBundle);
+}
+
+async function restoreBackupPayload(rawPayload) {
+  const nextState = storageMigrateStoredState(readBackupStatePayload(rawPayload));
+
+  await clearAssetStore();
+  const assetBundle = readBackupAssetBundle(rawPayload);
+  if (assetBundle.length) {
+    await importAssetBundle(assetBundle);
+  }
+
+  state = nextState;
+  ensureUiStateShape();
+  await migrateEmbeddedAssets({ announce: false });
+  persistStateImmediately();
+  render();
+  showSaveNotice("Backup importat");
+}
+
+function downloadTextFile(fileName, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 0);
+}
+
 function hasModuleDrafts(module) {
   if (module === "characters") {
     return Boolean(
@@ -1535,6 +1736,26 @@ function hasModuleDrafts(module) {
   }
 
   return false;
+}
+
+function installQaHooks() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("qaRun")) {
+    return;
+  }
+
+  window.__NECRONOMICON_QA__ = {
+    exportBackupPayload: () => createCurrentBackupPayload(),
+    importBackupPayload: (payload) => restoreBackupPayload(payload),
+    storeAssetDataUrl: (dataUrl, options = {}) => storeAssetDataUrl(dataUrl, options),
+    storeAssetTextFile: (content, options = {}) => storeAssetFile(
+      new File(
+        [content],
+        options.name || "qa-asset.txt",
+        { type: options.mimeType || "application/octet-stream" },
+      ),
+    ),
+  };
 }
 
 function getSelectedCharacter() {

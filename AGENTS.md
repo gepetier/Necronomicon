@@ -54,6 +54,12 @@
 - Glossary entries now expose editable `imageAssets` in the glossary editor as newline-separated paths or URLs, because the detail view already supports multiple images and the app has no upload backend.
 - Glossary detail entries now surface a short "situacio actual" summary plus a manually editable "ultima vegada vist/visitat a" session marker, with `Llocs` using the visit wording and other categories using seen wording.
 - Glossary image insertion now uses the browser's native file picker in the editor, converting selected files into persisted inline data so no manual path entry is required for normal use.
+- Rich-text editor reference suggestions are now available in `Personatges`, `Cròniques`, and `Glossari`, and selecting text should also expose a `Multimedia` suggestion that preserves the selected label.
+- QA suites share the local harness port `4173`, so they should be run sequentially rather than in parallel when validating the app.
+- Backup export/import now routes through shared helper functions in `main.js`, so the UI buttons and any QA hooks exercise the same serialization and restore path.
+- `qa-runner.mjs` now forces process exit after writing artifacts because the edit suite can otherwise leave Node handles alive after a successful run.
+- Rich-text editor previews need their own ink color and contrast treatment instead of inheriting the softer field-label tone, or long prose becomes hard to read.
+- Mobile glossary returns from `Cròniques` should render as a short inline back chip at the top of the detail view, not as a bottom floating CTA that competes with reading and notes.
 
 ## Pending
 - Decide whether to keep the generated capture tooling (`capture-harness.html`, `capture-harness.js`, `capture-runner.mjs`) as part of the permanent UI workflow.
@@ -97,6 +103,13 @@
 - 2026-04-27: expanded final-pass QA coverage to include image lightbox open/close behavior, protection against accidental detail opens from image clicks, and saved chronicle jumps into main character sheets.
 - 2026-04-27: added category-based color coding shared between chronicle glossary references, reference suggestions, and glossary category filters, with visual review in desktop and mobile captures.
 - 2026-04-27: enabled player notes on character detail views as well, with functional QA covering open/save/close and dedicated desktop/mobile note captures.
+- 2026-04-28: fixed the desktop `Glossari` editor composition by switching the module into a 2-column edit layout while the glossary editor is open, then revalidated the affected desktop/mobile captures.
+- 2026-04-28: documented that rich-editor reference suggestions and the selected-text `Multimedia` action now apply across `Personatges`, `Cròniques`, and `Glossari`, and confirmed `npm.cmd run qa:edit` passes when suites are run sequentially.
+- 2026-04-29: re-ran `npm.cmd run qa`, `npm.cmd run qa:edit`, `npm.cmd run test:unit`, and `npm.cmd run build`; all passed when the QA suites were run sequentially on port `4173`.
+- 2026-04-29: added dedicated desktop/mobile capture scenarios for the sidebar `Exporta JSON` / `Importa JSON` tools plus focused `Cròniques` read/edit views around the `Fites clau` block, then regenerated `qa-results/captures/`.
+- 2026-04-29: extracted shared backup creation/restore helpers in `main.js` and hardened `qa-runner.mjs` to exit cleanly after successful edit-suite runs.
+- 2026-04-29: fixed the rich-text editor preview readability by giving the preview frame stronger parchment contrast and explicit dark body text, then revalidated the affected `Cròniques` editor views in desktop and mobile captures.
+- 2026-04-29: replaced the mobile `Torna a crònica` floating action with a short inline back chip at the top of the glossary detail view and added dedicated desktop/mobile capture scenarios for the return state.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

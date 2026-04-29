@@ -1,3 +1,5 @@
+import { isAssetToken } from "./assets.js";
+
 export function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -175,12 +177,12 @@ export function renderRichTextareaField(name, label, value, rows = 4, options = 
         >${escapeHtml(value)}</textarea>
         ${enableReferences ? `<div id="${inputId}-suggestions" class="reference-suggestions"></div>` : ""}
         <small class="field-help">${escapeHtml(help)}${enableReferences ? " Escriu un terme del glossari o un personatge principal per veure suggerències de referència. Si selecciones text, també pots afegir multimedia." : ""}</small>
-        <div class="rich-preview-frame">
-          <div class="rich-preview-label">Preview</div>
-          <div id="${previewId}" class="rich-preview rich-text">${renderRichText(value)}</div>
+          <div class="rich-preview-frame">
+            <div class="rich-preview-label">Previsualitzacio</div>
+            <div id="${previewId}" class="rich-preview rich-text">${renderRichText(value)}</div>
+          </div>
         </div>
-      </div>
-    </label>
+      </label>
   `;
 }
 
@@ -409,7 +411,7 @@ function renderRichInline(value) {
   html = html.replace(
     /\{\{media:(image|audio|video|file)\|([^|{}]+)\|([^{}]+)\}\}/g,
     (_full, mediaKind, label, source) =>
-      stash(`<a class="rich-media-inline-link" href="${escapeAttribute(source)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`),
+      stash(`<a class="rich-media-inline-link" ${renderAssetAttribute("href", source)} target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`),
   );
   html = html.replace(
     /\[\[([a-zA-Z0-9-_]+)\|([^\]]+)\]\]/g,
@@ -455,7 +457,7 @@ function renderRichMediaBlock(media) {
   if (media.kind === "image") {
     return `
       <figure class="rich-media-block rich-media-image">
-        <img src="${escapeAttribute(media.source)}" alt="${escapeAttribute(media.label)}" loading="lazy" />
+        <img ${renderAssetAttribute("src", media.source)} alt="${escapeAttribute(media.label)}" loading="lazy" />
         <figcaption>${escapeHtml(media.label)}</figcaption>
       </figure>
     `;
@@ -464,7 +466,7 @@ function renderRichMediaBlock(media) {
   if (media.kind === "audio") {
     return `
       <figure class="rich-media-block rich-media-audio">
-        <audio controls preload="none" src="${escapeAttribute(media.source)}"></audio>
+        <audio controls preload="none" ${renderAssetAttribute("src", media.source)}></audio>
         <figcaption>${escapeHtml(media.label)}</figcaption>
       </figure>
     `;
@@ -473,7 +475,7 @@ function renderRichMediaBlock(media) {
   if (media.kind === "video") {
     return `
       <figure class="rich-media-block rich-media-video">
-        <video controls preload="metadata" src="${escapeAttribute(media.source)}"></video>
+        <video controls preload="metadata" ${renderAssetAttribute("src", media.source)}></video>
         <figcaption>${escapeHtml(media.label)}</figcaption>
       </figure>
     `;
@@ -481,7 +483,7 @@ function renderRichMediaBlock(media) {
 
   return `
     <p class="rich-media-block rich-media-file">
-      <a href="${escapeAttribute(media.source)}" target="_blank" rel="noreferrer">${escapeHtml(media.label)}</a>
+      <a ${renderAssetAttribute("href", media.source)} target="_blank" rel="noreferrer">${escapeHtml(media.label)}</a>
     </p>
   `;
 }
@@ -539,4 +541,16 @@ export function sanitizePlayerNotes(notes) {
         }))
         .filter((note) => note.text)
     : [];
+}
+
+function renderAssetAttribute(attribute, source) {
+  if (isAssetToken(source)) {
+    return `data-asset-${attribute}="${escapeAttribute(source)}"`;
+  }
+
+  return `${attribute}="${escapeAttribute(source)}"`;
+}
+
+function renderAssetLabel(source, fallback) {
+  return isAssetToken(source) ? fallback : source;
 }

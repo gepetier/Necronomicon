@@ -4,6 +4,7 @@ const frame = document.querySelector("#appFrame");
 const requestedScrollY = Number(params.get("scrollY") || "0");
 
 const STORAGE_KEYS = ["campaign-compendium", "campaign-compendium-v2"];
+const ASSET_DB_NAME = "campaign-compendium-assets";
 
 bootstrap().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
@@ -13,6 +14,7 @@ bootstrap().catch((error) => {
 
 async function bootstrap() {
   resetStorage(window.localStorage);
+  await resetAssetStore(window.indexedDB);
   const frameLoaded = onceLoaded(frame);
   frame.src = `/index.html?captureRun=${Date.now()}`;
   await frameLoaded;
@@ -85,6 +87,7 @@ function createContext(currentFrame) {
 async function runScenario(context, scenarioName) {
   const handlers = {
     "characters-grid": async () => {},
+    "sidebar-tools": async () => {},
     "characters-grid-lightbox": async () => {
       await context.click(".portrait-media");
     },
@@ -120,7 +123,14 @@ async function runScenario(context, scenarioName) {
     "chronicles-read": async () => {
       await context.click('[data-module-link="chronicles"]');
     },
+    "chronicles-read-highlights": async () => {
+      await context.click('[data-module-link="chronicles"]');
+    },
     "chronicles-edit": async () => {
+      await context.click('[data-module-link="chronicles"]');
+      await context.click('[data-toggle-edit="chronicles"]');
+    },
+    "chronicles-edit-highlights": async () => {
       await context.click('[data-module-link="chronicles"]');
       await context.click('[data-toggle-edit="chronicles"]');
     },
@@ -142,6 +152,10 @@ async function runScenario(context, scenarioName) {
       await context.click('[data-module-link="glossary"]');
       await context.click('[data-glossary-filter="Faccions"]');
       await context.click('[data-glossary-id="portadores-del-velo"]');
+    },
+    "glossary-return": async () => {
+      await context.click('[data-module-link="chronicles"]');
+      await context.click('[data-reference-jump="acantilado-del-silencio"]');
     },
     "glossary-detail-lightbox": async () => {
       await context.click('[data-module-link="glossary"]');
@@ -202,6 +216,25 @@ function onceLoaded(targetFrame) {
 
 function resetStorage(storage) {
   STORAGE_KEYS.forEach((key) => storage.removeItem(key));
+}
+
+function resetAssetStore(indexedDb) {
+  return new Promise((resolve) => {
+    if (!indexedDb) {
+      resolve();
+      return;
+    }
+
+    const request = indexedDb.deleteDatabase(ASSET_DB_NAME);
+    const fallback = window.setTimeout(() => resolve(), 400);
+    const done = () => {
+      window.clearTimeout(fallback);
+      resolve();
+    };
+    request.addEventListener("success", done);
+    request.addEventListener("error", done);
+    request.addEventListener("blocked", done);
+  });
 }
 
 function delay(ms) {

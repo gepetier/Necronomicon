@@ -15,6 +15,13 @@
           <p class="sidebar-copy">
             Pergamins, cròniques i memòria viva dels personatges.
           </p>
+          <div class="project-tools">
+            <p class="eyebrow">Dades</p>
+            <div class="sidebar-actions">
+              <button type="button" class="secondary" data-export-backup>Exporta JSON</button>
+              <button type="button" class="secondary" data-import-backup>Importa JSON</button>
+            </div>
+          </div>
         </div>
 
         <nav class="module-nav" aria-label="Mòduls principals" role="tablist">
@@ -66,6 +73,7 @@
     </div>
     <div id="saveNotice" class="save-notice" aria-live="polite" aria-atomic="true"></div>
     <input id="richMediaPicker" type="file" data-rich-media-picker hidden />
+    <input id="backupImportPicker" type="file" accept=".json,application/json" hidden />
     <div id="imageLightbox" class="image-lightbox" hidden>
       <div class="image-lightbox-backdrop" data-close-image-lightbox></div>
       <div

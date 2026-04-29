@@ -14,6 +14,7 @@ import {
   renderRichTextareaField,
   renderTextCard,
 } from "./utils.js";
+import { isAssetToken } from "./assets.js";
 
 export function renderGlossaryModule({
   state,
@@ -29,10 +30,11 @@ export function renderGlossaryModule({
   const current = entries.find((entry) => entry.id === state.ui.selectedGlossaryId) || entries[0] || null;
   const categories = getGlossaryCategories(state.glossary);
   const activeFilterCount = getActiveFilterCount(state);
+  const returnLabel = shouldShowGlossaryReturnFab(current?.id) ? getViewStateLabel(state.ui.glossaryReturnView) : "";
 
   rootEl.innerHTML = `
     <section class="glossary-shell ${state.ui.notesPanelOpen ? "notes-open" : ""}">
-      <div class="glossary-layout">
+      <div class="glossary-layout ${state.ui.editModes.glossary && current ? "glossary-layout-editing" : ""}">
         <aside class="glossary-nav-panel module-surface">
           <section class="glossary-search-panel">
             <div>
@@ -116,10 +118,9 @@ export function renderGlossaryModule({
         </section>
 
         <div class="glossary-detail-wrap">
-          ${current ? renderGlossaryDetail(current, state, findCharacter) : renderGlossaryEmptyDetail()}
+          ${current ? renderGlossaryDetail(current, state, findCharacter, returnLabel) : renderGlossaryEmptyDetail()}
           ${state.ui.editModes.glossary && current ? renderGlossaryEditor(current, state) : ""}
           ${renderPlayerNotesPanel()}
-          ${shouldShowGlossaryReturnFab(current?.id) ? renderGlossaryReturnFab(getViewStateLabel(state.ui.glossaryReturnView)) : ""}
         </div>
       </div>
     </section>
@@ -300,7 +301,7 @@ function renderGlossaryEmptyDetail() {
   `;
 }
 
-function renderGlossaryDetail(entry, state, findCharacter) {
+function renderGlossaryDetail(entry, state, findCharacter, returnLabel = "") {
   const images = (entry.imageAssets || []).filter(Boolean);
 
   return `
@@ -310,6 +311,7 @@ function renderGlossaryDetail(entry, state, findCharacter) {
       tabindex="-1"
       style="${paletteStyle(entry.palette)}"
     >
+      ${returnLabel ? renderGlossaryReturnChip(returnLabel) : ""}
       <div class="glossary-detail-hero">
         <div class="glossary-detail-top">
           <div class="glossary-detail-heading">
@@ -331,7 +333,7 @@ function renderGlossaryDetail(entry, state, findCharacter) {
                 .map(
                   (source, index) => `
                     <figure class="glossary-media-frame">
-                      <img src="${escapeAttribute(source)}" alt="${escapeAttribute(`${entry.name} ${index + 1}`)}" loading="lazy" />
+                      <img ${renderGlossaryAssetAttribute("src", source)} alt="${escapeAttribute(`${entry.name} ${index + 1}`)}" loading="lazy" />
                     </figure>
                   `,
                 )
@@ -375,10 +377,21 @@ function renderGlossaryLatestPanel(entry, state) {
   `;
 }
 
-function renderGlossaryReturnFab(targetLabel) {
+function renderGlossaryReturnChip(targetLabel) {
   return `
-    <button type="button" class="return-fab" data-return-to-chronicle>
-      Torna a ${escapeHtml(targetLabel)}
+    <button
+      type="button"
+      class="secondary glossary-return-chip"
+      data-return-to-chronicle
+      aria-label="${escapeAttribute(`Torna a ${targetLabel}`)}"
+      title="${escapeAttribute(`Torna a ${targetLabel}`)}"
+    >
+      <span class="glossary-return-chip-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="M10.2 5.2a.75.75 0 0 1 0 1.06L5.46 11H19a.75.75 0 0 1 0 1.5H5.46l4.74 4.74a.75.75 0 1 1-1.06 1.06l-6.02-6.02a.75.75 0 0 1 0-1.06L9.14 5.2a.75.75 0 0 1 1.06 0Z" fill="currentColor"/>
+        </svg>
+      </span>
+      <span>Torna a la cronica</span>
     </button>
   `;
 }
@@ -541,7 +554,7 @@ function renderGlossaryImagePicker(entry, draft) {
               .map(
                 (source, index) => `
                   <figure class="glossary-editor-media-frame">
-                    <img src="${escapeAttribute(source)}" alt="${escapeAttribute(`${entry?.name || "Imatge"} ${index + 1}`)}" loading="lazy" />
+                    <img ${renderGlossaryAssetAttribute("src", source)} alt="${escapeAttribute(`${entry?.name || "Imatge"} ${index + 1}`)}" loading="lazy" />
                     <button
                       type="button"
                       class="secondary glossary-editor-media-remove"
@@ -775,4 +788,12 @@ function formatRelativeTime(value) {
   }
 
   return date.toLocaleTimeString("ca-ES", { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderGlossaryAssetAttribute(attribute, source) {
+  if (isAssetToken(source)) {
+    return `data-asset-${attribute}="${escapeAttribute(source)}"`;
+  }
+
+  return `${attribute}="${escapeAttribute(source)}"`;
 }

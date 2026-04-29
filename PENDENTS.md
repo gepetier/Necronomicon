@@ -1,24 +1,28 @@
 # Pendents
 
-## Oberts d'aquesta passada
+## Tancat avui
 
-- Revisar el layout desktop de l'editor de `Glossari`: les captures `glossary-edit-desktop.png` i `glossary-edit-references-desktop.png` apunten a un desbordament horitzontal o a una composició trencada.
-- Actualitzar `AGENTS.md` amb els canvis nous:
-  - editor ric amb referències temàtiques també a `Personatges` i `Glossari`
-  - suggerència `Multimedia` quan hi ha text seleccionat
-- Si es vol deixar el QA fi:
-  - `npm.cmd run qa:edit` genera `qa-results/summary.json` amb `PASS` a desktop i mòbil, però el procés pare no acaba net; convé revisar `qa-runner.mjs` o el tancament del servidor fill.
+- `npm.cmd run qa:edit` OK en solitari.
+- `npm.cmd run qa` OK en seqüència.
+- `npm.cmd run test:unit` OK.
+- `npm.cmd run build` OK.
+- Captures regenerades per als canvis UI d'aquesta passada:
+  - barra lateral amb `Exporta JSON` / `Importa JSON`
+  - lectura de `Cròniques` enfocada al bloc `Fites clau`
+  - edició de `Cròniques` enfocada al bloc `Fites clau`
 
-## Estat validat
+## Encara obert
 
-- `npm.cmd run build` OK
-- `npm.cmd run qa:functional` OK
-- `npm.cmd run qa:ui` OK
-- `qa-results/summary.json` mostra `edit` OK a desktop i mòbil
-- Captures correctes per:
-  - `character-editor-references-desktop.png`
-  - `character-editor-references-mobile.png`
-  - `chronicles-edit-references-desktop.png`
-  - `chronicles-edit-references-mobile.png`
-  - `glossary-edit-references-mobile.png`
+- Si es vol una validació manual estricta del flux `Exporta JSON` / `Importa JSON` amb `IndexedDB` i selector natiu de fitxers, fer-la en navegador real. El flux de backup ara comparteix helpers interns i el codi està cobert per build + unit + QA del harness, però el picker natiu i l'asset store no són un objectiu fiable per a automatització headless en aquesta base.
+- Decidir si els escenaris de captura nous (`sidebar-tools`, `chronicles-read-highlights`, `chronicles-edit-highlights`) es mantenen com a part fixa del catàleg de captures.
 
+## Context
+
+- Fitxers tocats en aquest tancament:
+  - `main.js`
+  - `qa-runner.mjs`
+  - `qa-harness.js`
+  - `capture-harness.js`
+  - `capture-runner.mjs`
+  - `AGENTS.md`
+- Captures noves escrites a `qa-results/captures/`.

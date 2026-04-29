@@ -46,10 +46,16 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+main()
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    setImmediate(() => {
+      process.exit(process.exitCode || 0);
+    });
+  });
 
 function getScenarios(target) {
   const all = [

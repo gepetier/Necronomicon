@@ -53,6 +53,7 @@ export function saveChronicle(formData, { getSelectedChronicle, showSaveNotice }
   chronicle.date = readString(formData, "date");
   chronicle.summary = readString(formData, "summary");
   chronicle.content = readString(formData, "content");
+  chronicle.highlights = readString(formData, "highlights");
 
   if (formData.has("imageNote")) {
     chronicle.imageNote = readString(formData, "imageNote");
@@ -162,6 +163,14 @@ function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel
             : `<div class="book-image" style="${paletteStyle(current?.palette || seedData.chronicles[0].palette)}"></div>`}
         </figure>
         <div class="chapter-summary rich-text">${renderChronicleRichText(current?.summary || "No hi ha resum disponible.")}</div>
+        ${current?.highlights
+          ? `
+            <section class="chapter-highlights section-card">
+              <p class="eyebrow">Fites clau</p>
+              <div class="rich-text">${renderChronicleRichText(current.highlights)}</div>
+            </section>
+          `
+          : ""}
         <div class="page-footer">
           <span class="page-number">Pagina esquerra</span>
           <span>${escapeHtml(formatShortDate(current?.date) || current?.date || "")}</span>
@@ -285,6 +294,7 @@ function renderChronicleEditor(chronicle, state) {
                 ${renderInputField("date", "Data", readDraftValue(draft.date, chronicle?.date || ""))}
                 ${renderRichTextareaField("summary", "Resum principal", readDraftValue(draft.summary, chronicle?.summary || ""), 5)}
                 ${renderRichTextareaField("content", "Cos del capitol", readDraftValue(draft.content, chronicle?.content || ""), 10)}
+                ${renderRichTextareaField("highlights", "Fites clau", readDraftValue(draft.highlights, chronicle?.highlights || ""), 6)}
               </div>
             `,
           )}
@@ -359,7 +369,7 @@ function chronicleMatchesSearch(chronicle, search) {
     return true;
   }
 
-  return [chronicle.chapter, chronicle.title, chronicle.date, chronicle.summary]
+  return [chronicle.chapter, chronicle.title, chronicle.date, chronicle.summary, chronicle.highlights]
     .filter(Boolean)
     .some((value) => value.toLowerCase().includes(search));
 }

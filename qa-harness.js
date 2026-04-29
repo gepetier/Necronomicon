@@ -11,6 +11,7 @@ suiteLabelEl.textContent = `suite=${suite}`;
 modeLabelEl.textContent = `mode=${mode}`;
 
 const STORAGE_KEYS = ["campaign-compendium", "campaign-compendium-v2"];
+const ASSET_DB_NAME = "campaign-compendium-assets";
 
 bootstrap().catch((error) => {
   publish({
@@ -24,6 +25,7 @@ bootstrap().catch((error) => {
 
 async function bootstrap() {
   resetStorage(window.localStorage);
+  await resetAssetStore(window.indexedDB);
   const frameLoaded = onceLoaded(iframe);
   iframe.src = `/index.html?qaRun=${Date.now()}`;
   await frameLoaded;
@@ -46,11 +48,17 @@ function createContext(currentFrame) {
     throw new Error("No s'ha pogut accedir al document de l'aplicacio.");
   }
 
+  let downloadRecords = [];
+  let restoreDownloadCapture = null;
+
   return {
     doc,
     win,
     mode,
     suite,
+    q(selector) {
+      return doc.querySelector(selector);
+    },
     click(selector) {
       const target = doc.querySelector(selector);
       if (!(target instanceof win.HTMLElement)) {
@@ -92,6 +100,99 @@ function createContext(currentFrame) {
         throw new Error(`Formulari no trobat: ${selector}`);
       }
       form.requestSubmit();
+    },
+    async setFiles(selector, files) {
+      const target = doc.querySelector(selector);
+      if (!(target instanceof win.HTMLInputElement) || target.type !== "file") {
+        throw new Error(`Input de fitxers no trobat: ${selector}`);
+      }
+
+      const fileList = (files || []).map((file) => new win.File(
+        [file.content || ""],
+        file.name || "qa-file.bin",
+        { type: file.type || "application/octet-stream" },
+      ));
+
+      if (typeof win.DataTransfer === "function") {
+        const dataTransfer = new win.DataTransfer();
+        fileList.forEach((file) => dataTransfer.items.add(file));
+        Object.defineProperty(target, "files", {
+          configurable: true,
+          value: dataTransfer.files,
+        });
+      } else {
+        Object.defineProperty(target, "files", {
+          configurable: true,
+          value: fileList,
+        });
+      }
+
+      target.dispatchEvent(new win.Event("change", { bubbles: true }));
+      await delay(600);
+    },
+    startDownloadCapture() {
+      if (restoreDownloadCapture) {
+        restoreDownloadCapture();
+      }
+
+      downloadRecords = [];
+      const originalCreateObjectUrl = win.URL.createObjectURL.bind(win.URL);
+      const originalRevokeObjectUrl = win.URL.revokeObjectURL.bind(win.URL);
+      const originalAnchorClick = win.HTMLAnchorElement.prototype.click;
+      const blobByUrl = new Map();
+
+      win.URL.createObjectURL = (blob) => {
+        const url = `blob:qa-download-${downloadRecords.length}-${Date.now()}`;
+        blobByUrl.set(url, blob);
+        return url;
+      };
+
+      win.URL.revokeObjectURL = (url) => {
+        blobByUrl.delete(url);
+      };
+
+      win.HTMLAnchorElement.prototype.click = function click() {
+        const href = this.getAttribute("href") || this.href || "";
+        if (blobByUrl.has(href)) {
+          downloadRecords.push({
+            href,
+            download: this.download || "",
+            blob: blobByUrl.get(href),
+          });
+          return;
+        }
+
+        return originalAnchorClick.call(this);
+      };
+
+      restoreDownloadCapture = () => {
+        win.URL.createObjectURL = originalCreateObjectUrl;
+        win.URL.revokeObjectURL = originalRevokeObjectUrl;
+        win.HTMLAnchorElement.prototype.click = originalAnchorClick;
+      };
+    },
+    async readLatestDownloadText() {
+      const latest = downloadRecords.at(-1);
+      if (!latest?.blob) {
+        return "";
+      }
+
+      return latest.blob.text();
+    },
+    getLatestDownloadMeta() {
+      const latest = downloadRecords.at(-1);
+      return latest
+        ? {
+          count: downloadRecords.length,
+          download: latest.download,
+        }
+        : null;
+    },
+    stopDownloadCapture() {
+      if (restoreDownloadCapture) {
+        restoreDownloadCapture();
+        restoreDownloadCapture = null;
+      }
     },
     qsa(selector) {
       return Array.from(doc.querySelectorAll(selector));
@@ -555,14 +656,19 @@ async function runEditSuite(context) {
   await delay(60);
   context.type('form[data-form="chronicle"] textarea[name="content"]', "[[ilu|Ilu]]");
   await delay(60);
+  context.type('form[data-form="chronicle"] textarea[name="highlights"]', "- Fita QA");
+  await delay(60);
   context.submit('form[data-form="chronicle"]');
   await delay(80);
   const savedChronicleTitle = context.doc.querySelector(".page-header h3")?.textContent?.trim() || "";
+  const savedChronicleHighlight = context.doc.querySelector(".chapter-highlights")?.textContent?.trim() || "";
   record(
     steps,
-    context.doc.querySelector(".editor-workspace-chronicle") === null && savedChronicleTitle === "Cronica desada QA",
+    context.doc.querySelector(".editor-workspace-chronicle") === null
+      && savedChronicleTitle === "Cronica desada QA"
+      && savedChronicleHighlight.includes("Fita QA"),
     "Desar una cronica tanca el mode edicio",
-    { savedChronicleTitle },
+    { savedChronicleTitle, savedChronicleHighlight },
   );
   context.click('[data-reference-jump="ilu"]');
   await delay(80);
@@ -615,14 +721,14 @@ async function runEditSuite(context) {
   await delay(80);
   const saveNotice = context.doc.querySelector("#saveNotice")?.textContent?.trim() || "";
   const glossaryImageSrc = context.doc.querySelector(".glossary-detail img")?.getAttribute("src") || "";
-  record(
-    steps,
-    saveNotice.length > 0
-      && context.doc.querySelector(".editor-workspace-glossary") === null
-      && glossaryImageSrc.startsWith("data:image/svg+xml"),
-    "Desar una entrada del glossari mostra feedback, tanca el mode edicio i persisteix imatges",
-    { notice: saveNotice, glossaryImageSrc },
-  );
+    record(
+      steps,
+      saveNotice.length > 0
+        && context.doc.querySelector(".editor-workspace-glossary") === null
+        && (glossaryImageSrc.startsWith("data:image/svg+xml") || glossaryImageSrc.startsWith("blob:")),
+      "Desar una entrada del glossari mostra feedback, tanca el mode edicio i persisteix imatges",
+      { notice: saveNotice, glossaryImageSrc },
+    );
 
   return {
     ok: steps.every((step) => step.ok),
@@ -648,6 +754,12 @@ function readColumnCount(context, element) {
 
 function record(steps, ok, name, details = {}) {
   steps.push({ ok, name, details });
+  statusEl.textContent = `RUNNING ${steps.length}`;
+  reportEl.textContent = JSON.stringify({
+    suite,
+    mode,
+    steps,
+  }, null, 2);
 }
 
 function publish(result) {
@@ -659,6 +771,25 @@ function publish(result) {
 
 function resetStorage(storage) {
   STORAGE_KEYS.forEach((key) => storage.removeItem(key));
+}
+
+function resetAssetStore(indexedDb) {
+  return new Promise((resolve) => {
+    if (!indexedDb) {
+      resolve();
+      return;
+    }
+
+    const request = indexedDb.deleteDatabase(ASSET_DB_NAME);
+    const fallback = window.setTimeout(() => resolve(), 400);
+    const done = () => {
+      window.clearTimeout(fallback);
+      resolve();
+    };
+    request.addEventListener("success", done);
+    request.addEventListener("error", done);
+    request.addEventListener("blocked", done);
+  });
 }
 
 function onceLoaded(frame) {
