@@ -56,13 +56,19 @@
 - Glossary image insertion now uses the browser's native file picker in the editor, converting selected files into persisted inline data so no manual path entry is required for normal use.
 - Rich-text editor reference suggestions are now available in `Personatges`, `Cròniques`, and `Glossari`, and selecting text should also expose a `Multimedia` suggestion that preserves the selected label.
 - QA suites share the local harness port `4173`, so they should be run sequentially rather than in parallel when validating the app.
+- Capture tooling is part of the permanent UI workflow; use filtered captures or `qa:smoke` for fast iteration before full QA.
+- QA and capture runners should enforce Chrome timeouts so failed headless runs do not leave long-lived runner processes behind.
 - Backup export/import now routes through shared helper functions in `main.js`, so the UI buttons and any QA hooks exercise the same serialization and restore path.
 - `qa-runner.mjs` now forces process exit after writing artifacts because the edit suite can otherwise leave Node handles alive after a successful run.
 - Rich-text editor previews need their own ink color and contrast treatment instead of inheriting the softer field-label tone, or long prose becomes hard to read.
 - Mobile glossary returns from `Cròniques` should render as a short inline back chip at the top of the detail view, not as a bottom floating CTA that competes with reading and notes.
+- JSON backup import/export belongs in the `Opcions` module rather than the primary sidebar header.
+- `Cròniques` now opens on a visual landing/index page; individual chronicle pages should focus on cover imagery plus the full prose body, without the old order/summary and key-milestones blocks.
+- Chronicle reading spreads split the prose body across the left and right book pages, keeping the left page from becoming a mostly empty cover while still avoiding the old order/key-milestones sections.
+- Chronicle read pages without a real cover image should render an ornamental session plate instead of an empty placeholder rectangle.
+- Desktop sidebar is collapsed by default, only opens preview from hover/focus on the round toggle button, keeps that preview open while the pointer remains inside the sidebar, can be pinned open with the same button, and keeps its content in an internal scroll area; mobile keeps the full stacked navigation.
 
 ## Pending
-- Decide whether to keep the generated capture tooling (`capture-harness.html`, `capture-harness.js`, `capture-runner.mjs`) as part of the permanent UI workflow.
 - Clean up or commit the pending visual artifacts and code changes once the current restyle is considered stable.
 - Review whether future chronicle passes should also inline glossary links inside raw session prose, or keep verbatim input completely untouched there.
 - Decide whether character-reference jumps from `Cròniques` should eventually mirror the glossary return-to-chronicle affordance.
@@ -72,6 +78,7 @@
 - Reuse the existing dev server if port `5173` is already listening.
 - After any substantial change, update `Decisions`, `Pending`, and `Last session`.
 - For UI tasks, plan time for screenshot capture and review after each visual edit pass.
+- For small UI loops, start with `npm.cmd run qa:smoke` or a filtered `npm.cmd run capture -- <alias>` before full `npm.cmd run qa`.
 
 ## Last session
 - 2026-04-18: created this project memory file and added persistent restart context.
@@ -110,6 +117,14 @@
 - 2026-04-29: extracted shared backup creation/restore helpers in `main.js` and hardened `qa-runner.mjs` to exit cleanly after successful edit-suite runs.
 - 2026-04-29: fixed the rich-text editor preview readability by giving the preview frame stronger parchment contrast and explicit dark body text, then revalidated the affected `Cròniques` editor views in desktop and mobile captures.
 - 2026-04-29: replaced the mobile `Torna a crònica` floating action with a short inline back chip at the top of the glossary detail view and added dedicated desktop/mobile capture scenarios for the return state.
+- 2026-05-18: moved JSON import/export into a new `Opcions` module, refreshed the dedicated options desktop/mobile captures, and confirmed `npm.cmd run qa` passes.
+- 2026-05-18: redesigned the `Cròniques` entry flow into a landing/index page, removed the visible order/summary and `Fites clau` blocks from chronicle reading pages, refreshed affected captures, and confirmed `npm.cmd run qa` passes.
+- 2026-05-18: added the collapsible desktop sidebar with hover expansion and click-to-pin behavior, plus focused desktop/mobile captures and full QA validation.
+- 2026-05-18: added `qa:smoke`, filtered capture scripts, runner timeouts, and `WORKFLOW.md` to make UI iteration faster and less prone to stuck headless Chrome processes.
+- 2026-05-18: restricted desktop sidebar preview to the toggle button hover/focus only, made the expanded sidebar content scrollable, refreshed sidebar captures, and confirmed `npm.cmd run qa` passes.
+- 2026-05-18: stabilized sidebar preview so toggle hover opens it but pointer leave from the whole sidebar closes it, avoiding button-hover flicker while moving inside the expanded menu.
+- 2026-05-18: filled the left chronicle reading page with the opening prose and moved the continuation to the right page, refreshed chronicle read captures, and confirmed `npm.cmd run build` plus `npm.cmd run qa` pass.
+- 2026-05-18: improved the chronicle left page by replacing empty image placeholders with an ornamental session plate and shifting more opening prose onto the left page; refreshed chronicle read captures and confirmed `npm.cmd run qa` passes.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

@@ -215,11 +215,19 @@ export function renderModuleActionIcon(type) {
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M6 4.25h10.15a2.6 2.6 0 0 1 2.6 2.6V19a.75.75 0 0 1-1.18.61l-1.92-1.33l-1.92 1.33a.75.75 0 0 1-.86 0l-1.92-1.33l-1.92 1.33A.75.75 0 0 1 8.25 19V6.85A2.6 2.6 0 0 0 6 4.25Zm0 1.5A1.1 1.1 0 0 1 7.1 6.85v10.72l1.17-.82a.75.75 0 0 1 .86 0l1.92 1.33l1.92-1.33a.75.75 0 0 1 .86 0l1.92 1.33V6.85a1.1 1.1 0 0 0-1.1-1.1Zm3.35 2.6h5.9v1.5h-5.9Zm0 3.15h5.9V13h-5.9Z" fill="currentColor"/>
       </svg>`,
-    create: `
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M11.25 5.25h1.5v5.25H18v1.5h-5.25v5.25h-1.5V12H6v-1.5h5.25Z" fill="currentColor"/>
-      </svg>`,
-  };
+      create: `
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M11.25 5.25h1.5v5.25H18v1.5h-5.25v5.25h-1.5V12H6v-1.5h5.25Z" fill="currentColor"/>
+        </svg>`,
+      download: `
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M11.25 4.5h1.5v8.38l3.05-3.05l1.06 1.06L12 15.75l-4.86-4.86L8.2 9.83l3.05 3.05Zm-5.5 12.75h12.5v1.5H5.75Z" fill="currentColor"/>
+        </svg>`,
+      upload: `
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12 4.25l4.86 4.86l-1.06 1.06l-3.05-3.05v8.38h-1.5V7.12L8.2 10.17L7.14 9.11Zm-6.25 13h12.5v1.5H5.75Z" fill="currentColor"/>
+        </svg>`,
+    };
 
   return icons[type] || icons.create;
 }

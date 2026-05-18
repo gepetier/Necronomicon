@@ -22,6 +22,8 @@
   --space-xl: 1.9rem;
   --space-2xl: 2.4rem;
   --max-content: 1480px;
+  --sidebar-expanded: 310px;
+  --sidebar-collapsed: 74px;
   --tex-parchment: linear-gradient(135deg, rgba(255, 250, 240, 0.16), rgba(166, 122, 73, 0.08));
   --tex-leather: linear-gradient(135deg, rgba(118, 72, 44, 0.24), rgba(31, 18, 12, 0.1));
   --tex-stains: radial-gradient(circle at center, rgba(111, 45, 33, 0.08), transparent 72%);
@@ -149,8 +151,14 @@ textarea {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 310px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-collapsed) minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 220ms ease;
+}
+
+body.sidebar-preview .app-shell,
+body.sidebar-pinned .app-shell {
+  grid-template-columns: var(--sidebar-expanded) minmax(0, 1fr);
 }
 
 .sidebar {
@@ -159,7 +167,7 @@ textarea {
   height: 100vh;
   padding: var(--space-lg) var(--space-md);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   align-content: stretch;
   gap: var(--space-md);
   overflow: hidden;
@@ -170,6 +178,9 @@ textarea {
   border-right: 1px solid rgba(200, 168, 109, 0.18);
   box-shadow: inset -18px 0 28px rgba(0, 0, 0, 0.22);
   background-size: auto, 520px 520px, auto;
+  transition:
+    padding 220ms ease,
+    box-shadow 220ms ease;
 }
 
 .sidebar::before {
@@ -206,6 +217,95 @@ textarea {
   padding: var(--space-lg);
 }
 
+.sidebar-scroll {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--space-md);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.1rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(225, 191, 130, 0.45) rgba(255, 244, 225, 0.05);
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 244, 225, 0.05);
+  border-radius: 999px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(225, 191, 130, 0.45);
+  border-radius: 999px;
+}
+
+.sidebar-toggle {
+  position: relative;
+  z-index: 5;
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  justify-self: center;
+  border-radius: 50%;
+  color: #fff0cf;
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 238, 205, 0.28), transparent 32%),
+    linear-gradient(180deg, rgba(185, 121, 58, 0.96), rgba(94, 40, 25, 0.98));
+  border: 1px solid rgba(240, 204, 146, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 220, 0.16),
+    0 14px 24px rgba(0, 0, 0, 0.28);
+}
+
+.sidebar-toggle span,
+.sidebar-toggle span::before,
+.sidebar-toggle span::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
+.sidebar-toggle span {
+  position: relative;
+}
+
+.sidebar-toggle span::before,
+.sidebar-toggle span::after {
+  position: absolute;
+  left: 0;
+}
+
+.sidebar-toggle span::before {
+  top: -6px;
+}
+
+.sidebar-toggle span::after {
+  top: 6px;
+}
+
+.sidebar-toggle.active span {
+  transform: rotate(45deg);
+}
+
+.sidebar-toggle.active span::before {
+  opacity: 0;
+}
+
+.sidebar-toggle.active span::after {
+  transform: translateY(-6px) rotate(-90deg);
+}
+
 .project-tools {
   display: grid;
   gap: 0.8rem;
@@ -216,6 +316,34 @@ textarea {
 
 .sidebar-panel {
   padding: 1.05rem 1.1rem;
+}
+
+.sidebar-scroll {
+  transition:
+    opacity 160ms ease,
+    transform 200ms ease,
+    visibility 160ms ease;
+}
+
+@media (min-width: 1081px) {
+  .sidebar .sidebar-scroll {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-0.8rem);
+  }
+
+  body.sidebar-preview .sidebar .sidebar-scroll,
+  body.sidebar-pinned .sidebar .sidebar-scroll {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  body:not(.sidebar-preview):not(.sidebar-pinned) .sidebar {
+    padding-inline: 1rem;
+  }
 }
 
 .sidebar h1,
@@ -269,6 +397,10 @@ textarea {
 .item-grid {
   display: grid;
   gap: var(--space-sm);
+}
+
+.module-nav {
+  min-width: 0;
 }
 
 .module-link {
@@ -407,6 +539,48 @@ textarea {
 #chroniclesModule.module-view.active {
   min-height: calc(100vh - (2 * var(--space-lg)));
   align-content: stretch;
+}
+
+.options-shell {
+  display: grid;
+  gap: var(--space-md);
+  padding: 1.4rem;
+  min-width: 0;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: var(--space-md);
+  align-items: stretch;
+  min-width: 0;
+}
+
+.options-card {
+  min-height: 240px;
+  align-content: space-between;
+  min-width: 0;
+}
+
+.options-card-copy,
+.options-status-card {
+  min-width: 0;
+}
+
+.options-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.options-actions > * {
+  min-width: 180px;
+}
+
+.options-stat-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
 }
 
 .save-notice {
@@ -1232,6 +1406,271 @@ history-list,
   align-items: stretch;
 }
 
+.chronicle-landing-shell {
+  overflow: hidden;
+}
+
+.chronicle-landing {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 1rem;
+}
+
+.chronicle-landing-hero {
+  position: relative;
+  min-height: 430px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 30px;
+  background:
+    linear-gradient(135deg, rgba(255, 246, 229, 0.14), rgba(34, 18, 12, 0.1)),
+    radial-gradient(circle at 18% 12%, rgba(225, 191, 130, 0.22), transparent 30%),
+    linear-gradient(140deg, rgba(26, 14, 10, 0.74), rgba(72, 38, 24, 0.48));
+  border: 1px solid rgba(224, 192, 142, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 221, 0.08),
+    0 24px 46px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.chronicle-landing-hero::before {
+  content: "";
+  position: absolute;
+  inset: -18% -8% auto auto;
+  width: 48%;
+  aspect-ratio: 1;
+  border: 1px solid rgba(225, 191, 130, 0.26);
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(from 18deg, rgba(225, 191, 130, 0.14) 0 5deg, transparent 5deg 14deg),
+    radial-gradient(circle, transparent 42%, rgba(225, 191, 130, 0.12) 43% 44%, transparent 45%);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.chronicle-landing-hero-media {
+  position: relative;
+  min-height: 390px;
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--palette-a, #69432c) 72%, #120d0a), color-mix(in srgb, var(--palette-b, #c89a58) 50%, #2a1610)),
+    radial-gradient(circle at center, rgba(255, 248, 232, 0.12), transparent 56%);
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 238, 204, 0.14),
+    inset 0 -60px 80px rgba(21, 10, 7, 0.45);
+}
+
+.chronicle-landing-hero-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.92) contrast(1.05);
+}
+
+.chronicle-landing-hero-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 42%, rgba(16, 9, 7, 0.7)),
+    radial-gradient(circle at center, transparent 42%, rgba(0, 0, 0, 0.28));
+}
+
+.chronicle-landing-sigil {
+  position: absolute;
+  inset: 1.2rem;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(255, 230, 188, 0.18);
+  border-radius: 20px;
+  color: #ffe8bc;
+  background:
+    radial-gradient(circle, rgba(255, 235, 190, 0.12), transparent 36%),
+    repeating-conic-gradient(from 12deg, rgba(255, 229, 184, 0.1) 0 4deg, transparent 4deg 14deg);
+}
+
+.chronicle-landing-sigil span {
+  font-size: clamp(5rem, 10vw, 10rem);
+  line-height: 0.86;
+  font-family: "Baskerville Old Face", "Iowan Old Style", serif;
+}
+
+.chronicle-landing-sigil strong {
+  font-family: "Aptos", "Trebuchet MS", "Gill Sans", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.85rem;
+}
+
+.chronicle-landing-hero-copy {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1.2rem, 3vw, 2.4rem);
+  color: #f8ead0;
+}
+
+.chronicle-landing-hero-copy h3 {
+  font-size: clamp(2.8rem, 5.2vw, 5.8rem);
+  line-height: 0.95;
+  color: #fff0cf;
+  text-shadow: 0 16px 34px rgba(0, 0, 0, 0.3);
+}
+
+.chronicle-landing-hero-copy p:not(.eyebrow) {
+  max-width: 56ch;
+  color: rgba(248, 234, 208, 0.82);
+  font-size: 1.1rem;
+}
+
+.chronicle-landing-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-top: 0.3rem;
+}
+
+.chronicle-landing-stats span {
+  display: grid;
+  gap: 0.2rem;
+  min-height: 82px;
+  padding: 0.9rem;
+  border-radius: 18px;
+  color: rgba(248, 234, 208, 0.72);
+  background: rgba(255, 244, 225, 0.08);
+  border: 1px solid rgba(224, 192, 142, 0.14);
+}
+
+.chronicle-landing-stats strong {
+  color: #fff2d4;
+  font-size: 1.1rem;
+}
+
+.chronicle-atlas {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 248, 235, 0.08), rgba(255, 248, 235, 0.03)),
+    rgba(21, 12, 10, 0.32);
+  border: 1px solid rgba(224, 192, 142, 0.13);
+}
+
+.chronicle-atlas-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 1rem;
+}
+
+.chronicle-atlas-head h3 {
+  color: #f5dfbb;
+  font-size: clamp(1.8rem, 2.6vw, 3rem);
+}
+
+.chronicle-atlas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.85rem;
+}
+
+.chronicle-atlas-card {
+  position: relative;
+  min-height: 360px;
+  display: grid;
+  grid-template-rows: 170px minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(224, 192, 142, 0.16);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.98), rgba(235, 219, 193, 0.94)),
+    linear-gradient(135deg, color-mix(in srgb, var(--palette-a, #69432c) 16%, transparent), transparent);
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 0 16px 26px rgba(0, 0, 0, 0.16);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.chronicle-atlas-card:hover,
+.chronicle-atlas-card:focus-visible {
+  transform: translateY(-5px);
+  border-color: rgba(225, 191, 130, 0.38);
+  box-shadow: 0 24px 38px rgba(0, 0, 0, 0.24);
+}
+
+.chronicle-atlas-card-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--palette-a, #69432c) 72%, #120d0a), color-mix(in srgb, var(--palette-b, #c89a58) 58%, #2a1610));
+}
+
+.chronicle-atlas-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.chronicle-atlas-card-media span {
+  color: rgba(255, 238, 204, 0.88);
+  font-size: 4rem;
+  font-family: "Baskerville Old Face", "Iowan Old Style", serif;
+}
+
+.chronicle-atlas-card-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 44%, rgba(26, 13, 9, 0.58));
+}
+
+.chronicle-atlas-card-copy {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  padding: 1rem;
+}
+
+.chronicle-atlas-card-copy h4 {
+  margin: 0;
+  color: #301d16;
+  font-size: 1.35rem;
+  line-height: 1.08;
+}
+
+.chronicle-atlas-card-copy p:last-child {
+  color: rgba(54, 37, 28, 0.76);
+}
+
+.chronicle-atlas-card-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  color: rgba(70, 45, 32, 0.78);
+  border-top: 1px solid rgba(107, 71, 43, 0.12);
+  font-family: "Aptos", "Trebuchet MS", "Gill Sans", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+}
+
 .chronicle-edit-stage {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1655,6 +2094,7 @@ history-list,
   margin-right: 0.55rem;
   border-radius: 18px 8px 8px 18px;
   padding: 1.25rem 1rem 1rem 1.35rem;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 .book-spread-single .left-page {
@@ -1690,10 +2130,14 @@ history-list,
   background: linear-gradient(90deg, rgba(0, 0, 0, 0.03), rgba(74, 47, 24, 0.12), transparent);
 }
 
+.book-image-frame {
+  width: 100%;
+  margin: 0.15rem 0 0.25rem;
+}
+
 .book-image {
   height: 248px;
   border-radius: 14px;
-  margin: 0.15rem 0 0.15rem;
   background:
     radial-gradient(circle at top left, rgba(255, 245, 224, 0.28), transparent 24%),
     linear-gradient(145deg, var(--portrait-a), var(--portrait-b));
@@ -1702,13 +2146,69 @@ history-list,
     0 12px 24px rgba(88, 58, 35, 0.12);
 }
 
+.book-cover-plate {
+  position: relative;
+  width: 100%;
+  height: 190px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.5rem;
+  overflow: hidden;
+  border-radius: 16px;
+  color: #fff0cd;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 238, 198, 0.2), transparent 36%),
+    repeating-conic-gradient(from 9deg, rgba(255, 231, 185, 0.11) 0 5deg, transparent 5deg 14deg),
+    linear-gradient(145deg, var(--portrait-a), var(--portrait-b));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 238, 204, 0.2),
+    inset 0 -42px 70px rgba(40, 21, 14, 0.24),
+    0 12px 24px rgba(88, 58, 35, 0.12);
+}
+
+.book-cover-plate::before,
+.book-cover-plate::after {
+  content: "";
+  position: absolute;
+  inset: 16px;
+  border: 1px solid rgba(255, 238, 204, 0.22);
+  border-radius: 12px;
+}
+
+.book-cover-plate::after {
+  inset: 34px;
+  border-radius: 999px;
+  opacity: 0.55;
+}
+
+.book-cover-plate span {
+  position: relative;
+  z-index: 1;
+  color: rgba(255, 242, 214, 0.94);
+  font-family: "Baskerville Old Face", "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: clamp(2.8rem, 5vw, 5.2rem);
+  line-height: 0.9;
+}
+
+.book-cover-plate strong {
+  position: relative;
+  z-index: 1;
+  max-width: 70%;
+  color: rgba(255, 239, 205, 0.82);
+  font-family: "Aptos", "Trebuchet MS", "Gill Sans", sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
 .book-image-media {
   width: 100%;
   height: 248px;
   object-fit: contain;
   object-position: center;
   border-radius: 14px;
-  margin: 0.15rem 0;
   box-shadow:
     inset 0 0 0 1px rgba(255, 248, 233, 0.18),
     0 12px 24px rgba(88, 58, 35, 0.12);
@@ -1727,6 +2227,16 @@ history-list,
   border-top: 1px solid rgba(91, 53, 27, 0.14);
   padding-top: 0.8rem;
   min-height: 170px;
+}
+
+.chapter-opening {
+  min-height: 0;
+  font-size: 0.98rem;
+  line-height: 1.64;
+}
+
+.chapter-opening p {
+  margin-bottom: 0.35rem;
 }
 
 .chapter-highlights {
@@ -3390,13 +3900,23 @@ select {
   .app-shell,
   .detail-grid,
   .book-layout,
+  .chronicle-landing-hero,
   .glossary-top {
+    grid-template-columns: 1fr;
+  }
+
+  body.sidebar-preview .app-shell,
+  body.sidebar-pinned .app-shell {
     grid-template-columns: 1fr;
   }
 
   .sidebar {
     position: static;
     height: auto;
+  }
+
+  .sidebar-toggle {
+    display: none;
   }
 
   .book-index {
@@ -3435,6 +3955,18 @@ select {
     min-height: 420px;
   }
 
+  .chronicle-landing-hero {
+    min-height: 0;
+  }
+
+  .chronicle-landing-hero-media {
+    min-height: 300px;
+  }
+
+  .chronicle-landing-stats {
+    grid-template-columns: 1fr;
+  }
+
   .book-spread {
     min-height: 0;
     padding: 0.85rem;
@@ -3458,7 +3990,8 @@ select {
 
   .hero-stat-grid,
   .item-grid,
-  .glossary-grid {
+  .glossary-grid,
+  .options-grid {
     grid-template-columns: 1fr;
   }
 
@@ -3487,11 +4020,19 @@ select {
   .main-content,
   .sidebar {
     padding: 1rem;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 
   .sidebar {
     gap: 0.8rem;
     padding-bottom: 0.35rem;
+  }
+
+  .sidebar-scroll {
+    overflow: visible;
+    padding-right: 0;
   }
 
   .sidebar::before {
@@ -3511,10 +4052,12 @@ select {
   }
 
   .module-nav {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, calc((100vw - 3rem) / 2)));
     gap: 0.7rem;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: visible;
+    width: calc(100vw - 2rem);
+    max-width: calc(100vw - 2rem);
     margin: 0 -0.05rem;
     padding: 0.15rem 0.05rem 0.45rem;
     position: sticky;
@@ -3524,10 +4067,33 @@ select {
   }
 
   .module-link {
-    width: auto;
-    min-width: max-content;
+    width: 100%;
+    min-width: 0;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     padding: 0.85rem 1rem;
+  }
+
+  .options-shell {
+    padding: 1rem;
+    width: calc(100vw - 2rem);
+    max-width: calc(100vw - 2rem);
+    overflow: hidden;
+    justify-self: start;
+  }
+
+  .options-card {
+    min-height: 0;
+  }
+
+  .options-actions {
+    display: grid;
+  }
+
+  .options-actions > * {
+    width: 100%;
+    min-width: 0;
   }
 
   .module-link[data-draft-pending="true"] {
@@ -3536,6 +4102,36 @@ select {
 
   .book-index-inline .chapter-list {
     max-height: 280px;
+  }
+
+  .chronicle-landing-hero,
+  .chronicle-atlas {
+    padding: 0.85rem;
+  }
+
+  .chronicle-landing-hero-media {
+    min-height: 240px;
+  }
+
+  .chronicle-landing-hero-copy {
+    padding: 0.85rem 0.25rem 0.35rem;
+  }
+
+  .chronicle-landing-hero-copy h3 {
+    font-size: 2.55rem;
+  }
+
+  .chronicle-atlas-head {
+    display: grid;
+    align-items: stretch;
+  }
+
+  .chronicle-atlas-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chronicle-atlas-card {
+    min-height: 320px;
   }
 
   .chapter-index-toolbar {
@@ -3701,6 +4297,55 @@ select {
   .book-shell,
   .glossary-shell {
     padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  }
+
+  #chroniclesModule,
+  #chroniclesModule .book-shell,
+  #chroniclesModule .book-layout,
+  #chroniclesModule .book-spread,
+  #chroniclesModule .book-page {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  #chroniclesModule .book-shell {
+    width: calc(100vw - 2rem);
+    max-width: calc(100vw - 2rem);
+    justify-self: start;
+  }
+
+  #chroniclesModule .book-spread {
+    padding: 0.55rem;
+  }
+
+  #chroniclesModule .book-page {
+    padding: 1rem;
+  }
+
+  #chroniclesModule .book-image-frame {
+    margin-inline: 0;
+  }
+
+  #chroniclesModule .book-image,
+  #chroniclesModule .book-image-media,
+  #chroniclesModule .book-cover-plate,
+  #chroniclesModule .chapter-body {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  #chroniclesModule .book-image-frame,
+  #chroniclesModule .book-image,
+  #chroniclesModule .book-image-media,
+  #chroniclesModule .book-cover-plate,
+  #chroniclesModule .chapter-body {
+    max-width: calc(100vw - 6rem);
+    justify-self: center;
+  }
+
+  #chroniclesModule .chapter-body {
+    overflow-wrap: anywhere;
   }
 
   .hero-actions,

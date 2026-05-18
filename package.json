@@ -9,9 +9,13 @@
     "preview": "vite preview",
     "test:unit": "node --test tests/*.test.js",
     "qa": "node qa-runner.mjs",
+    "qa:smoke": "node qa-runner.mjs smoke && node capture-runner.mjs smoke",
     "qa:functional": "node qa-runner.mjs functional",
     "qa:ui": "node qa-runner.mjs ui",
-    "qa:edit": "node qa-runner.mjs edit"
+    "qa:edit": "node qa-runner.mjs edit",
+    "capture": "node capture-runner.mjs",
+    "capture:changed": "node capture-runner.mjs changed",
+    "capture:smoke": "node capture-runner.mjs smoke"
   },
   "devDependencies": {
     "vite": "^7.1.0"

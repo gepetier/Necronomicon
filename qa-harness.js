@@ -278,12 +278,14 @@ async function runFunctionalSuite(context) {
 
   context.click('[data-module-link="chronicles"]');
   await delay(80);
-  const chapterEntries = context.qsa(".chapter-entry");
+  const landingEntries = context.qsa(".chronicle-atlas-card");
   record(
     steps,
-    context.doc.querySelector("#chroniclesModule.active") !== null && chapterEntries.length > 0,
-    "Navegacio al modul de croniques amb index carregat",
-    { chapters: chapterEntries.length },
+    context.doc.querySelector("#chroniclesModule.active") !== null
+      && context.doc.querySelector(".chronicle-landing") !== null
+      && landingEntries.length > 0,
+    "Navegacio al modul de croniques amb landing index carregat",
+    { chapters: landingEntries.length },
   );
 
   context.click('[data-module-link="glossary"]');
@@ -372,40 +374,19 @@ async function runFunctionalSuite(context) {
   await delay(80);
   context.click('[data-module-link="chronicles"]');
   await delay(80);
-  context.click('[data-reference-jump="acantilado-del-silencio"]');
+  context.qsa("[data-chronicle-id]")[0]?.click();
   await delay(80);
-  const jumpedGlossaryTitle = context.doc.querySelector(".glossary-detail h3")?.textContent?.trim() || "";
-  const activeGlossaryCardTitle = context.doc.querySelector(".glossary-entry.active h3")?.textContent?.trim() || "";
-  const jumpedGlossarySearch = context.doc.querySelector('input[name="glossarySearch"]')?.value || "";
-  const activeGlossaryFilter = context.doc.querySelector('[data-glossary-filter][aria-selected="true"]')?.getAttribute("data-glossary-filter") || "";
-  const activeGlossarySessions = context.qsa('input[data-glossary-session]:checked').map((element) => element.getAttribute("data-glossary-session") || "");
-  record(
-    steps,
-    context.doc.querySelector("#glossaryModule.active") !== null
-      && jumpedGlossaryTitle === "Acantilado del Silencio"
-      && activeGlossaryCardTitle === "Acantilado del Silencio"
-      && jumpedGlossarySearch === ""
-      && activeGlossaryFilter === "Totes"
-      && activeGlossarySessions.length === 0
-      && context.doc.querySelector("[data-return-to-chronicle]") !== null,
-    "El salt des de croniques obre el terme del glossari i neteja filtres incompatibles",
-    {
-      jumpedGlossaryTitle,
-      activeGlossaryCardTitle,
-      jumpedGlossarySearch,
-      activeGlossaryFilter,
-      activeGlossarySessions,
-    },
+  const chronicleHasRemovedSections = Boolean(
+    context.doc.querySelector(".chapter-highlights")
+      || context.doc.querySelector(".chapter-summary"),
   );
-
-  context.click("[data-return-to-chronicle]");
-  await delay(80);
-  const selectedChronicleId = context.doc.querySelector('[data-chronicle-id][aria-selected="true"]')?.getAttribute("data-chronicle-id") || "";
   record(
     steps,
-    context.doc.querySelector("#chroniclesModule.active") !== null && selectedChronicleId === "judici-acantilado",
-    "El retorn des del glossari recupera la cronica d'origen",
-    { selectedChronicleId },
+    context.doc.querySelector("#chroniclesModule.active") !== null
+      && context.doc.querySelector(".book-spread") !== null
+      && !chronicleHasRemovedSections,
+    "La lectura de cronica obre el llibre sense resum d'ordre ni fites clau",
+    { chronicleHasRemovedSections },
   );
 
   return {
@@ -441,18 +422,28 @@ async function runUiSuite(context) {
     context.click('[data-module-link="chronicles"]');
     await delay(80);
     const sidebarPanel = context.doc.querySelector("#sidebarContextPanel");
+    const landing = context.doc.querySelector(".chronicle-landing");
+    const landingCards = context.qsa(".chronicle-atlas-card");
+    record(
+      steps,
+      Boolean(landing) && landingCards.length > 0 && Boolean(sidebarPanel?.hidden),
+      "La vista inicial de croniques mostra un landing index a PC",
+      {
+        sidebarHidden: sidebarPanel?.hidden ?? null,
+        landingCards: landingCards.length,
+      },
+    );
+
+    landingCards[0]?.click();
+    await delay(80);
     const sidebarIndex = sidebarPanel?.querySelector(".book-index-sidebar");
     const bookLayout = context.doc.querySelector(".book-layout");
     const bookColumns = readColumnCount(context, bookLayout);
     record(
       steps,
       Boolean(sidebarIndex) && !sidebarPanel?.hidden && bookColumns === 1,
-      "La vista de croniques mostra subindex lateral i llibre separat a PC",
-      {
-        sidebarIndex: Boolean(sidebarIndex),
-        sidebarHidden: sidebarPanel?.hidden ?? null,
-        bookColumns,
-      },
+      "Obrir una cronica mostra subindex lateral i llibre separat a PC",
+      { sidebarIndex: Boolean(sidebarIndex), sidebarHidden: sidebarPanel?.hidden ?? null, bookColumns },
     );
   } else {
     record(
@@ -469,6 +460,17 @@ async function runUiSuite(context) {
     );
 
     context.click('[data-module-link="chronicles"]');
+    await delay(80);
+    const landing = context.doc.querySelector(".chronicle-landing");
+    const landingCards = context.qsa(".chronicle-atlas-card");
+    record(
+      steps,
+      Boolean(landing) && landingCards.length > 0,
+      "La vista inicial de croniques mostra un landing index a mobil",
+      { landingCards: landingCards.length },
+    );
+
+    landingCards[0]?.click();
     await delay(80);
     const bookLayout = context.doc.querySelector(".book-layout");
     const bookColumns = readColumnCount(context, bookLayout);
@@ -551,6 +553,8 @@ async function runEditSuite(context) {
     "Croniques mostra una accio visible per crear noves entrades",
   );
 
+  context.qsa("[data-chronicle-id]")[0]?.click();
+  await delay(80);
   context.click('[data-toggle-edit="chronicles"]');
   await delay(80);
   record(
@@ -661,14 +665,14 @@ async function runEditSuite(context) {
   context.submit('form[data-form="chronicle"]');
   await delay(80);
   const savedChronicleTitle = context.doc.querySelector(".page-header h3")?.textContent?.trim() || "";
-  const savedChronicleHighlight = context.doc.querySelector(".chapter-highlights")?.textContent?.trim() || "";
+  const savedChronicleContent = context.doc.querySelector(".chapter-body")?.textContent?.trim() || "";
   record(
     steps,
     context.doc.querySelector(".editor-workspace-chronicle") === null
       && savedChronicleTitle === "Cronica desada QA"
-      && savedChronicleHighlight.includes("Fita QA"),
+      && savedChronicleContent.includes("Ilu"),
     "Desar una cronica tanca el mode edicio",
-    { savedChronicleTitle, savedChronicleHighlight },
+    { savedChronicleTitle, savedChronicleContent },
   );
   context.click('[data-reference-jump="ilu"]');
   await delay(80);

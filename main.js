@@ -27,6 +27,7 @@ import {
   formatShortDate,
   getGlossaryCategoryTheme,
   readOptionalString,
+  renderModuleActionIcon,
   renderRichText,
   readString,
 } from "./app/utils.js";
@@ -65,7 +66,10 @@ const saveNoticeEl = document.querySelector("#saveNotice");
 const charactersModule = document.querySelector("#charactersModule");
 const chroniclesModule = document.querySelector("#chroniclesModule");
 const glossaryModule = document.querySelector("#glossaryModule");
+const optionsModule = document.querySelector("#optionsModule");
 const sidebarContextPanel = document.querySelector("#sidebarContextPanel");
+const sidebar = document.querySelector(".sidebar");
+const sidebarToggle = document.querySelector("[data-sidebar-toggle]");
 const imageLightbox = document.querySelector("#imageLightbox");
 const imageLightboxMedia = document.querySelector("#imageLightboxMedia");
 const richMediaPicker = document.querySelector("#richMediaPicker");
@@ -80,6 +84,7 @@ const RENDER_PARTS = {
   characters: "characters",
   chronicles: "chronicles",
   glossary: "glossary",
+  options: "options",
   themes: "themes",
   assets: "assets",
 };
@@ -89,6 +94,7 @@ const FULL_RENDER_PARTS = [
   RENDER_PARTS.characters,
   RENDER_PARTS.chronicles,
   RENDER_PARTS.glossary,
+  RENDER_PARTS.options,
   RENDER_PARTS.themes,
   RENDER_PARTS.assets,
 ];
@@ -105,6 +111,10 @@ function initialize() {
   document.addEventListener("input", handleInput);
   document.addEventListener("change", handleInput);
   window.addEventListener("pagehide", flushPendingPersist);
+  sidebarToggle?.addEventListener("pointerenter", openSidebarPreview);
+  sidebarToggle?.addEventListener("focus", openSidebarPreview);
+  sidebarToggle?.addEventListener("blur", closeSidebarPreviewAfterFocusLeaves);
+  sidebar?.addEventListener("pointerleave", closeSidebarPreview);
 
   render();
   installQaHooks();
@@ -120,7 +130,11 @@ function handleClick(event) {
   const clickedImage = event.target instanceof HTMLImageElement
     ? event.target
     : event.target.closest("img");
-  if (clickedImage instanceof HTMLImageElement && !clickedImage.closest("#imageLightbox")) {
+  if (
+    clickedImage instanceof HTMLImageElement
+    && !clickedImage.closest("#imageLightbox")
+    && !clickedImage.closest(".chronicle-atlas-card")
+  ) {
     event.preventDefault();
     event.stopPropagation();
     openImageLightbox(clickedImage);
@@ -149,9 +163,20 @@ function handleClick(event) {
     return;
   }
 
+  if (event.target.closest("[data-sidebar-toggle]")) {
+    state.ui.sidebarPinned = !state.ui.sidebarPinned;
+    document.body.classList.remove("sidebar-preview");
+    persistAndRender([RENDER_PARTS.sidebar]);
+    return;
+  }
+
   const moduleLink = event.target.closest("[data-module-link]");
   if (moduleLink) {
     state.ui.currentModule = moduleLink.dataset.moduleLink;
+    if (state.ui.currentModule === "chronicles") {
+      const hasPendingChronicleWork = hasModuleDrafts("chronicles") || state.ui.editModes.chronicles;
+      state.ui.showChronicleLanding = !hasPendingChronicleWork;
+    }
     state.ui.glossaryReturnView = null;
     state.ui.glossaryReturnTargetId = "";
     persistAndRender();
@@ -683,6 +708,9 @@ function render(parts = FULL_RENDER_PARTS) {
   if (renderSet.has(RENDER_PARTS.glossary)) {
     renderGlossaryModule();
   }
+  if (renderSet.has(RENDER_PARTS.options)) {
+    renderOptionsModule();
+  }
   if (renderSet.has(RENDER_PARTS.themes)) {
     applyReferenceThemes();
   }
@@ -700,10 +728,27 @@ function currentModuleRenderParts() {
     return [RENDER_PARTS.notice, RENDER_PARTS.sidebar, RENDER_PARTS.chronicles, RENDER_PARTS.themes, RENDER_PARTS.assets];
   }
 
+  if (state.ui.currentModule === "glossary") {
+    return [RENDER_PARTS.notice, RENDER_PARTS.glossary, RENDER_PARTS.themes, RENDER_PARTS.assets];
+  }
+
+  if (state.ui.currentModule === "options") {
+    return [RENDER_PARTS.notice, RENDER_PARTS.options, RENDER_PARTS.themes, RENDER_PARTS.assets];
+  }
+
   return [RENDER_PARTS.notice, RENDER_PARTS.glossary, RENDER_PARTS.themes, RENDER_PARTS.assets];
 }
 
 function updateSidebar() {
+  document.body.classList.toggle("sidebar-pinned", Boolean(state.ui.sidebarPinned));
+  if (state.ui.sidebarPinned) {
+    document.body.classList.remove("sidebar-preview");
+  }
+  document.querySelectorAll("[data-sidebar-toggle]").forEach((button) => {
+    button.setAttribute("aria-expanded", state.ui.sidebarPinned ? "true" : "false");
+    button.classList.toggle("active", Boolean(state.ui.sidebarPinned));
+  });
+
   document.querySelectorAll("[data-module-link]").forEach((button) => {
     const module = button.dataset.moduleLink || "";
     const isActive = module === state.ui.currentModule;
@@ -723,7 +768,7 @@ function updateSidebar() {
     return;
   }
 
-  if (state.ui.currentModule === "chronicles") {
+  if (state.ui.currentModule === "chronicles" && !state.ui.showChronicleLanding) {
     sidebarContextPanel.hidden = false;
     sidebarContextPanel.innerHTML = renderChronicleSidebarView(state, getSelectedChronicle());
     return;
@@ -752,6 +797,26 @@ function renderCharactersModule() {
   });
 }
 
+function openSidebarPreview() {
+  if (!state.ui.sidebarPinned) {
+    document.body.classList.add("sidebar-preview");
+  }
+}
+
+function closeSidebarPreview() {
+  if (!state.ui.sidebarPinned) {
+    document.body.classList.remove("sidebar-preview");
+  }
+}
+
+function closeSidebarPreviewAfterFocusLeaves() {
+  window.setTimeout(() => {
+    if (!sidebar?.contains(document.activeElement)) {
+      closeSidebarPreview();
+    }
+  }, 0);
+}
+
 function renderChroniclesModule() {
   renderChroniclesView({
     state,
@@ -776,6 +841,59 @@ function renderGlossaryModule() {
     shouldShowGlossaryReturnFab,
     getViewStateLabel,
   });
+}
+
+function renderOptionsModule() {
+  if (!optionsModule) {
+    return;
+  }
+
+  const lastSavedLabel = formatShortDate(state.ui.lastSaved?.at) || "Encara no";
+
+  optionsModule.innerHTML = `
+    <section class="module-surface options-shell">
+      <div class="module-section-header">
+        <div class="module-section-copy">
+          <p class="eyebrow">Configuracio</p>
+          <h3>Opcions de campanya</h3>
+          <p>Gestio local de les dades i eines de manteniment del compendi.</p>
+        </div>
+      </div>
+
+      <div class="options-grid">
+        <article class="section-card options-card">
+          <div class="options-card-copy">
+            <p class="eyebrow">Copia local</p>
+            <h3>JSON de campanya</h3>
+            <p>Personatges, croniques, glossari, notes i recursos incrustats.</p>
+          </div>
+          <div class="options-actions">
+            <button type="button" class="secondary" data-export-backup>
+              <span class="module-action-icon">${renderModuleActionIcon("download")}</span>
+              <span>Exporta JSON</span>
+            </button>
+            <button type="button" class="secondary" data-import-backup>
+              <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
+              <span>Importa JSON</span>
+            </button>
+          </div>
+        </article>
+
+        <article class="section-card options-card options-status-card">
+          <div>
+            <p class="eyebrow">Estat</p>
+            <h3>Dades actives</h3>
+          </div>
+          <div class="options-stat-list">
+            <span class="badge">${state.characters.length} personatges</span>
+            <span class="badge">${state.chronicles.length} croniques</span>
+            <span class="badge">${state.glossary.length} entrades</span>
+            <span class="badge">Darrer canvi: ${escapeHtml(lastSavedLabel)}</span>
+          </div>
+        </article>
+      </div>
+    </section>
+  `;
 }
 
 function restoreGlossarySearchFocus(selectionStart, selectionEnd) {
@@ -974,7 +1092,7 @@ function saveChronicle(formData) {
 }
 
 function switchChronicleSelection(nextId, direction = "next") {
-  if (!nextId || nextId === state.ui.selectedChronicleId) {
+  if (!nextId) {
     return;
   }
 
@@ -982,9 +1100,13 @@ function switchChronicleSelection(nextId, direction = "next") {
     return;
   }
 
+  const isSameChronicle = nextId === state.ui.selectedChronicleId;
   state.ui.selectedChronicleId = nextId;
+  state.ui.showChronicleLanding = false;
   persistAndRender();
-  animateBook(direction);
+  if (!isSameChronicle) {
+    animateBook(direction);
+  }
 }
 
 function resolveChronicleEditBeforeSwitch() {
@@ -1201,6 +1323,7 @@ function createChronicle() {
   createChronicleEntry(state);
   state.ui.newChronicleId = state.ui.selectedChronicleId;
   state.ui.chronicleIndexSearch = "";
+  state.ui.showChronicleLanding = false;
   clearChronicleDraft(state.ui.selectedChronicleId);
   state.ui.editModes.chronicles = true;
   persistAndRender();
@@ -1290,6 +1413,11 @@ function toggleModuleEdit(module) {
 }
 
 function ensureUiStateShape() {
+  const validModules = new Set(["characters", "chronicles", "glossary", "options"]);
+  state.ui.currentModule = validModules.has(state.ui.currentModule) ? state.ui.currentModule : "characters";
+  state.ui.showChronicleLanding = typeof state.ui.showChronicleLanding === "boolean" ? state.ui.showChronicleLanding : true;
+  state.ui.sidebarPinned = typeof state.ui.sidebarPinned === "boolean" ? state.ui.sidebarPinned : false;
+
   state.ui.editModes = {
     characters: false,
     chronicles: false,
@@ -1789,6 +1917,7 @@ function captureCurrentViewState() {
     selectedCharacterTab: state.ui.selectedCharacterTab,
     showCharacterGrid: state.ui.showCharacterGrid,
     selectedChronicleId: state.ui.selectedChronicleId,
+    showChronicleLanding: state.ui.showChronicleLanding,
     selectedGlossaryId: state.ui.selectedGlossaryId,
   };
 }
@@ -1803,6 +1932,7 @@ function restoreViewState(view) {
   state.ui.selectedCharacterTab = view.selectedCharacterTab || state.ui.selectedCharacterTab;
   state.ui.showCharacterGrid = typeof view.showCharacterGrid === "boolean" ? view.showCharacterGrid : state.ui.showCharacterGrid;
   state.ui.selectedChronicleId = view.selectedChronicleId || state.ui.selectedChronicleId;
+  state.ui.showChronicleLanding = typeof view.showChronicleLanding === "boolean" ? view.showChronicleLanding : state.ui.showChronicleLanding;
   state.ui.selectedGlossaryId = view.selectedGlossaryId || state.ui.selectedGlossaryId;
 }
 

@@ -26,10 +26,14 @@ SPA estàtica per centralitzar la informació d'una campanya de D&D amb estètic
 
 ## QA
 
+- `npm.cmd run qa:smoke` executa una validació ràpida i una captura crítica inicial
 - `npm.cmd run qa` executa el test funcional i el de UI en `desktop` i `mobile`
 - `npm.cmd run qa:functional` executa només els casos funcionals
 - `npm.cmd run qa:ui` executa només els casos de layout/UI
+- `npm.cmd run capture:changed` regenera un subconjunt de captures útil per iterar canvis UI
+- `npm.cmd run capture -- chronicles` regenera captures focalitzades per filtre o àlies
 - Els artefactes es guarden a `qa-results/`, incloent els HTML de cada escenari i `summary.json`
+- Vegeu [WORKFLOW.md](C:\Users\adriagardela\WebstormProjects\Necronomicon\WORKFLOW.md) per al loop recomanat.
 
 ## Directori de recursos
 

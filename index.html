@@ -9,59 +9,76 @@
   <body>
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-top">
-          <p class="eyebrow">Campanya D&amp;D</p>
-          <h1>Compendi de Campanya</h1>
-          <p class="sidebar-copy">
-            Pergamins, cròniques i memòria viva dels personatges.
-          </p>
-          <div class="project-tools">
-            <p class="eyebrow">Dades</p>
-            <div class="sidebar-actions">
-              <button type="button" class="secondary" data-export-backup>Exporta JSON</button>
-              <button type="button" class="secondary" data-import-backup>Importa JSON</button>
-            </div>
+        <button
+          type="button"
+          class="sidebar-toggle"
+          data-sidebar-toggle
+          aria-label="Fixa o desfes el menu lateral"
+          aria-expanded="false"
+          title="Menu lateral"
+        >
+          <span aria-hidden="true"></span>
+        </button>
+        <div class="sidebar-scroll">
+          <div class="sidebar-top">
+            <p class="eyebrow">Campanya D&amp;D</p>
+            <h1>Compendi de Campanya</h1>
+            <p class="sidebar-copy">
+              Pergamins, cròniques i memòria viva dels personatges.
+            </p>
           </div>
-        </div>
 
-        <nav class="module-nav" aria-label="Mòduls principals" role="tablist">
-          <button
-            id="module-tab-characters"
-            type="button"
-            class="module-link active"
-            data-module-link="characters"
-            role="tab"
-            aria-selected="true"
-            aria-controls="charactersModule"
-          >
-            Personatges
-          </button>
-          <button
-            id="module-tab-chronicles"
-            type="button"
-            class="module-link"
-            data-module-link="chronicles"
-            role="tab"
-            aria-selected="false"
-            aria-controls="chroniclesModule"
-            tabindex="-1"
-          >
-            Cròniques
-          </button>
-          <button
-            id="module-tab-glossary"
-            type="button"
-            class="module-link"
-            data-module-link="glossary"
-            role="tab"
-            aria-selected="false"
-            aria-controls="glossaryModule"
-            tabindex="-1"
-          >
-            Glossari
-          </button>
-        </nav>
-        <div id="sidebarContextPanel" class="sidebar-panel" hidden></div>
+          <nav class="module-nav" aria-label="Mòduls principals" role="tablist">
+            <button
+              id="module-tab-characters"
+              type="button"
+              class="module-link active"
+              data-module-link="characters"
+              role="tab"
+              aria-selected="true"
+              aria-controls="charactersModule"
+            >
+              Personatges
+            </button>
+            <button
+              id="module-tab-chronicles"
+              type="button"
+              class="module-link"
+              data-module-link="chronicles"
+              role="tab"
+              aria-selected="false"
+              aria-controls="chroniclesModule"
+              tabindex="-1"
+            >
+              Cròniques
+            </button>
+            <button
+              id="module-tab-glossary"
+              type="button"
+              class="module-link"
+              data-module-link="glossary"
+              role="tab"
+              aria-selected="false"
+              aria-controls="glossaryModule"
+              tabindex="-1"
+            >
+              Glossari
+            </button>
+            <button
+              id="module-tab-options"
+              type="button"
+              class="module-link"
+              data-module-link="options"
+              role="tab"
+              aria-selected="false"
+              aria-controls="optionsModule"
+              tabindex="-1"
+            >
+              Opcions
+            </button>
+          </nav>
+          <div id="sidebarContextPanel" class="sidebar-panel" hidden></div>
+        </div>
 
       </aside>
 
@@ -69,6 +86,7 @@
         <section id="charactersModule" class="module-view active" role="tabpanel" aria-labelledby="module-tab-characters"></section>
         <section id="chroniclesModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-chronicles" hidden></section>
         <section id="glossaryModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-glossary" hidden></section>
+        <section id="optionsModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-options" hidden></section>
       </main>
     </div>
     <div id="saveNotice" class="save-notice" aria-live="polite" aria-atomic="true"></div>

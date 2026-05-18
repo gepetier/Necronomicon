@@ -8,11 +8,16 @@ const resultsDir = resolve(rootDir, "qa-results", "captures");
 const host = process.env.QA_HOST || "127.0.0.1";
 const port = Number(process.env.QA_PORT || "4173");
 const chromeBinary = resolveChromeBinary();
-const scenarios = buildScenarios();
+const requestedFilters = process.argv.slice(2);
+const scenarios = filterScenarios(buildScenarios(), requestedFilters);
+const chromeTimeoutMs = Number(process.env.CAPTURE_CHROME_TIMEOUT_MS || "20000");
 
 async function main() {
   if (!chromeBinary) {
     throw new Error("No s'ha trobat Chrome o Edge. Defineix QA_CHROME_BIN si cal.");
+  }
+  if (!scenarios.length) {
+    throw new Error(`Cap escenari de captura coincideix amb: ${requestedFilters.join(", ") || "all"}`);
   }
 
   await mkdir(resultsDir, { recursive: true });
@@ -64,7 +69,9 @@ function buildScenarios() {
 
   return [
     { name: "characters-grid", ...desktop, fileName: "characters-grid-desktop.png" },
-    { name: "sidebar-tools", ...desktop, fileName: "sidebar-tools-desktop.png" },
+    { name: "sidebar-preview", ...desktop, fileName: "sidebar-preview-desktop.png" },
+    { name: "sidebar-pinned", ...desktop, fileName: "sidebar-pinned-desktop.png" },
+    { name: "options-tools", ...desktop, fileName: "options-tools-desktop.png" },
     { name: "characters-grid-lightbox", ...desktop, fileName: "characters-grid-lightbox-desktop.png" },
     { name: "character-detail-lore", ...desktop, fileName: "character-detail-lore-desktop.png" },
     { name: "character-detail-sheet", ...desktop, fileName: "character-detail-sheet-desktop.png" },
@@ -89,7 +96,8 @@ function buildScenarios() {
     { name: "glossary-filter-empty", ...desktop, fileName: "glossary-filter-empty-desktop.png" },
     { name: "glossary-notes", ...desktop, fileName: "glossary-notes-desktop.png" },
     { name: "characters-grid", ...mobile, fileName: "characters-grid-mobile.png" },
-    { name: "sidebar-tools", ...mobile, fileName: "sidebar-tools-mobile.png" },
+    { name: "sidebar-pinned", ...mobile, fileName: "sidebar-pinned-mobile.png" },
+    { name: "options-tools", ...mobile, fileName: "options-tools-mobile.png" },
     { name: "characters-grid-lightbox", ...mobile, fileName: "characters-grid-lightbox-mobile.png" },
     { name: "character-detail-lore", ...mobile, fileName: "character-detail-lore-mobile.png" },
     { name: "character-notes", ...mobile, fileName: "character-notes-mobile.png" },
@@ -118,6 +126,48 @@ function buildScenarios() {
     { name: "glossary-detail", ...mobileDeep, scrollY: 980, fileName: "glossary-detail-mobile-fold2.png" },
     { name: "glossary-edit", ...mobileDeep, scrollY: 1260, fileName: "glossary-edit-mobile-fold2.png" },
   ];
+}
+
+function filterScenarios(allScenarios, filters) {
+  if (!filters.length || filters.includes("all")) {
+    return allScenarios;
+  }
+
+  const aliases = {
+    changed: [
+      "characters-grid-desktop.png",
+      "characters-grid-mobile.png",
+      "sidebar-preview-desktop.png",
+      "sidebar-pinned-desktop.png",
+      "sidebar-pinned-mobile.png",
+      "chronicles-read-desktop.png",
+      "chronicles-read-mobile.png",
+      "chronicles-read-highlights-desktop.png",
+      "chronicles-read-highlights-mobile.png",
+      "options-tools-desktop.png",
+      "options-tools-mobile.png",
+    ],
+    smoke: ["characters-grid-desktop.png", "characters-grid-mobile.png"],
+    sidebar: [
+      "characters-grid-desktop.png",
+      "characters-grid-mobile.png",
+      "sidebar-preview-desktop.png",
+      "sidebar-pinned-desktop.png",
+      "sidebar-pinned-mobile.png",
+    ],
+    characters: ["character"],
+    chronicles: ["chronicles"],
+    glossary: ["glossary"],
+    options: ["options-tools"],
+    desktop: ["-desktop"],
+    mobile: ["-mobile"],
+  };
+
+  const expandedFilters = filters.flatMap((filter) => aliases[filter] || [filter]);
+  return allScenarios.filter((scenario) => {
+    const haystack = `${scenario.name} ${scenario.fileName} ${scenario.viewport}`;
+    return expandedFilters.some((filter) => haystack.includes(filter));
+  });
 }
 
 function resolveChromeBinary() {
@@ -172,13 +222,35 @@ function runChrome(args) {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      child.kill();
+      rejectPromise(new Error(`Chrome ha superat el temps limit de captura (${chromeTimeoutMs} ms).`));
+    }, chromeTimeoutMs);
 
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
 
-    child.on("error", rejectPromise);
+    child.on("error", (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      rejectPromise(error);
+    });
     child.on("exit", (code) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
       if (code !== 0) {
         rejectPromise(new Error(stderr.trim() || `Chrome ha acabat amb codi ${code}`));
         return;

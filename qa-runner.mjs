@@ -10,6 +10,7 @@ const port = Number(process.env.QA_PORT || "4173");
 const chromeBinary = resolveChromeBinary();
 const requestedTarget = process.argv[2] || "all";
 const scenarios = getScenarios(requestedTarget);
+const chromeTimeoutMs = Number(process.env.QA_CHROME_TIMEOUT_MS || "20000");
 
 async function main() {
   if (!chromeBinary) {
@@ -69,6 +70,13 @@ function getScenarios(target) {
 
   if (target === "all") {
     return all;
+  }
+
+  if (target === "smoke") {
+    return [
+      { suite: "functional", mode: "desktop", width: 1440, height: 1200 },
+      { suite: "ui", mode: "mobile", width: 390, height: 844 },
+    ];
   }
 
   return all.filter((scenario) => scenario.suite === target);
@@ -152,6 +160,16 @@ function runChrome(args) {
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      child.kill();
+      rejectPromise(new Error(`Chrome ha superat el temps limit de QA (${chromeTimeoutMs} ms).`));
+    }, chromeTimeoutMs);
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
@@ -161,8 +179,20 @@ function runChrome(args) {
       stderr += chunk;
     });
 
-    child.on("error", rejectPromise);
+    child.on("error", (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      rejectPromise(error);
+    });
     child.on("exit", (code) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
       if (code !== 0) {
         rejectPromise(new Error(stderr.trim() || `Chrome ha acabat amb codi ${code}`));
         return;

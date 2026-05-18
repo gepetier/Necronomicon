@@ -87,7 +87,20 @@ function createContext(currentFrame) {
 async function runScenario(context, scenarioName) {
   const handlers = {
     "characters-grid": async () => {},
-    "sidebar-tools": async () => {},
+    "sidebar-preview": async () => {
+      const toggle = context.query("[data-sidebar-toggle]");
+      if (!(toggle instanceof context.win.HTMLElement)) {
+        throw new Error("No s'ha trobat el boto del menu lateral.");
+      }
+      toggle.dispatchEvent(new context.win.PointerEvent("pointerenter", { bubbles: true }));
+      await delay(220);
+    },
+    "sidebar-pinned": async () => {
+      await context.click("[data-sidebar-toggle]");
+    },
+    "options-tools": async () => {
+      await context.click('[data-module-link="options"]');
+    },
     "characters-grid-lightbox": async () => {
       await context.click(".portrait-media");
     },
@@ -122,30 +135,37 @@ async function runScenario(context, scenarioName) {
     },
     "chronicles-read": async () => {
       await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
     },
     "chronicles-read-highlights": async () => {
       await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
     },
     "chronicles-edit": async () => {
       await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
       await context.click('[data-toggle-edit="chronicles"]');
     },
     "chronicles-edit-highlights": async () => {
       await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
       await context.click('[data-toggle-edit="chronicles"]');
     },
     "chronicles-edit-references": async () => {
       await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
       await context.click('[data-toggle-edit="chronicles"]');
       await context.type('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
       await context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
     },
     "chronicles-search-empty": async () => {
       await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
       await context.type('input[name="chronicleIndexSearch"]', "zzzzzz");
     },
     "chronicles-notes": async () => {
       await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
       await context.click("[data-toggle-notes]");
     },
     "glossary-detail": async () => {
@@ -155,6 +175,7 @@ async function runScenario(context, scenarioName) {
     },
     "glossary-return": async () => {
       await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
       await context.click('[data-reference-jump="acantilado-del-silencio"]');
     },
     "glossary-detail-lightbox": async () => {
@@ -206,6 +227,16 @@ async function openCharacter(context) {
 
   firstCard.click();
   await delay(160);
+}
+
+async function openChronicle(context) {
+  const firstChronicle = context.query("[data-chronicle-id]");
+  if (!(firstChronicle instanceof context.win.HTMLElement)) {
+    throw new Error("No s'ha trobat cap cronica.");
+  }
+
+  firstChronicle.click();
+  await delay(180);
 }
 
 function onceLoaded(targetFrame) {
