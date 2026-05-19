@@ -1409,6 +1409,10 @@ function toggleModuleEdit(module) {
     state.ui.showCharacterGrid = false;
   }
 
+  if (module === "chronicles" && state.ui.editModes.chronicles) {
+    state.ui.showChronicleLanding = false;
+  }
+
   persistAndRender();
 }
 

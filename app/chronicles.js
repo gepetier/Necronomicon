@@ -162,9 +162,21 @@ function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel
     <div class="book-spread">
       <article class="book-page left-page">
         <div class="page-header">
-          <p class="eyebrow">${escapeHtml(current?.chapter || "Sessio")}</p>
-          <h3>${escapeHtml(current?.title || "Sense cronica")}</h3>
-          <span>${escapeHtml(current?.date || "")}</span>
+          <div class="page-header-main">
+            <p class="eyebrow">${escapeHtml(current?.chapter || "Sessio")}</p>
+            <h3>${escapeHtml(current?.title || "Sense cronica")}</h3>
+            <span>${escapeHtml(current?.date || "")}</span>
+          </div>
+          <button
+            type="button"
+            class="secondary module-edit-button chronicle-page-edit"
+            data-toggle-edit="chronicles"
+            aria-label="Edita cronica"
+            title="Edita cronica"
+          >
+            <span class="module-action-icon">${renderModuleActionIcon("chronicles")}</span>
+            <span>Edita cronica</span>
+          </button>
         </div>
         <figure class="book-image-frame">
           ${primaryImage

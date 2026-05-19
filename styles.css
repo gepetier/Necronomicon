@@ -3712,10 +3712,18 @@ select {
 }
 
 .page-header {
-  display: grid;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
   gap: 0.38rem;
   padding-bottom: 0.9rem;
   border-bottom: 1px solid rgba(114, 76, 46, 0.14);
+}
+
+.page-header-main {
+  display: grid;
+  gap: 0.38rem;
+  min-width: 0;
 }
 
 .page-header h3 {
@@ -3726,6 +3734,14 @@ select {
 .page-header span {
   color: rgba(80, 54, 39, 0.7);
   font-style: italic;
+}
+
+.chronicle-page-edit {
+  flex: 0 0 auto;
+  min-height: 46px;
+  gap: 0.55rem;
+  padding-inline: 0.85rem;
+  white-space: nowrap;
 }
 
 .chapter-summary,
@@ -3945,6 +3961,16 @@ select {
 
   .chronicle-edit-sidebar {
     position: static;
+  }
+
+  .page-header {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .chronicle-page-edit {
+    justify-self: start;
+    max-width: 100%;
   }
 
   .choice-grid {
