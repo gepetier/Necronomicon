@@ -51,6 +51,19 @@ import {
   readBackupAssetBundle,
   readBackupStatePayload,
 } from "./app/backup.js";
+import {
+  clearStoredCredential,
+  decodeCredential,
+  getStoredCredential,
+  isCredentialUsable,
+  loadCampaignFromCloud,
+  loadGoogleIdentity,
+  promptGoogleSignIn,
+  renderGoogleButton,
+  saveCampaignToCloud,
+  saveCharacterToCloud,
+  storeCredential,
+} from "./app/cloud-sync.js";
 
 let state = loadStoredState();
 let bookTurnTimer = null;
@@ -58,6 +71,7 @@ let saveNoticeTimer = null;
 let persistStateTimer = null;
 let glossarySearchTimer = null;
 let chronicleIndexSearchTimer = null;
+let cloudSaveTimer = null;
 
 const referenceSuggestionTimers = new WeakMap();
 const richPreviewTimers = new WeakMap();
@@ -74,9 +88,66 @@ const imageLightbox = document.querySelector("#imageLightbox");
 const imageLightboxMedia = document.querySelector("#imageLightboxMedia");
 const richMediaPicker = document.querySelector("#richMediaPicker");
 const backupImportPicker = document.querySelector("#backupImportPicker");
+const authGate = document.querySelector("#authGate");
+const googleSignInButton = document.querySelector("#googleSignInButton");
+const authStatus = document.querySelector("[data-auth-status]");
 
 let lastLightboxTrigger = null;
 let pendingRichMediaInsert = null;
+
+const runtimeParams = new URLSearchParams(window.location.search);
+const authPreviewMode = runtimeParams.has("authPreview");
+const qaMode = runtimeParams.has("qaRun") || runtimeParams.has("captureRun");
+const AUTH_FEEDBACK = {
+  booting: {
+    action: "Carregant el client de login i preparant Google Identity.",
+    text: "Encenent espelmes...",
+  },
+  waitingForSignIn: {
+    action: "Esperant que l'usuari premi el segell per iniciar sessio.",
+    text: "Toca l'abisme...",
+  },
+  openingSignIn: {
+    action: "L'usuari ha premut el segell i s'obre el flux de login.",
+    text: "Algú et mira desde l'abisme",
+  },
+  missingCredential: {
+    action: "Google no ha retornat cap credencial despres del login.",
+    text: "El poder no t'es atorgat",
+  },
+  invalidCredential: {
+    action: "La credencial rebuda no es pot validar localment.",
+    text: "No tens un pacte amb l'antic, encara...",
+  },
+  restoringSession: {
+    action: "S'ha trobat una sessio recordada i s'esta recuperant.",
+    text: "L'antic mira dins teu...",
+  },
+  loadingCampaign: {
+    action: "Login acceptat; s'esta carregant la campanya remota.",
+    text: "Extraient poder...",
+  },
+  firstPublish: {
+    action: "El JSON remot era buit i es prepara la primera publicacio.",
+    text: "Preparant la primera ofrena.",
+  },
+  campaignReady: {
+    action: "La campanya ja esta carregada i es pot obrir la interfície.",
+    text: "El llibre s'obre.",
+  },
+};
+const cloudSession = {
+  enabled: authPreviewMode || !qaMode,
+  ready: qaMode && !authPreviewMode,
+  idToken: "",
+  user: null,
+  status: authPreviewMode ? "" : qaMode ? "Mode QA local" : getAuthFeedbackText("booting"),
+  saving: false,
+  awaitingServer: false,
+  lastSyncAt: "",
+  lastError: "",
+  pendingInitialPublish: false,
+};
 
 const RENDER_PARTS = {
   sidebar: "sidebar",
@@ -119,6 +190,7 @@ function initialize() {
   render();
   installQaHooks();
   void migrateEmbeddedAssets({ announce: false });
+  void initializeCloudSession();
 }
 
 function handleClick(event) {
@@ -163,6 +235,30 @@ function handleClick(event) {
     return;
   }
 
+  if (event.target.closest("[data-cloud-publish]")) {
+    void pushStateToCloud({ target: { type: "campaign" } });
+    return;
+  }
+
+  if (event.target.closest("[data-cloud-logout]")) {
+    clearStoredCredential();
+    cloudSession.ready = false;
+    cloudSession.idToken = "";
+    cloudSession.user = null;
+    updateCloudStatus("Sessio tancada. Torna a iniciar sessio per sincronitzar.", { renderOptions: false });
+    void initializeCloudSession();
+    return;
+  }
+
+  if (event.target.closest("[data-auth-logo-login]")) {
+    if (authPreviewMode) {
+      return;
+    }
+    updateAuthFeedback("openingSignIn", { renderOptions: false });
+    promptGoogleSignIn();
+    return;
+  }
+
   if (event.target.closest("[data-sidebar-toggle]")) {
     state.ui.sidebarPinned = !state.ui.sidebarPinned;
     document.body.classList.remove("sidebar-preview");
@@ -177,8 +273,7 @@ function handleClick(event) {
       const hasPendingChronicleWork = hasModuleDrafts("chronicles") || state.ui.editModes.chronicles;
       state.ui.showChronicleLanding = !hasPendingChronicleWork;
     }
-    state.ui.glossaryReturnView = null;
-    state.ui.glossaryReturnTargetId = "";
+    clearChronicleReturn();
     persistAndRender();
     return;
   }
@@ -206,6 +301,9 @@ function handleClick(event) {
   const characterCard = event.target.closest("[data-character-card]");
   if (characterCard) {
     state.ui.selectedCharacterId = characterCard.dataset.characterCard;
+    if (state.ui.glossaryReturnTargetId && state.ui.selectedCharacterId !== state.ui.glossaryReturnTargetId) {
+      clearChronicleReturn();
+    }
     state.ui.showCharacterGrid = false;
     persistAndRender();
     return;
@@ -323,8 +421,12 @@ function handleClick(event) {
 
     const character = referenceId ? findCharacter(referenceId) : null;
     if (character) {
-      state.ui.glossaryReturnView = null;
-      state.ui.glossaryReturnTargetId = "";
+      if (state.ui.currentModule === "chronicles") {
+        state.ui.glossaryReturnView = captureCurrentViewState();
+        state.ui.glossaryReturnTargetId = referenceId;
+      } else {
+        clearChronicleReturn();
+      }
       state.ui.currentModule = "characters";
       state.ui.selectedCharacterId = referenceId;
       state.ui.showCharacterGrid = false;
@@ -336,8 +438,7 @@ function handleClick(event) {
   if (event.target.closest("[data-return-to-chronicle]")) {
     if (state.ui.glossaryReturnView) {
       restoreViewState(state.ui.glossaryReturnView);
-      state.ui.glossaryReturnView = null;
-      state.ui.glossaryReturnTargetId = "";
+      clearChronicleReturn();
       persistAndRender();
     }
     return;
@@ -687,11 +788,17 @@ function handleSubmit(event) {
 
   if (form.dataset.form === "player-note") {
     savePlayerNote(formData);
+    return;
+  }
+
+  if (form.dataset.form === "permissions") {
+    savePermissions(formData);
   }
 }
 
 function render(parts = FULL_RENDER_PARTS) {
   const renderSet = new Set(parts);
+  updateAuthGate();
 
   if (renderSet.has(RENDER_PARTS.sidebar)) {
     updateSidebar();
@@ -716,6 +823,174 @@ function render(parts = FULL_RENDER_PARTS) {
   }
   if (renderSet.has(RENDER_PARTS.assets)) {
     void hydrateAssetReferences(document);
+  }
+}
+
+async function initializeCloudSession() {
+  if (!cloudSession.enabled) {
+    updateAuthGate();
+    return;
+  }
+
+  if (authPreviewMode) {
+    cloudSession.status = runtimeParams.get("authStatus") || "";
+    cloudSession.awaitingServer = runtimeParams.has("authWaiting");
+    renderAuthPreviewButton();
+    updateAuthGate();
+    return;
+  }
+
+  updateAuthFeedback("booting");
+  try {
+    await loadGoogleIdentity();
+    renderGoogleButton(googleSignInButton, (response) => {
+      void handleGoogleCredential(response?.credential || "");
+    });
+
+    const storedCredential = getStoredCredential();
+    if (isCredentialUsable(storedCredential)) {
+      await handleGoogleCredential(storedCredential, { silent: true });
+      return;
+    }
+
+    clearStoredCredential();
+    cloudSession.ready = false;
+    updateAuthFeedback("waitingForSignIn");
+    promptGoogleSignIn();
+  } catch (error) {
+    cloudSession.ready = false;
+    updateCloudStatus(error instanceof Error ? error.message : String(error), { error: true });
+  }
+}
+
+async function handleGoogleCredential(credential, options = {}) {
+  if (!credential) {
+    updateAuthFeedback("missingCredential", { error: true });
+    return;
+  }
+
+  const decoded = decodeCredential(credential);
+  if (!decoded?.email) {
+    updateAuthFeedback("invalidCredential", { error: true });
+    return;
+  }
+
+  cloudSession.idToken = credential;
+  cloudSession.user = decoded;
+  storeCredential(credential);
+  updateAuthFeedback(options.silent ? "restoringSession" : "loadingCampaign");
+  cloudSession.awaitingServer = true;
+  updateAuthGate();
+
+  try {
+    const response = await loadCampaignFromCloud(credential);
+    const localBeforeCloud = state;
+    const cloudState = storageMigrateStoredState({
+      version: response.version || 0,
+      state: response.campaign,
+    });
+    const shouldSeedCloud = isCloudCampaignEmpty(response.campaign) && hasCampaignContent(localBeforeCloud);
+    state = shouldSeedCloud
+      ? {
+        ...localBeforeCloud,
+        access: cloudState.access,
+      }
+      : cloudState;
+    cloudSession.user = {
+      ...decoded,
+      ...(response.user || {}),
+    };
+    cloudSession.ready = true;
+    cloudSession.awaitingServer = false;
+    cloudSession.pendingInitialPublish = shouldSeedCloud;
+    cloudSession.lastSyncAt = new Date().toISOString();
+    cloudSession.lastError = "";
+    ensureUiStateShape();
+    openCharactersAfterLogin();
+    persistStateImmediately({ skipCloud: true });
+    render();
+    updateAuthFeedback(shouldSeedCloud ? "firstPublish" : "campaignReady");
+    if (shouldSeedCloud && cloudSession.user?.permissions?.managePermissions) {
+      await pushStateToCloud({ target: { type: "campaign" } });
+      cloudSession.pendingInitialPublish = false;
+    }
+  } catch (error) {
+    clearStoredCredential();
+    cloudSession.idToken = "";
+    cloudSession.user = null;
+    cloudSession.ready = false;
+    cloudSession.awaitingServer = false;
+    updateCloudStatus(error instanceof Error ? error.message : String(error), { error: true });
+  }
+}
+
+function isCloudCampaignEmpty(campaign) {
+  return !(
+    Array.isArray(campaign?.characters) && campaign.characters.length
+    || Array.isArray(campaign?.chronicles) && campaign.chronicles.length
+    || Array.isArray(campaign?.glossary) && campaign.glossary.length
+  );
+}
+
+function hasCampaignContent(candidate) {
+  return Boolean(
+    Array.isArray(candidate?.characters) && candidate.characters.length
+    || Array.isArray(candidate?.chronicles) && candidate.chronicles.length
+    || Array.isArray(candidate?.glossary) && candidate.glossary.length
+  );
+}
+
+function openCharactersAfterLogin() {
+  state.ui.currentModule = "characters";
+  state.ui.showCharacterGrid = true;
+  state.ui.editModes = {
+    ...(state.ui.editModes || {}),
+    characters: false,
+    chronicles: false,
+    glossary: false,
+  };
+  clearChronicleReturn();
+}
+
+function updateAuthGate() {
+  if (!authGate) {
+    return;
+  }
+
+  authGate.hidden = !cloudSession.enabled || cloudSession.ready;
+  document.body.classList.toggle("auth-required", cloudSession.enabled && !cloudSession.ready);
+  document.body.classList.toggle(
+    "auth-waiting-server",
+    cloudSession.enabled && !cloudSession.ready && cloudSession.awaitingServer,
+  );
+  if (authStatus) {
+    authStatus.textContent = cloudSession.status || "";
+    authStatus.classList.toggle("error", Boolean(cloudSession.lastError));
+  }
+}
+
+function renderAuthPreviewButton() {
+  if (!googleSignInButton) {
+    return;
+  }
+
+  googleSignInButton.innerHTML = "";
+}
+
+function getAuthFeedbackText(key) {
+  return AUTH_FEEDBACK[key]?.text || "";
+}
+
+function updateAuthFeedback(key, options = {}) {
+  updateCloudStatus(getAuthFeedbackText(key), options);
+}
+
+function updateCloudStatus(message, options = {}) {
+  cloudSession.status = message;
+  cloudSession.lastError = options.error ? message : "";
+  updateAuthGate();
+  if (options.renderOptions !== false) {
+    render([RENDER_PARTS.options]);
   }
 }
 
@@ -792,6 +1067,8 @@ function renderCharactersModule() {
     state,
     rootEl: charactersModule,
     getSelectedCharacter,
+    getViewStateLabel,
+    shouldShowCharacterReturnFab,
     renderPlayerNotesPanel,
     renderPlayerNotesFab,
   });
@@ -849,6 +1126,10 @@ function renderOptionsModule() {
   }
 
   const lastSavedLabel = formatShortDate(state.ui.lastSaved?.at) || "Encara no";
+  const lastSyncLabel = formatShortDate(cloudSession.lastSyncAt) || "Encara no";
+  const userLabel = cloudSession.user?.email || "No connectat";
+  const roleLabel = cloudSession.user?.role || "local";
+  const canManagePermissions = Boolean(cloudSession.user?.permissions?.managePermissions) || !cloudSession.enabled;
 
   optionsModule.innerHTML = `
     <section class="module-surface options-shell">
@@ -856,11 +1137,35 @@ function renderOptionsModule() {
         <div class="module-section-copy">
           <p class="eyebrow">Configuracio</p>
           <h3>Opcions de campanya</h3>
-          <p>Gestio local de les dades i eines de manteniment del compendi.</p>
+          <p>Sincronitzacio de Drive, permisos i eines de manteniment del compendi.</p>
         </div>
       </div>
 
       <div class="options-grid">
+        <article class="section-card options-card">
+          <div class="options-card-copy">
+            <p class="eyebrow">Google Drive</p>
+            <h3>Sincronitzacio compartida</h3>
+            <p>${escapeHtml(cloudSession.status || "Preparat")}</p>
+          </div>
+          <div class="options-stat-list">
+            <span class="badge">${escapeHtml(userLabel)}</span>
+            <span class="badge">Rol: ${escapeHtml(roleLabel)}</span>
+            <span class="badge">Darrer sync: ${escapeHtml(lastSyncLabel)}</span>
+            ${cloudSession.saving ? '<span class="badge">Desant...</span>' : ""}
+            ${cloudSession.lastError ? `<span class="badge warning">Error: ${escapeHtml(cloudSession.lastError)}</span>` : ""}
+          </div>
+          <div class="options-actions">
+            <button type="button" class="secondary" data-cloud-publish ${canManagePermissions ? "" : "disabled"}>
+              <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
+              <span>Publica a Drive</span>
+            </button>
+            <button type="button" class="secondary" data-cloud-logout>
+              <span>Tanca sessio</span>
+            </button>
+          </div>
+        </article>
+
         <article class="section-card options-card">
           <div class="options-card-copy">
             <p class="eyebrow">Copia local</p>
@@ -891,8 +1196,91 @@ function renderOptionsModule() {
             <span class="badge">Darrer canvi: ${escapeHtml(lastSavedLabel)}</span>
           </div>
         </article>
+
+        <article class="section-card options-card options-permissions-card">
+          <div class="options-card-copy">
+            <p class="eyebrow">Permisos</p>
+            <h3>Rols i usuaris</h3>
+            <p>Defineix qui pot editar fitxes, croniques, glossari i permisos.</p>
+          </div>
+          ${renderPermissionsForm(canManagePermissions)}
+        </article>
       </div>
     </section>
+  `;
+}
+
+function renderPermissionsForm(canManagePermissions) {
+  const access = getAccessState();
+  const roleRows = Object.entries(access.roles)
+    .map(([roleId, permissions]) => `
+      <fieldset class="permissions-role">
+        <legend>${escapeHtml(roleId)}</legend>
+        ${renderPermissionCheckbox(roleId, "editAnyCharacter", "Qualsevol fitxa", permissions.editAnyCharacter, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "editOwnCharacter", "Fitxa assignada", permissions.editOwnCharacter, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "editChronicles", "Croniques", permissions.editChronicles, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "editGlossary", "Glossari", permissions.editGlossary, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "managePermissions", "Permisos", permissions.managePermissions, canManagePermissions)}
+      </fieldset>
+    `)
+    .join("");
+  const userEntries = Object.entries(access.users);
+  const renderedUsers = [...userEntries, ["", { role: "viewer", characterIds: [] }]]
+    .map(([email, user], index) => renderPermissionUserRow(email, user, index, access, canManagePermissions))
+    .join("");
+
+  return `
+    <form data-form="permissions" class="permissions-form">
+      <div class="permissions-roles">${roleRows}</div>
+      <div class="permissions-users">
+        <div class="permissions-users-head">
+          <span>Correu</span>
+          <span>Rol</span>
+          <span>Personatges assignats</span>
+        </div>
+        ${renderedUsers}
+      </div>
+      <div class="options-actions">
+        <button type="submit" class="primary" ${canManagePermissions ? "" : "disabled"}>Desa permisos</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderPermissionCheckbox(roleId, permissionId, label, checked, enabled) {
+  return `
+    <label class="check-row">
+      <input
+        type="checkbox"
+        name="role:${escapeAttribute(roleId)}:${escapeAttribute(permissionId)}"
+        ${checked ? "checked" : ""}
+        ${enabled ? "" : "disabled"}
+      />
+      <span>${escapeHtml(label)}</span>
+    </label>
+  `;
+}
+
+function renderPermissionUserRow(email, user, index, access, enabled) {
+  const roleOptions = Object.keys(access.roles)
+    .map((roleId) => `
+      <option value="${escapeAttribute(roleId)}" ${user.role === roleId ? "selected" : ""}>${escapeHtml(roleId)}</option>
+    `)
+    .join("");
+  const characterValue = Array.isArray(user.characterIds) ? user.characterIds.join(", ") : "";
+
+  return `
+    <div class="permissions-user-row">
+      <input name="userEmail" value="${escapeAttribute(email)}" placeholder="nom@gmail.com" ${enabled ? "" : "disabled"} />
+      <select name="userRole" ${enabled ? "" : "disabled"}>${roleOptions}</select>
+      <input
+        name="userCharacterIds"
+        value="${escapeAttribute(characterValue)}"
+        placeholder="${escapeAttribute(state.characters.map((character) => character.id).join(", "))}"
+        ${enabled ? "" : "disabled"}
+      />
+      <input type="hidden" name="userRow" value="${index}" />
+    </div>
   `;
 }
 
@@ -1013,7 +1401,7 @@ function saveCharacterEdits() {
   applyCharacterTabDrafts(character);
   clearCharacterDrafts(character.id);
   state.ui.editModes.characters = false;
-  showSaveNotice("Personatge desat");
+  showSaveNotice("Personatge desat", { cloud: true });
 }
 
 function applyCharacterOverviewDraft(character) {
@@ -1087,8 +1475,8 @@ function saveChronicle(formData) {
     state.ui.newChronicleId = "";
   }
   state.ui.editModes.chronicles = false;
-  showSaveNotice("Cronica desada");
-  void migrateEmbeddedAssets({ announce: false, renderParts: currentModuleRenderParts() });
+  showSaveNotice("Cronica desada", { cloud: true });
+  void migrateEmbeddedAssets({ announce: false, renderParts: currentModuleRenderParts(), cloud: true });
 }
 
 function switchChronicleSelection(nextId, direction = "next") {
@@ -1194,7 +1582,7 @@ function savePlayerNote(formData) {
     text,
   });
   state.ui.notesPanelOpen = true;
-  showSaveNotice("Nota desada");
+  showSaveNotice("Nota desada", { cloud: true });
 }
 
 function deletePlayerNote(noteId) {
@@ -1209,30 +1597,114 @@ function deletePlayerNote(noteId) {
 
   context.item.playerNotes = (context.item.playerNotes || []).filter((note) => note.id !== noteId);
   state.ui.notesPanelOpen = true;
-  persistAndRender();
+  persistAndRender(FULL_RENDER_PARTS, { cloud: true });
 }
 
 function saveGlossary(formData) {
   saveGlossaryEntry(formData, { findGlossaryEntry });
   state.ui.editModes.glossary = false;
-  showSaveNotice("Entrada desada");
-  void migrateEmbeddedAssets({ announce: false, renderParts: currentModuleRenderParts() });
+  showSaveNotice("Entrada desada", { cloud: true });
+  void migrateEmbeddedAssets({ announce: false, renderParts: currentModuleRenderParts(), cloud: true });
 }
 
-function persistAndRender(parts = FULL_RENDER_PARTS) {
-  persistStateImmediately();
+function savePermissions(formData) {
+  if (cloudSession.enabled && !cloudSession.user?.permissions?.managePermissions) {
+    window.alert("No tens permisos per modificar permisos.");
+    return;
+  }
+
+  const currentAccess = getAccessState();
+  const roles = Object.fromEntries(
+    Object.keys(currentAccess.roles).map((roleId) => [
+      roleId,
+      {
+        editAnyCharacter: formData.has(`role:${roleId}:editAnyCharacter`),
+        editOwnCharacter: formData.has(`role:${roleId}:editOwnCharacter`),
+        editChronicles: formData.has(`role:${roleId}:editChronicles`),
+        editGlossary: formData.has(`role:${roleId}:editGlossary`),
+        managePermissions: formData.has(`role:${roleId}:managePermissions`),
+      },
+    ]),
+  );
+  const emails = formData.getAll("userEmail").map((value) => String(value || "").trim().toLowerCase());
+  const userRoles = formData.getAll("userRole").map((value) => String(value || "viewer"));
+  const userCharacterIds = formData.getAll("userCharacterIds").map((value) => String(value || ""));
+  const users = {};
+
+  emails.forEach((email, index) => {
+    if (!email) {
+      return;
+    }
+    users[email] = {
+      role: roles[userRoles[index]] ? userRoles[index] : "viewer",
+      characterIds: userCharacterIds[index]
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    };
+  });
+
+  state.access = { roles, users };
+  showSaveNotice("Permisos desats", { cloud: true });
+}
+
+function getAccessState() {
+  const roles = state.access?.roles && typeof state.access.roles === "object" ? state.access.roles : {};
+  const users = state.access?.users && typeof state.access.users === "object" ? state.access.users : {};
+  return {
+    roles: {
+      dm: {
+        editAnyCharacter: true,
+        editOwnCharacter: true,
+        editChronicles: true,
+        editGlossary: true,
+        managePermissions: true,
+        ...(roles.dm || {}),
+      },
+      player: {
+        editAnyCharacter: false,
+        editOwnCharacter: true,
+        editChronicles: false,
+        editGlossary: false,
+        managePermissions: false,
+        ...(roles.player || {}),
+      },
+      viewer: {
+        editAnyCharacter: false,
+        editOwnCharacter: false,
+        editChronicles: false,
+        editGlossary: false,
+        managePermissions: false,
+        ...(roles.viewer || {}),
+      },
+      ...Object.fromEntries(
+        Object.entries(roles).filter(([roleId]) => !["dm", "player", "viewer"].includes(roleId)),
+      ),
+    },
+    users,
+  };
+}
+
+function persistAndRender(parts = FULL_RENDER_PARTS, options = {}) {
+  persistStateImmediately({
+    ...options,
+    skipCloud: shouldSkipCloudSync(options),
+  });
   render(parts);
 }
 
-function schedulePersistState(delay = 180) {
+function schedulePersistState(delay = 180, options = {}) {
   window.clearTimeout(persistStateTimer);
   persistStateTimer = window.setTimeout(() => {
     persistStateTimer = null;
     storagePersistState(state);
+    if (!shouldSkipCloudSync(options)) {
+      scheduleCloudSave();
+    }
   }, delay);
 }
 
-function flushPendingPersist() {
+function flushPendingPersist(options = {}) {
   if (persistStateTimer === null) {
     return;
   }
@@ -1240,11 +1712,107 @@ function flushPendingPersist() {
   window.clearTimeout(persistStateTimer);
   persistStateTimer = null;
   storagePersistState(state);
+  if (!shouldSkipCloudSync(options)) {
+    scheduleCloudSave();
+  }
 }
 
-function persistStateImmediately() {
-  flushPendingPersist();
+function persistStateImmediately(options = {}) {
+  flushPendingPersist(options);
   storagePersistState(state);
+  if (!shouldSkipCloudSync(options)) {
+    scheduleCloudSave();
+  }
+}
+
+function shouldSkipCloudSync(options = {}) {
+  if (Object.prototype.hasOwnProperty.call(options, "skipCloud")) {
+    return Boolean(options.skipCloud);
+  }
+
+  return options.cloud !== true;
+}
+
+function scheduleCloudSave(delay = 900) {
+  if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) {
+    return;
+  }
+
+  window.clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = window.setTimeout(() => {
+    cloudSaveTimer = null;
+    void pushStateToCloud();
+  }, delay);
+}
+
+async function pushStateToCloud(options = {}) {
+  if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) {
+    return;
+  }
+
+  const target = options.target || inferCloudSaveTarget();
+  if (!target) {
+    return;
+  }
+
+  cloudSession.saving = true;
+  cloudSession.status = "Desant canvis a Drive...";
+  render([RENDER_PARTS.options]);
+  try {
+    if (target.type === "campaign") {
+      await saveCampaignToCloud(cloudSession.idToken, stripTransientUiState(state));
+    } else if (target.type === "character") {
+      await saveCharacterToCloud(cloudSession.idToken, target.character);
+    }
+    cloudSession.lastSyncAt = new Date().toISOString();
+    cloudSession.lastError = "";
+    cloudSession.status = "Canvis enviats a Drive.";
+  } catch (error) {
+    cloudSession.lastError = error instanceof Error ? error.message : String(error);
+    cloudSession.status = cloudSession.lastError;
+  } finally {
+    cloudSession.saving = false;
+    render([RENDER_PARTS.options]);
+  }
+}
+
+function inferCloudSaveTarget() {
+  const user = cloudSession.user || {};
+  const permissions = user.permissions || {};
+  if (permissions.managePermissions || permissions.editChronicles || permissions.editGlossary || permissions.editAnyCharacter) {
+    return { type: "campaign" };
+  }
+
+  const character = getSelectedCharacter();
+  if (
+    character
+    && permissions.editOwnCharacter
+    && Array.isArray(user.characterIds)
+    && user.characterIds.includes(character.id)
+  ) {
+    return { type: "character", character };
+  }
+
+  return null;
+}
+
+function stripTransientUiState(nextState) {
+  const clone = structuredClone(nextState);
+  clone.ui = {
+    ...(clone.ui || {}),
+    saveNotice: "",
+    editModes: {
+      characters: false,
+      chronicles: false,
+      glossary: false,
+    },
+    drafts: {
+      characters: { overview: {}, tabs: {} },
+      chronicles: {},
+      glossary: {},
+    },
+  };
+  return clone;
 }
 
 function scheduleGlossarySearchRender(selectionStart = null, selectionEnd = null, delay = 120) {
@@ -1266,7 +1834,7 @@ function scheduleChronicleIndexSearchRender(delay = 120) {
   }, delay);
 }
 
-function showSaveNotice(message) {
+function showSaveNotice(message, options = {}) {
   state.ui.saveNotice = message;
   state.ui.lastSaved = {
     module: state.ui.currentModule,
@@ -1275,7 +1843,7 @@ function showSaveNotice(message) {
     message,
   };
   window.clearTimeout(saveNoticeTimer);
-  persistAndRender(currentModuleRenderParts());
+  persistAndRender(currentModuleRenderParts(), { cloud: options.cloud === true });
   saveNoticeTimer = window.setTimeout(() => {
     state.ui.saveNotice = "";
     render([RENDER_PARTS.notice]);
@@ -1326,7 +1894,7 @@ function createChronicle() {
   state.ui.showChronicleLanding = false;
   clearChronicleDraft(state.ui.selectedChronicleId);
   state.ui.editModes.chronicles = true;
-  persistAndRender();
+  persistAndRender(FULL_RENDER_PARTS, { cloud: true });
 }
 
 function deleteChronicle() {
@@ -1340,7 +1908,7 @@ function deleteChronicle() {
   if (state.ui.newChronicleId === deletedId) {
     state.ui.newChronicleId = "";
   }
-  persistAndRender();
+  persistAndRender(FULL_RENDER_PARTS, { cloud: true });
 }
 
 function discardChronicleChanges(options = {}) {
@@ -1357,7 +1925,7 @@ function discardChronicleChanges(options = {}) {
   }
 
   if (shouldPersist) {
-    persistAndRender();
+    persistAndRender(FULL_RENDER_PARTS, { cloud: isUnsavedNewChronicle });
   }
 }
 
@@ -1365,7 +1933,7 @@ function createGlossaryEntry() {
   createGlossaryItem(state);
   clearGlossaryDraft(state.ui.selectedGlossaryId);
   state.ui.editModes.glossary = true;
-  persistAndRender();
+  persistAndRender(FULL_RENDER_PARTS, { cloud: true });
 }
 
 function deleteGlossaryEntry() {
@@ -1376,7 +1944,7 @@ function deleteGlossaryEntry() {
   const deletedId = state.ui.selectedGlossaryId;
   deleteGlossaryItem(state);
   clearGlossaryDraft(deletedId);
-  persistAndRender();
+  persistAndRender(FULL_RENDER_PARTS, { cloud: true });
 }
 
 function openGlossaryEditor(glossaryId) {
@@ -1776,11 +2344,11 @@ async function migrateEmbeddedAssets(options = {}) {
 
   state = migrated.state;
   ensureUiStateShape();
-  persistStateImmediately();
+  persistStateImmediately({ cloud: options.cloud === true });
   render(options.renderParts || FULL_RENDER_PARTS);
 
   if (options.announce) {
-    showSaveNotice(options.message || "Assets localitzats fora del desat principal");
+    showSaveNotice(options.message || "Assets localitzats fora del desat principal", { cloud: options.cloud === true });
   }
 
   return true;
@@ -1834,9 +2402,9 @@ async function restoreBackupPayload(rawPayload) {
   state = nextState;
   ensureUiStateShape();
   await migrateEmbeddedAssets({ announce: false });
-  persistStateImmediately();
+  persistStateImmediately({ cloud: true });
   render();
-  showSaveNotice("Backup importat");
+  showSaveNotice("Backup importat", { cloud: true });
 }
 
 function downloadTextFile(fileName, content, mimeType) {
@@ -1940,6 +2508,11 @@ function restoreViewState(view) {
   state.ui.selectedGlossaryId = view.selectedGlossaryId || state.ui.selectedGlossaryId;
 }
 
+function clearChronicleReturn() {
+  state.ui.glossaryReturnView = null;
+  state.ui.glossaryReturnTargetId = "";
+}
+
 function getViewStateLabel(view) {
   if (!view || typeof view !== "object") {
     return "la vista anterior";
@@ -1972,6 +2545,16 @@ function shouldShowGlossaryReturnFab(currentEntryId) {
       && state.ui.glossaryReturnView?.currentModule === "chronicles"
       && state.ui.glossaryReturnTargetId
       && currentEntryId === state.ui.glossaryReturnTargetId,
+  );
+}
+
+function shouldShowCharacterReturnFab(currentCharacterId) {
+  return Boolean(
+    state.ui.currentModule === "characters"
+      && !state.ui.showCharacterGrid
+      && state.ui.glossaryReturnView?.currentModule === "chronicles"
+      && state.ui.glossaryReturnTargetId
+      && currentCharacterId === state.ui.glossaryReturnTargetId,
   );
 }
 
@@ -2400,6 +2983,7 @@ function applyReferenceThemes(scope = document) {
     const referenceId = referenceButton.dataset.referenceJump || "";
     const referenceCategory = getReferenceCategory(referenceId);
     referenceButton.dataset.referenceTheme = getGlossaryCategoryTheme(referenceCategory);
+    applyChronicleReferenceTooltip(referenceButton, referenceId);
   });
 }
 
@@ -2415,6 +2999,89 @@ function getReferenceCategory(referenceId) {
   }
 
   return "";
+}
+
+function applyChronicleReferenceTooltip(referenceButton, referenceId) {
+  referenceButton.querySelector(".glossary-reference-tooltip")?.remove();
+  delete referenceButton.dataset.referenceTooltip;
+
+  if (!referenceButton.closest("#chroniclesModule")) {
+    return;
+  }
+
+  const entry = referenceId ? findGlossaryEntry(referenceId) : null;
+  if (!entry) {
+    return;
+  }
+
+  referenceButton.dataset.referenceTooltip = "glossary";
+  referenceButton.append(createGlossaryReferenceTooltip(entry));
+}
+
+function createGlossaryReferenceTooltip(entry) {
+  const tooltip = document.createElement("span");
+  tooltip.className = "glossary-reference-tooltip";
+  tooltip.setAttribute("aria-hidden", "true");
+
+  const media = document.createElement("span");
+  media.className = "glossary-reference-tooltip-media";
+  const imageSource = (entry.imageAssets || []).find(Boolean) || "";
+  if (imageSource) {
+    const image = document.createElement("img");
+    if (isAssetToken(imageSource)) {
+      image.dataset.assetSrc = imageSource;
+    } else {
+      image.src = imageSource;
+    }
+    image.alt = "";
+    image.loading = "lazy";
+    media.append(image);
+  } else {
+    const placeholder = document.createElement("span");
+    placeholder.className = "glossary-reference-tooltip-placeholder";
+    placeholder.textContent = (entry.name || entry.category || "?").trim().slice(0, 1).toUpperCase() || "?";
+    media.append(placeholder);
+  }
+
+  const copy = document.createElement("span");
+  copy.className = "glossary-reference-tooltip-copy";
+  copy.innerHTML = `
+    <span class="glossary-reference-tooltip-kicker">${escapeHtml(entry.category || "Glossari")}</span>
+    <strong>${escapeHtml(entry.name || "Entrada del glossari")}</strong>
+    <span>${escapeHtml(getGlossaryTooltipDescription(entry))}</span>
+  `;
+
+  tooltip.append(media, copy);
+  return tooltip;
+}
+
+function getGlossaryTooltipDescription(entry) {
+  const text = getPlainReferenceText(entry.description || entry.latestStatus || entry.notes || "");
+  if (!text) {
+    return "Sense descripcio breu.";
+  }
+
+  const sentenceEnd = text.search(/[.!?](\s|$)/);
+  const candidate = sentenceEnd >= 50 && sentenceEnd <= 170
+    ? text.slice(0, sentenceEnd + 1)
+    : text.slice(0, 170);
+
+  return candidate.length < text.length ? `${candidate.trim().replace(/[,:;]+$/, "")}...` : candidate.trim();
+}
+
+function getPlainReferenceText(value) {
+  return String(value || "")
+    .replace(/\{\{media:(image|audio|video|file)\|([^|{}]+)\|([^{}]+)\}\}/g, "$2")
+    .replace(/\[\[([a-zA-Z0-9-_]+)\|([^\]]+)\]\]/g, "$2")
+    .replace(/^#{1,3}\s+/gm, "")
+    .replace(/^>\s+/gm, "")
+    .replace(/^[-*]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function scheduleTextareaTask(textarea, timerStore, callback, delay) {

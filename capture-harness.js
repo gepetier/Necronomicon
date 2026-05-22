@@ -16,7 +16,17 @@ async function bootstrap() {
   resetStorage(window.localStorage);
   await resetAssetStore(window.indexedDB);
   const frameLoaded = onceLoaded(frame);
-  frame.src = `/index.html?captureRun=${Date.now()}`;
+  const appParams = new URLSearchParams({ captureRun: String(Date.now()) });
+  if (scenario === "auth-landing") {
+    appParams.set("authPreview", "1");
+    appParams.set("authStatus", "Ofrenes pendents.");
+  }
+  if (scenario === "auth-waiting") {
+    appParams.set("authPreview", "1");
+    appParams.set("authStatus", "Sacrificant innocents...");
+    appParams.set("authWaiting", "1");
+  }
+  frame.src = `/index.html?${appParams.toString()}`;
   await frameLoaded;
   await delay(220);
 
@@ -86,6 +96,8 @@ function createContext(currentFrame) {
 
 async function runScenario(context, scenarioName) {
   const handlers = {
+    "auth-landing": async () => {},
+    "auth-waiting": async () => {},
     "characters-grid": async () => {},
     "sidebar-preview": async () => {
       const toggle = context.query("[data-sidebar-toggle]");
@@ -110,6 +122,7 @@ async function runScenario(context, scenarioName) {
     "character-detail-sheet": async () => {
       await openCharacter(context);
       await context.click('[data-character-tab="sheet"]');
+      await scrollCharacterSheetIntoView(context);
     },
     "character-detail-inventory": async () => {
       await openCharacter(context);
@@ -132,6 +145,17 @@ async function runScenario(context, scenarioName) {
       await context.click('[data-toggle-edit="characters"]');
       await context.type('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
       await context.selectText('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
+    },
+    "chronicles-character-return": async () => {
+      await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
+      const jump = context.doc.createElement("button");
+      jump.type = "button";
+      jump.dataset.referenceJump = "ilu";
+      jump.textContent = "Ilu";
+      context.doc.body.append(jump);
+      jump.click();
+      await delay(220);
     },
     "chronicles-read": async () => {
       await context.click('[data-module-link="chronicles"]');
@@ -168,15 +192,55 @@ async function runScenario(context, scenarioName) {
       await openChronicle(context);
       await context.click("[data-toggle-notes]");
     },
+    "chronicles-reference-tooltip": async () => {
+      await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
+      const clone = context.doc.createElement("button");
+      clone.type = "button";
+      clone.className = "glossary-inline-link tooltip-capture-open";
+      clone.dataset.referenceJump = "acantilado-del-silencio";
+      clone.dataset.referenceTheme = "locations";
+      clone.dataset.referenceTooltip = "glossary";
+      clone.innerHTML = `
+        Acantilado del Silencio
+        <span class="glossary-reference-tooltip" aria-hidden="true">
+          <span class="glossary-reference-tooltip-media">
+            <span class="glossary-reference-tooltip-placeholder">A</span>
+          </span>
+          <span class="glossary-reference-tooltip-copy">
+            <span class="glossary-reference-tooltip-kicker">Llocs</span>
+            <strong>Acantilado del Silencio</strong>
+            <span>Ciutat de judicis, pedra i culte on la campanya comença empresonada.</span>
+          </span>
+        </span>
+      `;
+      const showcase = context.doc.createElement("div");
+      const isMobile = context.win.innerWidth < 720;
+      showcase.style.position = "fixed";
+      showcase.style.left = isMobile ? "42px" : "255px";
+      showcase.style.top = isMobile ? "610px" : "560px";
+      showcase.style.zIndex = "500";
+      showcase.append(clone);
+      context.doc.body.append(showcase);
+      await delay(220);
+    },
     "glossary-detail": async () => {
       await context.click('[data-module-link="glossary"]');
       await context.click('[data-glossary-filter="Faccions"]');
       await context.click('[data-glossary-id="portadores-del-velo"]');
+      await scrollGlossaryDetailIntoView(context);
     },
     "glossary-return": async () => {
       await context.click('[data-module-link="chronicles"]');
       await openChronicle(context);
-      await context.click('[data-reference-jump="acantilado-del-silencio"]');
+      const jump = context.doc.createElement("button");
+      jump.type = "button";
+      jump.dataset.referenceJump = "acantilado-del-silencio";
+      jump.textContent = "Acantilado del Silencio";
+      context.doc.body.append(jump);
+      jump.click();
+      await delay(220);
+      await scrollGlossaryDetailIntoView(context);
     },
     "glossary-detail-lightbox": async () => {
       await context.click('[data-module-link="glossary"]');
@@ -237,6 +301,26 @@ async function openChronicle(context) {
 
   firstChronicle.click();
   await delay(180);
+}
+
+async function scrollGlossaryDetailIntoView(context) {
+  if (context.win.innerWidth >= 720) {
+    return;
+  }
+
+  const detail = context.query(".glossary-detail");
+  if (detail instanceof context.win.HTMLElement) {
+    detail.scrollIntoView({ block: "start", inline: "nearest" });
+    await delay(180);
+  }
+}
+
+async function scrollCharacterSheetIntoView(context) {
+  const sheet = context.query(".dnd-sheet");
+  if (sheet instanceof context.win.HTMLElement) {
+    sheet.scrollIntoView({ block: "start", inline: "nearest" });
+    await delay(180);
+  }
 }
 
 function onceLoaded(targetFrame) {

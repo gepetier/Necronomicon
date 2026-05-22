@@ -676,6 +676,12 @@ async function runEditSuite(context) {
   );
   context.click('[data-reference-jump="ilu"]');
   await delay(80);
+  const characterReturnChip = context.doc.querySelector("[data-return-to-chronicle]");
+  record(
+    steps,
+    characterReturnChip !== null,
+    "El salt de cronica a personatge mostra el retorn a la cronica",
+  );
   const jumpedCharacterTitle = context.doc.querySelector(".detail-summary h3")?.textContent?.trim() || "";
   record(
     steps,
@@ -683,6 +689,16 @@ async function runEditSuite(context) {
       && jumpedCharacterTitle === "Ilu",
     "Una referència de personatge desada dins una cronica obre la fitxa principal corresponent",
     { jumpedCharacterTitle },
+  );
+  context.click("[data-return-to-chronicle]");
+  await delay(80);
+  const returnedChronicleTitle = context.doc.querySelector(".page-header h3")?.textContent?.trim() || "";
+  record(
+    steps,
+    context.doc.querySelector("#chroniclesModule.active") !== null
+      && returnedChronicleTitle === "Cronica desada QA",
+    "El retorn des de personatge restaura la cronica d'origen",
+    { returnedChronicleTitle },
   );
 
   context.click('[data-module-link="glossary"]');

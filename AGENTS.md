@@ -47,6 +47,7 @@
 - Glossary search should be accent-insensitive and also match entry categories, not only names/descriptions/tags.
 - Glossary search rerenders the module live, so it must explicitly preserve input focus and caret position while typing.
 - Character editing uses a single shared save action for the whole character, and editor save actions should close edit mode after persisting changes.
+- Character `Fitxa` tab should resemble a D&D 5e character sheet, using the existing plain text stats to render ability boxes, saves, skills, combat stats, attacks, equipment, and spellcasting blocks.
 - Glossary navigation now uses a 3-zone flow: discovery rail (search/category/session), result list, and detail panel, with category and chronicle-session filters acting as the primary navigation controls.
 - Glossary result cards should stay minimal: name only plus inline `Edita` / `Esborra` actions, while `Nova entrada` lives under the glossary search box.
 - Glossary result rows must only expose action icons on the active row, and the list layout should reserve stable space for wrapped titles instead of compressing cards vertically.
@@ -62,16 +63,21 @@
 - `qa-runner.mjs` now forces process exit after writing artifacts because the edit suite can otherwise leave Node handles alive after a successful run.
 - Rich-text editor previews need their own ink color and contrast treatment instead of inheriting the softer field-label tone, or long prose becomes hard to read.
 - Mobile glossary returns from `Cròniques` should render as a short inline back chip at the top of the detail view, not as a bottom floating CTA that competes with reading and notes.
+- Character-reference jumps from `Cròniques` mirror glossary jumps by showing the same inline `Torna a la crònica` return chip on the character detail page.
 - JSON backup import/export belongs in the `Opcions` module rather than the primary sidebar header.
 - `Cròniques` now opens on a visual landing/index page; individual chronicle pages should focus on cover imagery plus the full prose body, without the old order/summary and key-milestones blocks.
 - Chronicle reading spreads split the prose body across the left and right book pages, keeping the left page from becoming a mostly empty cover while still avoiding the old order/key-milestones sections.
 - Chronicle read pages without a real cover image should render an ornamental session plate instead of an empty placeholder rectangle.
 - Desktop sidebar is collapsed by default, only opens preview from hover/focus on the round toggle button, keeps that preview open while the pointer remains inside the sidebar, can be pinned open with the same button, and keeps its content in an internal scroll area; mobile keeps the full stacked navigation.
+- Shared persistence now uses Google login plus a Google Apps Script Web App that reads/writes `campaign.json` in Drive; localStorage remains a local cache/fallback, not the source of truth.
+- The client stores the public Google OAuth client id and Apps Script `/exec` URL, but no secret token or API key.
+- The default capture catalog is intentionally focused instead of exhaustive; use aliases such as `changed`, `characters`, `chronicles`, `glossary`, `options`, `desktop`, or `mobile` for targeted review.
 
 ## Pending
+- Before committing/deploying the current work, seed the new Drive `campaign.json` with the desired canonical campaign data; local `data.js` and `origin/main` currently only contain sessions 1-3, and the previous GitHub Pages localStorage recovery did not produce chapter/session 4.
 - Clean up or commit the pending visual artifacts and code changes once the current restyle is considered stable.
 - Review whether future chronicle passes should also inline glossary links inside raw session prose, or keep verbatim input completely untouched there.
-- Decide whether character-reference jumps from `Cròniques` should eventually mirror the glossary return-to-chronicle affordance.
+- Validate the Google Apps Script deployment from a real browser session after the OAuth client origins and the bootstrap DM email are confirmed.
 
 ## Next steps
 - On next session start, read this file before inspecting code.
@@ -125,6 +131,14 @@
 - 2026-05-18: stabilized sidebar preview so toggle hover opens it but pointer leave from the whole sidebar closes it, avoiding button-hover flicker while moving inside the expanded menu.
 - 2026-05-18: filled the left chronicle reading page with the opening prose and moved the continuation to the right page, refreshed chronicle read captures, and confirmed `npm.cmd run build` plus `npm.cmd run qa` pass.
 - 2026-05-18: improved the chronicle left page by replacing empty image placeholders with an ornamental session plate and shifting more opening prose onto the left page; refreshed chronicle read captures and confirmed `npm.cmd run qa` passes.
+- 2026-05-21: reworked glossary detail pages into a cover image plus brief description, detailed text below, and collapsed secondary `Detalls`; added glossary-reference hover tooltips in `Cròniques` with focused desktop/mobile captures plus `npm.cmd run build`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` passing.
+- 2026-05-22: verified the 2026-05-21 glossary detail and chronicle tooltip implementation, added return-to-chronicle chips for character-reference jumps, trimmed the default capture catalog to focused scenarios, refreshed changed desktop/mobile captures, and confirmed `npm.cmd run build`, `npm.cmd run qa`, and `npm.cmd run test:unit` pass.
+- 2026-05-22: rebuilt the character `Fitxa` tab into a D&D 5e-style sheet layout with ability scores, saves, skills, combat, attacks, equipment, and spellcasting blocks; added focused desktop/mobile captures and confirmed `npm.cmd run build`, `npm.cmd run qa`, and `npm.cmd run test:unit` pass.
+- 2026-05-22: added Google login plus Google Apps Script/Drive sync scaffolding, configured the provided OAuth client id, Apps Script `/exec` URL, and Drive folder id, added `Opcions > Permisos`, refreshed options captures, and confirmed `npm.cmd run build`, `npm.cmd run qa:functional`, and `npm.cmd run test:unit` pass.
+- 2026-05-22: replaced the login overlay with an opaque book-cover landing page, ensured no app content is visible during auth, routed successful logins to `Personatges`, refreshed desktop/mobile landing captures, and confirmed `npm.cmd run build` plus `npm.cmd run qa:functional` pass.
+- 2026-05-22: updated the auth landing page to use the provided leather book texture, removed non-login copy, restyled the login control to match the cover, refreshed desktop/mobile landing captures, and confirmed `npm.cmd run build` plus `npm.cmd run qa:functional` pass.
+- 2026-05-22: replaced the visible Google login control with the provided transparent sigil centered on the book cover; clicking the sigil triggers Google login while the real Google button remains hidden underneath, with refreshed desktop/mobile captures and `npm.cmd run qa:functional` passing.
+- 2026-05-22: added the provided circular cenefa as the auth server-wait indicator (`auth-waiting-server`), added dedicated `auth-waiting` capture scenarios, moved the ritual status text below the ring, refreshed captures, and confirmed `npm.cmd run qa:functional` passes.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

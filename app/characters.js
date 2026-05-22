@@ -16,10 +16,21 @@ import {
   shortText,
 } from "./utils.js";
 
+const ABILITY_DEFINITIONS = [
+  { key: "for", source: "For", label: "Força", shortLabel: "FOR", skills: ["Atletisme"] },
+  { key: "des", source: "Des", label: "Destresa", shortLabel: "DES", skills: ["Acrobàcies", "Joc de mans", "Sigil"] },
+  { key: "con", source: "Con", label: "Constitució", shortLabel: "CON", skills: [] },
+  { key: "int", source: "Int", label: "Intel·ligència", shortLabel: "INT", skills: ["Arcà", "Història", "Investigació", "Natura", "Religió"] },
+  { key: "sav", source: "Sav", label: "Saviesa", shortLabel: "SAV", skills: ["Percepció", "Perspicàcia", "Supervivència", "Medicina", "Tracte amb animals"] },
+  { key: "car", source: "Car", label: "Carisma", shortLabel: "CAR", skills: ["Engany", "Intimidació", "Interpretació", "Persuasió"] },
+];
+
 export function renderCharactersModule({
   state,
   rootEl,
   getSelectedCharacter,
+  getViewStateLabel,
+  shouldShowCharacterReturnFab,
   renderPlayerNotesPanel,
   renderPlayerNotesFab,
 }) {
@@ -50,12 +61,22 @@ export function renderCharactersModule({
   const character = getSelectedCharacter();
   if (!character) {
     state.ui.showCharacterGrid = true;
-    renderCharactersModule({ state, rootEl, getSelectedCharacter, renderPlayerNotesPanel, renderPlayerNotesFab });
+    renderCharactersModule({
+      state,
+      rootEl,
+      getSelectedCharacter,
+      getViewStateLabel,
+      shouldShowCharacterReturnFab,
+      renderPlayerNotesPanel,
+      renderPlayerNotesFab,
+    });
     return;
   }
+  const returnLabel = shouldShowCharacterReturnFab?.(character.id) ? getViewStateLabel?.(state.ui.glossaryReturnView) : "";
 
   rootEl.innerHTML = `
     <section class="detail-card ${state.ui.notesPanelOpen ? "notes-open" : ""}">
+      ${returnLabel ? renderCharacterReturnChip(returnLabel) : ""}
       <div class="detail-header-actions">
         <button id="backToGridButtonInline" type="button" class="secondary" data-back-to-grid>
           Torna a les cartes
@@ -133,6 +154,25 @@ export function renderCharactersModule({
         <button type="button" data-save-character>Desa personatge</button>
       </div>
     </section>
+  `;
+}
+
+function renderCharacterReturnChip(targetLabel) {
+  return `
+    <button
+      type="button"
+      class="secondary glossary-return-chip character-return-chip"
+      data-return-to-chronicle
+      aria-label="${escapeAttribute(`Torna a ${targetLabel}`)}"
+      title="${escapeAttribute(`Torna a ${targetLabel}`)}"
+    >
+      <span class="glossary-return-chip-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="M10.2 5.2a.75.75 0 0 1 0 1.06L5.46 11H19a.75.75 0 0 1 0 1.5H5.46l4.74 4.74a.75.75 0 1 1-1.06 1.06l-6.02-6.02a.75.75 0 0 1 0-1.06L9.14 5.2a.75.75 0 0 1 1.06 0Z" fill="currentColor"/>
+        </svg>
+      </span>
+      <span>Torna a la cronica</span>
+    </button>
   `;
 }
 
@@ -245,18 +285,7 @@ function renderCharacterTabContent(character, tab) {
   }
 
   if (tab === "sheet") {
-    return `
-      <article class="section-card">
-        <p class="eyebrow">Fitxa ràpida</p>
-        <div class="stats-row">
-          <div class="stat-chip"><span>CA</span><strong>${escapeHtml(character.sheet.ac)}</strong></div>
-          <div class="stat-chip"><span>HP</span><strong>${escapeHtml(character.sheet.hp)}</strong></div>
-          <div class="stat-chip"><span>Proficiència</span><strong>${escapeHtml(character.sheet.proficiency)}</strong></div>
-        </div>
-        <div class="rich-text"><p><strong>Atributs:</strong></p>${renderRichText(character.sheet.abilities)}</div>
-        <div class="rich-text"><p><strong>Trets:</strong></p>${renderRichText(character.sheet.features)}</div>
-      </article>
-    `;
+    return renderDndSheetTab(character);
   }
 
   if (tab === "inventory") {
@@ -274,6 +303,219 @@ function renderCharacterTabContent(character, tab) {
       <div class="rich-text">${renderRichText(character.history)}</div>
     </article>
   `;
+}
+
+function renderDndSheetTab(character) {
+  const abilities = parseAbilityScores(character.sheet.abilities);
+  const dexterityMod = getAbilityModifier(abilities.des);
+  const wisdomMod = getAbilityModifier(abilities.sav);
+  const spellcasting = resolveSpellcasting(character, abilities);
+
+  return `
+    <article class="dnd-sheet" aria-label="${escapeAttribute(`Fitxa D&D de ${character.name}`)}">
+      <header class="dnd-sheet-header">
+        <div>
+          <p class="eyebrow">Fitxa de personatge</p>
+          <h3>${escapeHtml(character.name)}</h3>
+        </div>
+        <div class="dnd-sheet-identity">
+          <span>${escapeHtml(character.className)}</span>
+          <span>Nivell ${escapeHtml(String(character.level))}</span>
+          <span>${escapeHtml(character.lineage)}</span>
+        </div>
+      </header>
+
+      <div class="dnd-sheet-grid">
+        <section class="dnd-ability-column" aria-label="Puntuacions d'atribut">
+          ${ABILITY_DEFINITIONS.map((ability) => renderAbilityScoreBox(ability, abilities[ability.key])).join("")}
+        </section>
+
+        <section class="dnd-panel dnd-saving-panel">
+          <h4>Tirades de salvació</h4>
+          <div class="dnd-save-list">
+            ${ABILITY_DEFINITIONS.map((ability) => renderCheckLine(ability.label, getAbilityModifier(abilities[ability.key]))).join("")}
+          </div>
+          <div class="dnd-passive">
+            <strong>${escapeHtml(String(10 + wisdomMod))}</strong>
+            <span>Percepció passiva</span>
+          </div>
+          <h4>Habilitats</h4>
+          <div class="dnd-skill-list">
+            ${ABILITY_DEFINITIONS.flatMap((ability) => ability.skills.map((skill) => renderCheckLine(skill, getAbilityModifier(abilities[ability.key]), ability.shortLabel))).join("")}
+          </div>
+        </section>
+
+        <section class="dnd-panel dnd-combat-panel">
+          <div class="dnd-combat-stats">
+            ${renderCombatStat("CA", character.sheet.ac, "Classe d'armadura")}
+            ${renderCombatStat("Inic.", formatModifier(dexterityMod), "Iniciativa")}
+            ${renderCombatStat("Vel.", "30", "Peus")}
+          </div>
+          <div class="dnd-hit-points">
+            <span>Punts de vida màxims</span>
+            <strong>${escapeHtml(character.sheet.hp)}</strong>
+          </div>
+          <div class="dnd-resource-grid">
+            <div>
+              <span>Daus de cop</span>
+              <strong>${escapeHtml(`${character.level}d8`)}</strong>
+            </div>
+            <div>
+              <span>Proficiència</span>
+              <strong>${escapeHtml(character.sheet.proficiency)}</strong>
+            </div>
+          </div>
+          <div class="dnd-death-saves" aria-label="Salvacions contra mort">
+            <span>Salvacions contra mort</span>
+            <div><strong>Èxits</strong><i></i><i></i><i></i></div>
+            <div><strong>Fallades</strong><i></i><i></i><i></i></div>
+          </div>
+        </section>
+
+        <section class="dnd-panel dnd-attacks-panel">
+          <h4>Atacs i conjurs</h4>
+          <div class="dnd-attack-table">
+            <div><span>Nom</span><span>Bonif.</span><span>Dany / tipus</span></div>
+            ${renderAttackRow(character)}
+            ${spellcasting ? renderSpellAttackRow(spellcasting) : ""}
+          </div>
+          <h4>Trets i capacitats</h4>
+          <div class="rich-text dnd-lined-text">${renderRichText(character.sheet.features)}</div>
+        </section>
+
+        <section class="dnd-panel dnd-equipment-panel">
+          <h4>Equipament</h4>
+          <div class="rich-text dnd-lined-text">${renderRichText(character.inventory.items)}</div>
+          <div class="dnd-currency">${escapeHtml(character.inventory.currency || "Sense moneda registrada")}</div>
+        </section>
+
+        ${spellcasting ? `
+          <section class="dnd-panel dnd-spell-panel">
+            <h4>Conjuració</h4>
+            <div class="dnd-resource-grid">
+              <div>
+                <span>Atribut</span>
+                <strong>${escapeHtml(spellcasting.label)}</strong>
+              </div>
+              <div>
+                <span>CD salvació</span>
+                <strong>${escapeHtml(String(spellcasting.saveDc))}</strong>
+              </div>
+              <div>
+                <span>Atac de conjur</span>
+                <strong>${escapeHtml(formatModifier(spellcasting.attackBonus))}</strong>
+              </div>
+            </div>
+          </section>
+        ` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderAbilityScoreBox(ability, score) {
+  const modifier = getAbilityModifier(score);
+  return `
+    <div class="dnd-ability-score">
+      <span>${escapeHtml(ability.shortLabel)}</span>
+      <strong>${escapeHtml(formatModifier(modifier))}</strong>
+      <em>${escapeHtml(String(score || 10))}</em>
+    </div>
+  `;
+}
+
+function renderCombatStat(label, value, helper) {
+  return `
+    <div class="dnd-combat-stat">
+      <strong>${escapeHtml(String(value || "-"))}</strong>
+      <span>${escapeHtml(label)}</span>
+      <small>${escapeHtml(helper)}</small>
+    </div>
+  `;
+}
+
+function renderCheckLine(label, modifier, suffix = "") {
+  return `
+    <div class="dnd-check-line">
+      <i aria-hidden="true"></i>
+      <strong>${escapeHtml(formatModifier(modifier))}</strong>
+      <span>${escapeHtml(label)}</span>
+      ${suffix ? `<em>${escapeHtml(suffix)}</em>` : ""}
+    </div>
+  `;
+}
+
+function renderAttackRow(character) {
+  const abilities = parseAbilityScores(character.sheet.abilities);
+  const strengthMod = getAbilityModifier(abilities.for);
+  const dexterityMod = getAbilityModifier(abilities.des);
+  const attackMod = Math.max(strengthMod, dexterityMod);
+  const proficiency = parseSignedNumber(character.sheet.proficiency);
+  const attackName = character.className.toLowerCase().includes("mag") ? "Bastó / daga" : "Arma principal";
+  return `
+    <div>
+      <strong>${escapeHtml(attackName)}</strong>
+      <strong>${escapeHtml(formatModifier(attackMod + proficiency))}</strong>
+      <span>1d8 ${escapeHtml(formatModifier(attackMod))}</span>
+    </div>
+  `;
+}
+
+function renderSpellAttackRow(spellcasting) {
+  return `
+    <div>
+      <strong>Conjur ofensiu</strong>
+      <strong>${escapeHtml(formatModifier(spellcasting.attackBonus))}</strong>
+      <span>Segons conjur</span>
+    </div>
+  `;
+}
+
+function parseAbilityScores(value) {
+  const scores = {};
+  ABILITY_DEFINITIONS.forEach((ability) => {
+    const pattern = new RegExp(`${ability.source}\\s*(\\d+)`, "i");
+    const match = String(value || "").match(pattern);
+    scores[ability.key] = match ? Number(match[1]) : 10;
+  });
+  return scores;
+}
+
+function getAbilityModifier(score) {
+  return Math.floor(((Number(score) || 10) - 10) / 2);
+}
+
+function formatModifier(value) {
+  const number = Number(value) || 0;
+  return number >= 0 ? `+${number}` : String(number);
+}
+
+function parseSignedNumber(value) {
+  const match = String(value || "").match(/[+-]?\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function resolveSpellcasting(character, abilities) {
+  const className = String(character.className || "").toLowerCase();
+  const spellAbilityKey = className.includes("bard") || className.includes("palad")
+    ? "car"
+    : className.includes("mag")
+      ? "int"
+      : className.includes("clerg") || className.includes("druid") || className.includes("explor")
+        ? "sav"
+        : "";
+  if (!spellAbilityKey) {
+    return null;
+  }
+
+  const ability = ABILITY_DEFINITIONS.find((item) => item.key === spellAbilityKey);
+  const abilityMod = getAbilityModifier(abilities[spellAbilityKey]);
+  const proficiency = parseSignedNumber(character.sheet.proficiency);
+  return {
+    label: ability?.shortLabel || spellAbilityKey.toUpperCase(),
+    saveDc: 8 + proficiency + abilityMod,
+    attackBonus: proficiency + abilityMod,
+  };
 }
 
 function renderCharacterEditor(character, tab, state) {

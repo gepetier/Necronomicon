@@ -3,6 +3,33 @@ import { sanitizePlayerNotes, splitLines, splitTags } from "./utils.js";
 
 const LEGACY_STORAGE_KEYS = ["campaign-compendium-v2"];
 
+const DEFAULT_ACCESS = {
+  roles: {
+    dm: {
+      editAnyCharacter: true,
+      editOwnCharacter: true,
+      editChronicles: true,
+      editGlossary: true,
+      managePermissions: true,
+    },
+    player: {
+      editAnyCharacter: false,
+      editOwnCharacter: true,
+      editChronicles: false,
+      editGlossary: false,
+      managePermissions: false,
+    },
+    viewer: {
+      editAnyCharacter: false,
+      editOwnCharacter: false,
+      editChronicles: false,
+      editGlossary: false,
+      managePermissions: false,
+    },
+  },
+  users: {},
+};
+
 export function loadState() {
   const saved = readStoredState();
   if (!saved) {
@@ -310,6 +337,7 @@ function sanitizeState(candidate) {
   safe.glossary = Array.isArray(candidate.glossary) && candidate.glossary.length
     ? candidate.glossary.map((entry, index) => sanitizeGlossary(entry, seedData.glossary[index] || seedData.glossary[0]))
     : safe.glossary;
+  safe.access = sanitizeAccess(candidate.access);
   safe.ui = {
     ...safe.ui,
     ...candidate.ui,
@@ -350,6 +378,38 @@ function sanitizeState(candidate) {
   }
 
   return safe;
+}
+
+function sanitizeAccess(access) {
+  const source = access && typeof access === "object" ? access : {};
+  const roles = source.roles && typeof source.roles === "object" ? source.roles : {};
+  const users = source.users && typeof source.users === "object" ? source.users : {};
+
+  return {
+    roles: Object.fromEntries(
+      Object.entries({
+        ...DEFAULT_ACCESS.roles,
+        ...roles,
+      }).map(([roleId, permissions]) => [
+        roleId,
+        {
+          ...DEFAULT_ACCESS.roles.viewer,
+          ...(permissions && typeof permissions === "object" ? permissions : {}),
+        },
+      ]),
+    ),
+    users: Object.fromEntries(
+      Object.entries(users)
+        .filter(([email]) => typeof email === "string" && email.includes("@"))
+        .map(([email, user]) => [
+          email.toLowerCase(),
+          {
+            role: typeof user?.role === "string" ? user.role : "viewer",
+            characterIds: Array.isArray(user?.characterIds) ? user.characterIds.map(String) : [],
+          },
+        ]),
+    ),
+  };
 }
 
 function sanitizeDrafts(candidateDrafts, fallbackDrafts) {

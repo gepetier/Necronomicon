@@ -303,6 +303,9 @@ function renderGlossaryEmptyDetail() {
 
 function renderGlossaryDetail(entry, state, findCharacter, returnLabel = "") {
   const images = (entry.imageAssets || []).filter(Boolean);
+  const coverImage = images[0] || "";
+  const extraImages = images.slice(1);
+  const briefDescription = getGlossaryBriefDescription(entry);
 
   return `
     <article
@@ -313,43 +316,98 @@ function renderGlossaryDetail(entry, state, findCharacter, returnLabel = "") {
     >
       ${returnLabel ? renderGlossaryReturnChip(returnLabel) : ""}
       <div class="glossary-detail-hero">
-        <div class="glossary-detail-top">
-          <div class="glossary-detail-heading">
+        <div class="glossary-cover">
+          <figure class="glossary-cover-media">
+            ${coverImage
+              ? `<img ${renderGlossaryAssetAttribute("src", coverImage)} alt="${escapeAttribute(entry.name)}" loading="lazy" />`
+              : renderGlossaryCoverPlaceholder(entry)}
+          </figure>
+          <div class="glossary-cover-copy">
             <p class="eyebrow">${escapeHtml(entry.category)}</p>
             <h3>${escapeHtml(entry.name)}</h3>
-            <div class="glossary-detail-tags">
-              ${(entry.tags || []).length
-                ? entry.tags.map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join("")
-                : '<span class="badge">Sense etiquetes</span>'}
-            </div>
+            <p>${escapeHtml(briefDescription)}</p>
           </div>
-          ${renderGlossaryLatestPanel(entry, state)}
         </div>
+      </div>
+      <section class="glossary-detail-body">
+        <p class="eyebrow">Text detallat</p>
         <div class="rich-text">${renderRichText(entry.description)}</div>
-        ${images.length
-          ? `
-            <div class="glossary-media-grid">
-              ${images
-                .map(
-                  (source, index) => `
-                    <figure class="glossary-media-frame">
-                      <img ${renderGlossaryAssetAttribute("src", source)} alt="${escapeAttribute(`${entry.name} ${index + 1}`)}" loading="lazy" />
-                    </figure>
-                  `,
-                )
-                .join("")}
-            </div>
-          `
-          : ""}
-      </div>
-      <div class="item-grid glossary-detail-grid">
-        ${renderTextCard("Notes de context", entry.notes || "Sense notes", { rich: true })}
-        ${renderTextCard("Personatges vinculats", formatCharacterLinks(entry.characterIds, findCharacter))}
-        ${renderTextCard("Croniques vinculades", formatChronicleLinks(entry.chronicleIds, state))}
-        ${renderTextCard("Mapa de relacions", renderRelationshipSummary(entry), { rich: true })}
-      </div>
+      </section>
+      <details class="glossary-detail-more">
+        <summary>Detalls</summary>
+        <div class="glossary-detail-more-content">
+          ${renderGlossaryLatestPanel(entry, state)}
+          <div class="glossary-detail-tags">
+            ${(entry.tags || []).length
+              ? entry.tags.map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join("")
+              : '<span class="badge">Sense etiquetes</span>'}
+          </div>
+          ${extraImages.length ? renderGlossaryExtraImages(extraImages, entry) : ""}
+          <div class="item-grid glossary-detail-grid">
+            ${renderTextCard("Notes de context", entry.notes || "Sense notes", { rich: true })}
+            ${renderTextCard("Personatges vinculats", formatCharacterLinks(entry.characterIds, findCharacter))}
+            ${renderTextCard("Croniques vinculades", formatChronicleLinks(entry.chronicleIds, state))}
+            ${renderTextCard("Mapa de relacions", renderRelationshipSummary(entry), { rich: true })}
+          </div>
+        </div>
+      </details>
     </article>
   `;
+}
+
+function renderGlossaryCoverPlaceholder(entry) {
+  const initial = (entry.name || entry.category || "?").trim().slice(0, 1).toUpperCase() || "?";
+
+  return `
+    <div class="glossary-cover-placeholder" aria-hidden="true">
+      <span>${escapeHtml(initial)}</span>
+    </div>
+  `;
+}
+
+function renderGlossaryExtraImages(images, entry) {
+  return `
+    <div class="glossary-media-grid">
+      ${images
+        .map(
+          (source, index) => `
+            <figure class="glossary-media-frame">
+              <img ${renderGlossaryAssetAttribute("src", source)} alt="${escapeAttribute(`${entry.name} ${index + 2}`)}" loading="lazy" />
+            </figure>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function getGlossaryBriefDescription(entry) {
+  const text = getPlainGlossaryText(entry.description || entry.latestStatus || entry.notes || "");
+  if (!text) {
+    return "Entrada pendent de resum breu.";
+  }
+
+  const sentenceEnd = text.search(/[.!?](\s|$)/);
+  const candidate = sentenceEnd >= 80 && sentenceEnd <= 220
+    ? text.slice(0, sentenceEnd + 1)
+    : text.slice(0, 220);
+
+  return candidate.length < text.length ? `${candidate.trim().replace(/[,:;]+$/, "")}...` : candidate.trim();
+}
+
+function getPlainGlossaryText(value) {
+  return String(value || "")
+    .replace(/\{\{media:(image|audio|video|file)\|([^|{}]+)\|([^{}]+)\}\}/g, "$2")
+    .replace(/\[\[([a-zA-Z0-9-_]+)\|([^\]]+)\]\]/g, "$2")
+    .replace(/^#{1,3}\s+/gm, "")
+    .replace(/^>\s+/gm, "")
+    .replace(/^[-*]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function renderRelationshipSummary(entry) {
