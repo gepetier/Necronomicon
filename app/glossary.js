@@ -37,9 +37,15 @@ export function renderGlossaryModule({
       <div class="glossary-layout ${state.ui.editModes.glossary && current ? "glossary-layout-editing" : ""}">
         <aside class="glossary-nav-panel module-surface">
           <section class="glossary-search-panel">
-            <div>
-              <p class="eyebrow">Busca directa</p>
-              <h3>Troba termes sense sortir del flux</h3>
+            <div class="glossary-search-head">
+              <div>
+                <p class="eyebrow">Glossari</p>
+                <h3>Busca i filtra</h3>
+              </div>
+              <button type="button" class="secondary glossary-create-button" data-create-glossary>
+                <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
+                <span>Nova</span>
+              </button>
             </div>
             <label class="glossary-search-field">
               <span class="sr-only">Cerca al glossari</span>
@@ -47,75 +53,58 @@ export function renderGlossaryModule({
                 type="search"
                 name="glossarySearch"
                 value="${escapeAttribute(state.ui.glossarySearch)}"
-                placeholder="Nom, categoria, etiqueta o concepte..."
+                placeholder="Cerca al glossari"
               />
             </label>
             <div class="glossary-active-filters">
-              <span class="badge">${activeFilterCount ? `${activeFilterCount} filtres actius` : "Sense filtres actius"}</span>
+              <span class="badge">${activeFilterCount ? `${activeFilterCount} filtres actius` : `${state.glossary.length} entrades`}</span>
               ${activeFilterCount
-                ? `<button type="button" class="secondary" data-clear-glossary-filters>Neteja navegacio</button>`
+                ? `<button type="button" class="secondary glossary-clear-button" data-clear-glossary-filters>Neteja</button>`
                 : ""}
             </div>
-            <button type="button" class="secondary glossary-create-button" data-create-glossary>
-              <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
-              <span>Nova entrada</span>
-            </button>
+          </section>
+
+          <section
+            id="glossary-results-panel"
+            class="glossary-results-panel"
+            role="tabpanel"
+            aria-labelledby="glossary-filter-${buildGlossarySlug(state.ui.glossaryCategory || "totes")}"
+          >
+            <div class="glossary-results-head">
+              <div>
+                <p class="eyebrow">Resultats visibles</p>
+                <h3>${entries.length ? `${entries.length} termes` : "Cap terme visible"}</h3>
+              </div>
+              <p class="glossary-results-copy">${escapeHtml(renderResultsCopy(state, entries.length))}</p>
+            </div>
+            <div class="glossary-list">
+              ${entries.length
+                ? entries.map((entry) => renderGlossaryCard(entry, state.ui.selectedGlossaryId, state)).join("")
+                : renderGlossaryEmptyState(state)}
+            </div>
           </section>
 
           <section class="glossary-nav-section">
             <div class="glossary-nav-section-head">
               <div>
-                <p class="eyebrow">Menu principal</p>
                 <h3>Categories</h3>
               </div>
             </div>
-            <div class="glossary-filters glossary-menu-list" role="tablist" aria-label="Categories del glossari">
+            <div class="glossary-filters glossary-category-strip" role="tablist" aria-label="Categories del glossari">
               ${renderGlossaryCategoryMenu(state, categories)}
             </div>
           </section>
 
-          <section class="glossary-nav-section">
-            <div class="glossary-nav-section-head">
-              <div>
-                <p class="eyebrow">Submenu</p>
-                <h3>Sessions</h3>
-              </div>
-            </div>
+          <details class="glossary-nav-section glossary-session-filter" ${state.ui.glossaryChronicleIds?.length ? "open" : ""}>
+            <summary>
+              <span>Sessions</span>
+              <strong>${state.ui.glossaryChronicleIds?.length || 0}</strong>
+            </summary>
             <div class="glossary-session-list" role="group" aria-label="Filtre per sessions del glossari">
               ${renderGlossaryChronicleMenu(state, state.chronicles)}
             </div>
-          </section>
-
-          <section class="glossary-nav-section glossary-nav-section-overview">
-            <div class="glossary-nav-section-head">
-              <div>
-                <p class="eyebrow">Vista actual</p>
-                <h3>${escapeHtml(renderScopeTitle(state))}</h3>
-              </div>
-            </div>
-            <p class="glossary-nav-copy">${escapeHtml(renderScopeCopy(state, entries.length))}</p>
-          </section>
+          </details>
         </aside>
-
-        <section
-          id="glossary-results-panel"
-          class="glossary-results-panel module-surface"
-          role="tabpanel"
-          aria-labelledby="glossary-filter-${buildGlossarySlug(state.ui.glossaryCategory || "totes")}"
-        >
-          <div class="glossary-results-head">
-            <div>
-              <p class="eyebrow">Resultats visibles</p>
-              <h3>${entries.length ? `${entries.length} termes` : "Cap terme visible"}</h3>
-            </div>
-            <p class="glossary-results-copy">${escapeHtml(renderResultsCopy(state, entries.length))}</p>
-          </div>
-          <div class="glossary-list">
-            ${entries.length
-              ? entries.map((entry) => renderGlossaryCard(entry, state.ui.selectedGlossaryId, state)).join("")
-              : renderGlossaryEmptyState(state)}
-          </div>
-        </section>
 
         <div class="glossary-detail-wrap">
           ${current ? renderGlossaryDetail(current, state, findCharacter, returnLabel) : renderGlossaryEmptyDetail()}
@@ -532,7 +521,7 @@ function renderGlossaryEditor(entry, state) {
                   <span>Imatges</span>
                   ${renderGlossaryImagePicker(entry, draft)}
                   <textarea name="imageAssets" hidden>${escapeHtml(readDraftValue(draft.imageAssets, (entry?.imageAssets || []).join("\n")))}</textarea>
-                  <small class="field-help">Selecciona una o mes imatges des del teu equip. Quedaran guardades dins l'entrada.</small>
+                  <small class="field-help">Selecciona una o mes imatges des del teu equip. Es redimensionen i comprimeixen automaticament abans de guardar-les.</small>
                 </label>
               </div>
             `,

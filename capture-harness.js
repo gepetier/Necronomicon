@@ -23,7 +23,7 @@ async function bootstrap() {
   }
   if (scenario === "auth-waiting") {
     appParams.set("authPreview", "1");
-    appParams.set("authStatus", "Sacrificant innocents...");
+    appParams.set("authStatus", "Obrint el compendi...");
     appParams.set("authWaiting", "1");
   }
   frame.src = `/index.html?${appParams.toString()}`;
@@ -161,6 +161,16 @@ async function runScenario(context, scenarioName) {
       await context.click('[data-module-link="chronicles"]');
       await openChronicle(context);
     },
+    "chronicles-read-session-3": async () => {
+      await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context, "sagnatori");
+      await scrollChronicleSpreadIntoView(context);
+    },
+    "chronicles-read-session-4": async () => {
+      await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context, "sala-dels-plaers");
+      await scrollChronicleSpreadIntoView(context);
+    },
     "chronicles-read-highlights": async () => {
       await context.click('[data-module-link="chronicles"]');
       await openChronicle(context);
@@ -293,14 +303,20 @@ async function openCharacter(context) {
   await delay(160);
 }
 
-async function openChronicle(context) {
-  const firstChronicle = context.query("[data-chronicle-id]");
-  if (!(firstChronicle instanceof context.win.HTMLElement)) {
+async function openChronicle(context, chronicleId = "") {
+  const selector = chronicleId
+    ? `[data-chronicle-id="${chronicleId}"]`
+    : "[data-chronicle-id]";
+  const chronicle = context.query(selector);
+  if (!(chronicle instanceof context.win.HTMLElement)) {
     throw new Error("No s'ha trobat cap cronica.");
   }
 
-  firstChronicle.click();
+  chronicle.scrollIntoView({ block: "center", inline: "nearest" });
+  chronicle.click();
   await delay(180);
+  context.win.scrollTo(0, 0);
+  await delay(80);
 }
 
 async function scrollGlossaryDetailIntoView(context) {
@@ -350,6 +366,18 @@ function resetAssetStore(indexedDb) {
     request.addEventListener("error", done);
     request.addEventListener("blocked", done);
   });
+}
+
+async function scrollChronicleSpreadIntoView(context) {
+  if (context.win.innerWidth >= 720) {
+    return;
+  }
+
+  const spread = context.query(".book-spread");
+  if (spread instanceof context.win.HTMLElement) {
+    spread.scrollIntoView({ block: "start", inline: "nearest" });
+    await delay(180);
+  }
 }
 
 function delay(ms) {

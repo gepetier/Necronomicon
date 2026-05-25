@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { seedData } from "../data.js";
+import { DATA_VERSION, seedData } from "../data.js";
 import { createBackupPayload, readBackupAssetBundle, readBackupStatePayload } from "../app/backup.js";
 import {
   collectAssetTokensFromState,
@@ -16,11 +16,11 @@ test("backup payload wraps state and asset bundle", () => {
   const payload = createBackupPayload(seedData, [{ id: "asset-1", dataUrl: "data:image/png;base64,AAA" }], "2026-04-28T12:00:00.000Z");
 
   assert.equal(payload.kind, "necronomicon-backup");
-  assert.equal(payload.version, 8);
+  assert.equal(payload.version, DATA_VERSION);
   assert.equal(payload.exportedAt, "2026-04-28T12:00:00.000Z");
   assert.equal(readBackupAssetBundle(payload).length, 1);
   assert.deepEqual(readBackupStatePayload(payload), {
-    version: 8,
+    version: DATA_VERSION,
     state: payload.state,
   });
 });

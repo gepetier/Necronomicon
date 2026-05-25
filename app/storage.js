@@ -91,6 +91,9 @@ export function migrateStoredState(payload) {
   if (version < 8) {
     nextState = migrateGlossaryLatestState(nextState);
   }
+  if (version < 9) {
+    nextState = migrateSessionFourContent(nextState);
+  }
 
   return sanitizeState(nextState);
 }
@@ -320,6 +323,53 @@ function migrateGlossaryLatestState(candidate) {
     : next.glossary;
 
   return next;
+}
+
+function migrateSessionFourContent(candidate) {
+  const next = structuredClone(candidate);
+  const sessionFour = seedData.chronicles.find((chronicle) => chronicle.id === "sala-dels-plaers");
+
+  if (sessionFour) {
+    next.chronicles = Array.isArray(next.chronicles) ? next.chronicles : [];
+    if (!next.chronicles.some((chronicle) => chronicle?.id === sessionFour.id)) {
+      next.chronicles.push(structuredClone(sessionFour));
+    }
+  }
+
+  next.glossary = Array.isArray(next.glossary) ? next.glossary : [];
+  const glossaryById = new Map(next.glossary.map((entry) => [entry?.id, entry]));
+
+  seedData.glossary.forEach((seedEntry) => {
+    const existingEntry = glossaryById.get(seedEntry.id);
+    if (!existingEntry) {
+      next.glossary.push(structuredClone(seedEntry));
+      glossaryById.set(seedEntry.id, next.glossary.at(-1));
+      return;
+    }
+
+    if ((seedEntry.chronicleIds || []).includes("sala-dels-plaers")) {
+      existingEntry.chronicleIds = mergeUniqueStrings(existingEntry.chronicleIds, seedEntry.chronicleIds);
+    }
+
+    if (!String(existingEntry.latestStatus || "").trim() && String(seedEntry.latestStatus || "").trim()) {
+      existingEntry.latestStatus = seedEntry.latestStatus;
+    }
+
+    if (!String(existingEntry.lastSeenChronicleId || "").trim() && String(seedEntry.lastSeenChronicleId || "").trim()) {
+      existingEntry.lastSeenChronicleId = seedEntry.lastSeenChronicleId;
+    }
+  });
+
+  return next;
+}
+
+function mergeUniqueStrings(currentValues, addedValues) {
+  return [
+    ...new Set([
+      ...(Array.isArray(currentValues) ? currentValues.map(String) : []),
+      ...(Array.isArray(addedValues) ? addedValues.map(String) : []),
+    ].filter(Boolean)),
+  ];
 }
 
 function sanitizeState(candidate) {

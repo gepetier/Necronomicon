@@ -1,5 +1,5 @@
 ﻿export const STORAGE_KEY = "campaign-compendium";
-export const DATA_VERSION = 8;
+export const DATA_VERSION = 9;
 
 
 const CHARACTER_PORTRAITS = {
@@ -273,6 +273,69 @@ export const seedData = {
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
       palette: ["#40314d", "#b56a58"],
     },
+    {
+      id: "sala-dels-plaers",
+      chapter: "Sessió 4",
+      title: "La Sala dels Plaers i la pedra viva",
+      date: "Profunditats del Sagnatori",
+      summary:
+        `## Ordre de la sessió
+1. Descans al passadís després de la [[piscina-central|Piscina Central]] i del [[dren|ritual d'extracció del Dren]], amb [[varron-thayne|Varron Thayne]] qüestionant la seva fe en [[kaelor|Kaelor]] davant de [[nelthan|Nelthan]].
+2. L'olor de la [[cuina-del-sagnatori|cuina del Sagnatori]] queda ajornada quan el grup segueix rialles fins a la [[sala-dels-plaers|Sala dels Plaers]], on [[ilu|Ilu]] sosté una disfressa tan atrevida com poc convincent.
+3. Els [[canviaformes-del-plaer|canviaformes del plaer]] gairebé separen el grup fins que [[elyse|Elyse]] els rescata, revela la necessitat de les [[insignies-de-voluntari|insígnies de voluntari]] i adverteix del [[banquet-del-sagnatori|banquet]] imminent.
+4. Al [[quarto-de-manteniment|quarto de manteniment]], el grup troba l'[[ancora-de-submissio|àncora de submissió]], la [[pedra-vermella-del-receptori|pedra vermella del Receptori]] i el mapa que assenyala una cambra amagada.
+5. Darrere la paret oberta amb les insígnies, alliberen la [[criatura-mineral-encadenada|criatura mineral encadenada]], que deixa a [[nelthan|Nelthan]] l'[[espasa-viva-de-nelthan|espasa viva]] abans de fondre's dins la pedra.`,
+      content:
+        `Els protagonistes van fer un primer descans al passadís, encara amb la visió recent de la Piscina Central i el ritual d’extracció del Dren gravada a la ment. Amb ells hi havia Varron Thayne, l’Enano que fins no feia gaire, era temible, descansava ara a terra, trencat d’una manera més profunda que física.
+La seva fe, la seva vida i tots els judicis dictats en nom de Kaelor havien quedat esmicolats després de descobrir que Acantilado del Silencio no era un lloc de salvació, sinó la enganyifa d’un dimoni que no havia pogut derrotar.
+Varron, amb la mirada perduda, va preguntar a Nelthan si ell encara podia sentir els seus déus ja que ell ja no sentia a Kaelor. No ho preguntava com un inquisidor; ho preguntava com un home que havia perdut el terra sota els peus.
+Al concentrar-se Nelthan va percebre encara una presència divina, distorsionada, llunyana, embrutada pel lloc on es trobaven. Els protagonistes van aconseguir donar a Varron una nova possibilitat de sentit: potser el veritable Kaelor no era fals, sino que havia estat silenciat, manipulat o fins i tot empresonat per les criatures que dominaven aquell lloc.
+Aquella idea no el va curar. Però va encendre l'espurna necessària dins el seu pit com per a tornar a aixecar-se.
+Quan van reprendre la marxa, una olor impossible va començar a pujar per l’escala: plats exquisits, espècies nobles, menjar digne de les millors cuines d’Andoras. Un forat a l’estomac va colpejar el grup amb força, i van deduir que una cuina els podia oferir menjar, subministraments o fins i tot una oportunitat per enverinar els aliments de aquelles criatures i provocar una distracció.
+El pla semblava raonablement sòlid.
+Fins que unes rialles de noies joves van ressonar per un altre passadís.
+Amb una rapidesa sorprenent i una prudència discutible, el grup va canviar de prioritat i va seguir aquell so màgic a través dels passadissos fins a desembocar a una sala guarida per unes grans cortines. Abans d’entrar, Ilu va fer una ullada i va deduir que necessitaven una aparença més adequada si no volien cridar l’atenció. Va conjurar una il·lusió sobre el grup, i tots van adoptar una indumentària d’una elegància dubtosa però amb una confiança absoluta: barret de cowboy, jaqueta i pantalons de cuir ajustat marcant paquet i sandàlies romanes.
+La Sala dels Plaers es va obrir davant seu com una mentida luxosa dins les entranyes del Sagnatori: una estança ampla, càlida i plena de fum perfumat, il·luminada amb tons vermells i violetes que ballaven sobre tapissos, metalls daurats, catifes gruixudes i coixins enormes. Homes i dones de races que els jugadors no havien mai ni imaginat reien, bevien, fumaven i s’abandonaven a una música baixa, mentre nois i noies d’una bellesa massa perfecta circulaven entre les taules amb somriures calculats i robes gairebé inexistents. Al voltant de la sala, diversos reservats amb llits baixos quedaven mig ocults rere cortines translúcides; cada vegada que una cortina es tancava, la música semblava pujar just prou per tapar qualsevol so inconvenient. 
+Una tiefling amb roba que no descriurem per educació als lectors, va detectar el grup i es va acostar sinuosa a Dámakos, com una serp a un ratolí, aquest va quedar completament embadalit. Davant les preguntes de la noia, els protagonistes van intentar fer-se passar pel nou espectacle de la sala, i la tiefling els va seguir el corrent amb massa facilitat. L’engany va començar a trontollar quan dues noies més, una elfa amb cabells d’or i una humana de pell perfecta, es van afegir a l’escena i van proposar portar-los a un reservat.
+Seguint les caricies d’aquells essers platònics,la urgència i les maquinacions del grup es van dissoldre com un terròs de sucre al tè i la tensió acumulada a les espatlles des que van arribar es desfeia entre les mans de aquelles ninfes amb més joies que roba.
+
+Abans no es van donar compte, estaven ja entran en un dels reservats 
+Just quan el tancar de les cortines estava a punt de sentenciar el seu destí, una mà delicada però ferma els va treure d’aquell somni. Una serventa elfa de cabells platejats, ulls massa desperts i una actitud molt poc servil els va arrencar dels braços d’aquelles criatures amb una mala excusa i els va conduir per un lateral de la sala fins a una cambra petita, plena de caixes, teles velles i estris de servei.
+
+Només quan la porta va quedar tancada darrere seu va deixar anar la màscara de serventa obedient. Els va mirar un a un, amb una barreja d’incredulitat i urgència, i els va retreure que es movien com fugitius disfressats sortits de una mala broma, que cap voluntari real s’exposaría així per aquella sala sense la seva insignia i que les noies que els havien convidat al reservat no eren cap entreteniment innocent: eren dimonis canviaformes que haurien els havien identificat com a “no voluntaris” i haguessin aprofitat aquella il·lusió mal sostinguda per no deixar cap rastre d’ells . 
+El grup,encara de dol i abrumat per la quantitat de informació, va comprovar que la elfa semblava dir la veritat i  va decidir confiar-hi parcialment. Ella es va presentar com Elyse. Els va explicar que eren en una zona de voluntaris, convidats i col·laboradors del Sagnatori, i que sense insígnies d’identificació que sostinguessin la seva disfressa no arribarien gaire lluny.
+Els protagonistes van traçar un pla ràpid i el van executar sorprenentment bé: Elyse va atraure a varis voluntaris a un reservat on s’havien ubicat i van aconseguir les insígnies necessàries.
+Van escapar de la Sala dels Plaers sense ser desemmascarats del tot. Tot i que abans de sortir, la tiefling de ulls foscos els va recordar amb un somriure que hi hauria un banquet i que els esperava allà, deixant clar que la seva presència no havia passat tan desapercebuda com haurien volgut.
+Elyse els va guiar fins a un quarto de manteniment, on podien parlar amb més seguretat. Allà van intercanviar informació: ella va explicar part de la seva situació i del funcionament del Sagnatori; ells li van parlar del seu pacte amb Nisha’ar i de com haurien sobreviscut al viatge fins ara. La menció de la misteriosa entitat no la va deixar indiferent pero van decidir parlar-ne més endavant.
+Mentre investigaven la sala, van trobar amagada entre caixes una àncora de cadena impregnada amb una poderosa màgia de submissió. La cadena entrava dins la paret per un forat estret, com si alguna cosa hagués estat empresonada més enllà del mur. Van intentar localitzar l’origen i durant la cerca, van trobar una de les pedres vermelles utilitzades pels àrbitres del receptori per distingir vius de morts. En van descobrir la funció, i Elatoris se la va quedar.
+Elyse, en trobar un moment de calma, els va entregar llavors les restes d’un mapa que havia trobat en el cadàver d’un arrossegat. En recompondre’l, es van situar i van veure que hauria d’existir una obertura al costat mateix de la sala.
+Després d’una inspecció més acurada, van localitzar unes petites marques quadrades a la paret del passadís en les que les insígnies de voluntari encaixaven perfectament.
+La paret va començar a obrir-se devorant la roca.
+El grup hi va entrar i darrere seu, la pedra es va tancar de nou.
+A l’interior, les llums conjurades per Ilu van revelar una cambra oculta. Al centre hi havia una forma abstracta, envoltada per les cadenes que venien rastrejant i al costat seu 2 cadavers de arrosegats dels que només quedaven els ossos.
+Aquella forma no s’assemblava a res del que havien vist al Sagnatori. Era un ésser aliè, compost d’una roca blanquinosa capaç de moure’s lentament com si fos teixit viu. Al centre del seu cos hi bategava un cristall de lluïssor blanca i daurada.
+Quan Dámakos, impulsivament, va tocar el cristall, el seu cos es va tensar. unes imatges li van travessar la ment: galeries subterrànies, rierols, pedra humida, bolets fluorescents, una consciencia antiga que intentava comunicar-se sense paraules.
+Per idea de Nelthan, els protagonistes van fer servir la barra de ferro que Dámakos portava com a arma improvisada per trencar la cadena. La barra es va partir en el procés, però la criatura va quedar alliberada.
+El so de les cadenes caient va deixar un silenci enorme.
+Durant uns segons, el grup va dubtar si havia comès un error.
+Llavors la criatura va estampar una de les seves extremitats contra el terra. D’ella es van estendre arrels de pedra que van recórrer la sala fins a la porta, destrossant el paviment. La paret pero, va tornar a obrir-se.
+Després, la criatura va observar els protagonistes durant llarga estona. La pausa es va tornar incòmoda fins que, finalment, la criatura  va arrencarse una de les seves extremitats. Aquesta va caure al terra, va avançar antinaturalment fins a Nelthan i va canviar de forma, generant una empunyadura. Quan Nelthan la va entomar, la massa mineral es va definir com una espasa viva, adaptable a les necessitats del paladí.
+Els protagonistes van intentar seguir comunicant-se amb la criatura, però aquesta es va desfer sencera dins el terra. En pocs segons, només va quedar silenci.
+Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contra el seu diari.
+`,
+      highlights:
+        `- [[varron-thayne|Varron]] passa de jutge temible a home trencat, i [[nelthan|Nelthan]] li obre la possibilitat que [[kaelor|Kaelor]] no fos fals sinó empresonat o silenciat.
+- La [[sala-dels-plaers|Sala dels Plaers]] funciona com una trampa social per detectar no voluntaris; la disfressa d'[[ilu|Ilu]] aguanta prou per sobreviure, però no per passar inadvertits.
+- [[elyse|Elyse]] es converteix en aliada provisional, dona context sobre els voluntaris del [[sagnatori|Sagnatori]] i ajuda el grup a obtenir [[insignies-de-voluntari|insígnies]].
+- La [[pedra-vermella-del-receptori|pedra vermella]] queda en mans d'[[elatoris|Elatoris]] i pot identificar vius i morts segons el funcionament del [[receptori|Receptori]].
+- L'[[ancora-de-submissio|àncora de submissió]] retenia la [[criatura-mineral-encadenada|criatura mineral]], que en ser alliberada recompensa [[nelthan|Nelthan]] amb l'[[espasa-viva-de-nelthan|espasa viva]].`,
+      imageNote:
+        "Sala luxosa i perfumada dins el Sagnatori, cortines vermelles, falsos plaers demoníacs, un magatzem ocult i una criatura de pedra blanca encadenada amb un cristall daurat al centre.",
+      imageAssets: [],
+      voiceNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      palette: ["#4a2d48", "#c99a63"],
+    },
   ],
   glossary: [
     {
@@ -329,9 +392,12 @@ export const seedData = {
       tags: ["subterrani", "portals", "sang"],
       notes:
         "Les criatures hi classifiquen cossos i materials, s'hi fon ferro i s'hi concentra el mar de sang que alimenta un ritual encara més gran.",
+      latestStatus:
+        "El grup ha deixat enrere la zona de processament i s'ha mogut cap a àrees de voluntaris, plaer, manteniment i cambres ocultes dins el mateix complex.",
+      lastSeenChronicleId: "sala-dels-plaers",
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
-      chronicleIds: ["sagnatori"],
+      chronicleIds: ["sagnatori", "sala-dels-plaers"],
       palette: ["#382c3a", "#aa625a"],
     },
     {
@@ -357,10 +423,13 @@ export const seedData = {
       tags: ["culte", "sang", "silenci"],
       notes:
         "El seu símbol apareix a estendards, penjolls d'espines, altars i estructures rituals com el gran emblema de ferro damunt la tribuna.",
+      latestStatus:
+        "La fe de Varron queda destruïda, però Nelthan obre la possibilitat que el veritable Kaelor hagi estat silenciat, manipulat o empresonat.",
+      lastSeenChronicleId: "sala-dels-plaers",
       imageAssets: [GLOSSARY_ILLUSTRATIONS.kaelorSimbol],
       playerNotes: [],
       characterIds: ["ilu", "nelthan"],
-      chronicleIds: ["judici-acantilado", "ritual-fossa"],
+      chronicleIds: ["judici-acantilado", "ritual-fossa", "sala-dels-plaers"],
       palette: ["#6c2f28", "#d0a667"],
     },
     {
@@ -458,10 +527,13 @@ export const seedData = {
       tags: ["clergat", "jutge", "ritual"],
       notes:
         "El grup l'utilitza com a fals reclam en la primera fugida, més tard el veu declarar heretge la reina i finalment el rescata al Sagnatori.",
+      latestStatus:
+        "Trencat per la revelació de la impostura demoníaca, torna a aixecar-se només quan el grup li ofereix la possibilitat que Kaelor no fos fals sinó empresonat o silenciat.",
+      lastSeenChronicleId: "sala-dels-plaers",
       imageAssets: [GLOSSARY_ILLUSTRATIONS.varronThayne],
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
-      chronicleIds: ["judici-acantilado", "ritual-fossa", "sagnatori"],
+      chronicleIds: ["judici-acantilado", "ritual-fossa", "sagnatori", "sala-dels-plaers"],
       palette: ["#5d4640", "#c08c62"],
     },
     {
@@ -554,10 +626,13 @@ export const seedData = {
       tags: ["pacte", "ombra", "sagnatori"],
       notes:
         "Primer força el pacte a la vora de la Fossa i després es presenta amb nom propi, cura el grup i els ordena sobreviure i sembrar caos als dominis d'Ish'Nael.",
+      latestStatus:
+        "La menció del pacte amb Nisha'ar inquieta Elyse, però el grup ajorna una explicació més profunda fins a trobar un moment més segur.",
+      lastSeenChronicleId: "sala-dels-plaers",
       imageAssets: [GLOSSARY_ILLUSTRATIONS.nishaar],
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
-      chronicleIds: ["judici-acantilado", "sagnatori"],
+      chronicleIds: ["judici-acantilado", "sagnatori", "sala-dels-plaers"],
       palette: ["#2b2537", "#8f5f6a"],
     },
     {
@@ -659,6 +734,278 @@ export const seedData = {
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
       chronicleIds: ["ritual-fossa", "sagnatori"],
       palette: ["#5f2629", "#cb705e"],
+    },
+    {
+      id: "piscina-central",
+      name: "Piscina Central",
+      category: "Llocs",
+      description:
+        "Dipòsit o cambra central del Sagnatori on el grup observa el ritual d'extracció del Dren abans del primer descans real dins les profunditats.",
+      tags: ["sagnatori", "ritual", "sang"],
+      notes:
+        "La visió de la piscina i del ritual queda gravada en la ment dels protagonistes i marca el to de l'exploració posterior.",
+      latestStatus:
+        "Vista des de la distància abans que el grup es retiri pel passadís i acabi desviant-se cap a zones de voluntaris i manteniment.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sagnatori", "sala-dels-plaers"],
+      palette: ["#552832", "#c66f5d"],
+    },
+    {
+      id: "dren",
+      name: "Dren",
+      category: "Altres",
+      description:
+        "Procés o substància associada a l'extracció ritual observada a la Piscina Central, on la sang sembla perdre una essència incolora i ingràvida.",
+      tags: ["extracció", "essència", "ritual"],
+      notes:
+        "Encara no se'n coneix la naturalesa exacta, però sembla més important que la sang mateixa i podria ser el veritable objectiu del Sagnatori.",
+      latestStatus:
+        "El grup només n'ha vist el ritual d'extracció i encara no sap qui o què aprofita l'essència resultant.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sagnatori", "sala-dels-plaers"],
+      palette: ["#3b3043", "#c3aa73"],
+    },
+    {
+      id: "cuina-del-sagnatori",
+      name: "Cuina del Sagnatori",
+      category: "Llocs",
+      description:
+        "Origen d'una olor impossible de plats exquisits i espècies nobles que tempta el grup amb menjar, subministraments i possibles vies d'enverinament.",
+      tags: ["cuina", "subministraments", "distracció"],
+      notes:
+        "El grup considera la cuina com una oportunitat tàctica, però abandona el pla en sentir les rialles que porten a la Sala dels Plaers.",
+      latestStatus:
+        "Encara no explorada; queda com una possible ruta o recurs dins la zona de convidats i voluntaris.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#5b3b2f", "#c99b65"],
+    },
+    {
+      id: "sala-dels-plaers",
+      name: "Sala dels Plaers",
+      category: "Llocs",
+      description:
+        "Estança luxosa, perfumada i demoníaca dins el Sagnatori, plena de música, fum, reservats i bellesa calculada per atreure i detectar intrusos.",
+      tags: ["plaer", "voluntaris", "trampa"],
+      notes:
+        "Els protagonistes hi entren amb una il·lusió extravagant d'Ilu i gairebé són conduïts a un reservat pels canviaformes abans que Elyse els aparti.",
+      latestStatus:
+        "El grup n'ha escapat amb insígnies robades, però la tiefling d'ulls foscos els ha deixat clar que els espera al banquet.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#5a2d4f", "#c58c68"],
+    },
+    {
+      id: "canviaformes-del-plaer",
+      name: "Canviaformes del plaer",
+      category: "Monstres",
+      description:
+        "Dimonis d'aparença perfecta que treballen a la Sala dels Plaers, capaços de seduir, identificar no voluntaris i fer-los desaparèixer sense deixar rastre.",
+      tags: ["dimonis", "seducció", "canviaformes"],
+      notes:
+        "La tiefling d'ulls foscos, una elfa de cabells d'or i una humana de pell perfecta gairebé porten el grup a un reservat abans de la intervenció d'Elyse.",
+      latestStatus:
+        "La tiefling sap prou del grup com per convidar-los al banquet amb un somriure amenaçador.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["damakos", "ilu", "nelthan", "elatoris"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#61304f", "#d09a77"],
+    },
+    {
+      id: "elyse",
+      name: "Elyse",
+      category: "Altres",
+      description:
+        "Elfa de cabells platejats que es fa passar per serventa obedient, però actua amb massa lucidesa i urgència per ser només una peça més del Sagnatori.",
+      tags: ["elfa", "aliada", "serventa"],
+      notes:
+        "Rescata els protagonistes dels canviaformes, els explica el funcionament bàsic de la zona de voluntaris i els entrega restes d'un mapa trobat en un arrossegat.",
+      latestStatus:
+        "Segueix amb el grup després de veure la criatura mineral alliberada i registra frenèticament els fets al seu diari.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#46515b", "#c9b58a"],
+    },
+    {
+      id: "voluntaris-del-sagnatori",
+      name: "Voluntaris del Sagnatori",
+      category: "Faccions",
+      description:
+        "Convidats i col·laboradors que circulen per zones internes del Sagnatori amb insígnies pròpies, aparentment autoritzats a gaudir o servir el complex.",
+      tags: ["voluntaris", "convidats", "insígnies"],
+      notes:
+        "Sense la seva identificació, qualsevol disfressa és insuficient. Elyse ajuda el grup a atraure'n alguns a un reservat i robar-los les insígnies.",
+      latestStatus:
+        "Alguns han estat utilitzats pel grup per obtenir accés, però la jerarquia real d'aquests voluntaris encara és desconeguda.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#59423e", "#bd9366"],
+    },
+    {
+      id: "insignies-de-voluntari",
+      name: "Insígnies de voluntari",
+      category: "Objectes",
+      description:
+        "Identificadors utilitzats pels voluntaris del Sagnatori per sostenir una aparença legítima i activar mecanismes ocults de pas.",
+      tags: ["insígnies", "accés", "disfressa"],
+      notes:
+        "El grup les roba amb l'ajuda d'Elyse i després descobreix que encaixen en marques quadrades de la paret per obrir una cambra amagada.",
+      latestStatus:
+        "Serveixen com a clau física o ritual per accedir a passadissos ocults dins el Sagnatori.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#54473d", "#c4a269"],
+    },
+    {
+      id: "banquet-del-sagnatori",
+      name: "Banquet del Sagnatori",
+      category: "Altres",
+      description:
+        "Esdeveniment anunciat pels canviaformes de la Sala dels Plaers, probablement una reunió de convidats, voluntaris o servidors del complex.",
+      tags: ["banquet", "voluntaris", "amenaça"],
+      notes:
+        "La tiefling d'ulls foscos convida el grup al banquet després de veure'ls marxar, deixant clar que la seva presència ha estat detectada.",
+      latestStatus:
+        "Encara pendent; pot convertir-se en oportunitat d'infiltració o en una trampa preparada.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#623536", "#d1a166"],
+    },
+    {
+      id: "quarto-de-manteniment",
+      name: "Quarto de manteniment",
+      category: "Llocs",
+      description:
+        "Cambra petita i més segura, plena de caixes, teles i estris de servei, on Elyse pot parlar amb el grup lluny de la Sala dels Plaers.",
+      tags: ["manteniment", "amagatall", "mapa"],
+      notes:
+        "Allà el grup intercanvia informació amb Elyse, troba l'àncora de submissió, localitza una pedra vermella del Receptori i recompon un mapa parcial.",
+      latestStatus:
+        "Ha revelat l'existència d'una cambra oculta immediata i d'un mecanisme activat amb insígnies.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#4b4540", "#b9956d"],
+    },
+    {
+      id: "ancora-de-submissio",
+      name: "Àncora de submissió",
+      category: "Objectes",
+      description:
+        "Àncora de cadena amagada entre caixes i impregnada amb una poderosa màgia de submissió, connectada a una criatura empresonada darrere la paret.",
+      tags: ["cadena", "submissió", "presó"],
+      notes:
+        "La cadena guia el grup fins a la cambra oculta on hi ha la criatura mineral encadenada.",
+      latestStatus:
+        "Trencada amb la barra de ferro de Dámakos, que es parteix en el procés d'alliberar la criatura.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["damakos", "nelthan", "ilu"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#504843", "#c4a16e"],
+    },
+    {
+      id: "pedra-vermella-del-receptori",
+      name: "Pedra vermella del Receptori",
+      category: "Objectes",
+      description:
+        "Pedra utilitzada pels àrbitres del Receptori per distingir vius de morts dins la logística cruel del Sagnatori.",
+      tags: ["pedra", "receptori", "detecció"],
+      notes:
+        "El grup en descobreix la funció al quarto de manteniment i Elatoris se la queda.",
+      latestStatus:
+        "En possessió d'Elatoris, amb potencial per identificar estats vitals o enganyar sistemes interns del Sagnatori.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["elatoris", "ilu"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#622d31", "#d28065"],
+    },
+    {
+      id: "receptori",
+      name: "Receptori",
+      category: "Llocs",
+      description:
+        "Àrea o sistema del Sagnatori on uns àrbitres distingeixen vius de morts mitjançant pedres vermelles.",
+      tags: ["àrbitres", "classificació", "sagnatori"],
+      notes:
+        "Encara no ha estat explorat directament en aquesta crònica, però la pedra vermella en revela una part del funcionament.",
+      latestStatus:
+        "Identificat indirectament a través d'una eina dels seus àrbitres.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["elatoris", "ilu"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#47313b", "#b67663"],
+    },
+    {
+      id: "arrossegats",
+      name: "Arrossegats",
+      category: "Altres",
+      description:
+        "Víctimes o cossos transportats pel Sagnatori, prou comuns perquè Elyse pugui trobar-hi un mapa i la cambra oculta en contingui restes òssies.",
+      tags: ["víctimes", "cossos", "sagnatori"],
+      notes:
+        "El terme queda associat als qui són arrossegats pel sistema de processament, ja siguin vius, morts o alguna cosa intermèdia.",
+      latestStatus:
+        "Dos cadàvers d'arrossegats apareixen al costat de la criatura mineral encadenada.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
+      chronicleIds: ["sagnatori", "sala-dels-plaers"],
+      palette: ["#534441", "#ad8566"],
+    },
+    {
+      id: "criatura-mineral-encadenada",
+      name: "Criatura mineral encadenada",
+      category: "Entitats",
+      description:
+        "Ésser aliè de roca blanquinosa i moviment orgànic, amb un cristall blanc i daurat al centre i una consciència antiga vinculada a galeries subterrànies.",
+      tags: ["pedra", "cristall", "consciència"],
+      notes:
+        "Estava sotmesa per una cadena màgica. En tocar-ne el cristall, Dámakos veu visions de rierols, pedra humida, bolets fluorescents i una consciència sense paraules.",
+      latestStatus:
+        "Alliberada pel grup, obre la paret amb arrels de pedra, lliura una espasa viva a Nelthan i es desfà dins el terra.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["damakos", "nelthan", "ilu", "elatoris"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#d8d2bd", "#9f8556"],
+    },
+    {
+      id: "espasa-viva-de-nelthan",
+      name: "Espasa viva de Nelthan",
+      category: "Objectes",
+      description:
+        "Arma mineral viva nascuda d'una extremitat de la criatura alliberada, capaç d'adaptar-se a les necessitats del paladí.",
+      tags: ["espasa", "mineral", "nelthan"],
+      notes:
+        "La criatura s'arrenca una extremitat, que avança fins a Nelthan, genera una empunyadura i es defineix com una espasa viva.",
+      latestStatus:
+        "En mans de Nelthan després de l'alliberament de la criatura mineral.",
+      lastSeenChronicleId: "sala-dels-plaers",
+      playerNotes: [],
+      characterIds: ["nelthan"],
+      chronicleIds: ["sala-dels-plaers"],
+      palette: ["#cfc8b5", "#8f7651"],
     },
   ],
   ui: {

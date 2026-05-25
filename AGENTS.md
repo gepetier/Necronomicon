@@ -42,6 +42,7 @@
 - Treat this file as the canonical restart note when the IDE session is reopened.
 - UI workflow decision: every UI-facing change requires screenshot-based review and iteration until the visual result is satisfactory.
 - Content workflow decision: when a user provides session prose for `Cròniques`, preserve the full incoming text verbatim in the chronicle body and move structure/order into summary, highlights, and glossary linking.
+- Chronicle read pages auto-link known character and glossary names at render time, so the stored prose can remain verbatim while the visible reading view still has references.
 - Chronicle inline references keep the shared `[[id|label]]` syntax and may target either glossary entries or main character sheets.
 - Glossary jumps from `Croniques` must reveal the referenced entry by clearing incompatible glossary filters/search while preserving the return path to the source chronicle.
 - Glossary search should be accent-insensitive and also match entry categories, not only names/descriptions/tags.
@@ -49,12 +50,15 @@
 - Character editing uses a single shared save action for the whole character, and editor save actions should close edit mode after persisting changes.
 - Character `Fitxa` tab should resemble a D&D 5e character sheet, using the existing plain text stats to render ability boxes, saves, skills, combat stats, attacks, equipment, and spellcasting blocks.
 - Glossary navigation now uses a 3-zone flow: discovery rail (search/category/session), result list, and detail panel, with category and chronicle-session filters acting as the primary navigation controls.
+- Glossary navigation should stay compact: search and create action at the top, category chips visible, chronicle-session filters collapsed by default, and no extra overview panel competing with results.
 - Glossary result cards should stay minimal: name only plus inline `Edita` / `Esborra` actions, while `Nova entrada` lives under the glossary search box.
 - Glossary result rows must only expose action icons on the active row, and the list layout should reserve stable space for wrapped titles instead of compressing cards vertically.
 - Glossary session filtering is driven by each entry's `chronicleIds`; checking a session should keep only entries referenced by that session, and glossary jumps from chronicles must clear incompatible session filters too.
 - Glossary entries now expose editable `imageAssets` in the glossary editor as newline-separated paths or URLs, because the detail view already supports multiple images and the app has no upload backend.
 - Glossary detail entries now surface a short "situacio actual" summary plus a manually editable "ultima vegada vist/visitat a" session marker, with `Llocs` using the visit wording and other categories using seen wording.
 - Glossary image insertion now uses the browser's native file picker in the editor, converting selected files into persisted inline data so no manual path entry is required for normal use.
+- Glossary image uploads are optimized client-side before persistence: raster images are resized within 1800x1800 and converted to WebP when the result is smaller; GIF/SVG and failed conversions keep the original file.
+- Shared Drive sync status uses the wax-seal icon set in `resources/sync-status/`, with `synced`, `syncing`, and `unsynced` states rendered in the save toast and Options sync card.
 - Rich-text editor reference suggestions are now available in `Personatges`, `Cròniques`, and `Glossari`, and selecting text should also expose a `Multimedia` suggestion that preserves the selected label.
 - QA suites share the local harness port `4173`, so they should be run sequentially rather than in parallel when validating the app.
 - Capture tooling is part of the permanent UI workflow; use filtered captures or `qa:smoke` for fast iteration before full QA.
@@ -74,9 +78,8 @@
 - The default capture catalog is intentionally focused instead of exhaustive; use aliases such as `changed`, `characters`, `chronicles`, `glossary`, `options`, `desktop`, or `mobile` for targeted review.
 
 ## Pending
-- Before committing/deploying the current work, seed the new Drive `campaign.json` with the desired canonical campaign data; local `data.js` and `origin/main` currently only contain sessions 1-3, and the previous GitHub Pages localStorage recovery did not produce chapter/session 4.
+- Before committing/deploying, seed the new Drive `campaign.json` with the desired canonical campaign data; local `data.js` now contains sessions 1-4, but Drive may still need to be updated from the local canonical data.
 - Clean up or commit the pending visual artifacts and code changes once the current restyle is considered stable.
-- Review whether future chronicle passes should also inline glossary links inside raw session prose, or keep verbatim input completely untouched there.
 - Validate the Google Apps Script deployment from a real browser session after the OAuth client origins and the bootstrap DM email are confirmed.
 
 ## Next steps
@@ -139,6 +142,13 @@
 - 2026-05-22: updated the auth landing page to use the provided leather book texture, removed non-login copy, restyled the login control to match the cover, refreshed desktop/mobile landing captures, and confirmed `npm.cmd run build` plus `npm.cmd run qa:functional` pass.
 - 2026-05-22: replaced the visible Google login control with the provided transparent sigil centered on the book cover; clicking the sigil triggers Google login while the real Google button remains hidden underneath, with refreshed desktop/mobile captures and `npm.cmd run qa:functional` passing.
 - 2026-05-22: added the provided circular cenefa as the auth server-wait indicator (`auth-waiting-server`), added dedicated `auth-waiting` capture scenarios, moved the ritual status text below the ring, refreshed captures, and confirmed `npm.cmd run qa:functional` passes.
+- 2026-05-25: added Chronicle Session 4 (`sala-dels-plaers`) with verbatim prose, structured summary/highlights, 16 new glossary entries, updated Session 4 migration to `DATA_VERSION = 9`, added focused Session 4 captures, and confirmed build plus unit tests pass.
+- 2026-05-25: simplified the Glossari navigation rail by compacting category filters into chips, moving `Nova` beside search, collapsing session filters by default, removing the overview block, adding focused empty-filter captures, and confirming `npm.cmd run build`, `npm.cmd run test:unit`, and `npm.cmd run qa:ui` pass.
+- 2026-05-25: added render-time auto-linking for Chronicle reading prose and moved the book-page split later so the left page is not mostly empty; refreshed Session 3/4 desktop/mobile captures and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, and `npm.cmd run qa:ui` pass.
+- 2026-05-25: replaced the auth waiting cenefa with a subtler CSS-only sigil glow plus thin rotating gold ring, changed the login loading text to `Obrint el compendi...`, refreshed auth desktop/mobile captures, and confirmed `npm.cmd run build` plus `npm.cmd run qa:functional` pass.
+- 2026-05-25: moved Glossari results directly under the search block inside the left rail, kept category/session filters below them, made the result list internally scrollable on mobile, refreshed glossary desktop/mobile captures, and confirmed `npm.cmd run build` plus `npm.cmd run qa:ui` pass.
+- 2026-05-25: added client-side optimization for Glossari image uploads before asset persistence, updated the editor helper copy, and confirmed `npm.cmd run build` plus `npm.cmd run qa:edit` pass.
+- 2026-05-25: integrated the generated wax-seal sync icons into the save notice and Options Drive card, cleaned the checkerboard background from the assets, refreshed options desktop/mobile captures, and confirmed `npm.cmd run build` plus `npm.cmd run qa:ui` pass.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

@@ -36,7 +36,7 @@ export function renderChroniclesModule({
             ${renderChronicleIndexPanel(state, current, { variant: "inline" })}
             ${state.ui.editModes.chronicles
               ? renderChronicleEditingStage(current, state)
-              : renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab)}
+              : renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab, state)}
           </div>
         `}
     </section>
@@ -153,8 +153,9 @@ function renderChronicleIndexEntry(chronicle, state) {
   `;
 }
 
-function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab) {
-  const bodyParts = splitChronicleBody(current?.content || "");
+function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab, state) {
+  const linkedContent = autoLinkChronicleReferences(current?.content || "", state);
+  const bodyParts = splitChronicleBody(linkedContent);
   const openingBody = bodyParts.opening || "Encara no hi ha cos de capitol.";
   const continuationBody = bodyParts.continuation;
 
@@ -215,8 +216,8 @@ function splitChronicleBody(content) {
     return { opening: shortChronicleText(normalizedContent, 420), continuation: normalizedContent };
   }
 
-  const preferredMin = 920;
-  const preferredMax = 1250;
+  const preferredMin = 1700;
+  const preferredMax = 2200;
   const preferredSlice = normalizedContent.slice(preferredMin, preferredMax);
   const sentenceBreak = preferredSlice.search(/[.!?…](\s+|$)/);
 
@@ -236,6 +237,126 @@ function splitChronicleBody(content) {
     continuation: normalizedContent.slice(splitIndex).trim(),
   };
 }
+
+function autoLinkChronicleReferences(content, state) {
+  const text = String(content || "");
+  if (!text.trim()) {
+    return text;
+  }
+
+  const candidates = buildChronicleReferenceCandidates(state);
+  const linkedIds = new Set();
+  return candidates.reduce((nextText, candidate) => {
+    if (linkedIds.has(candidate.id)) {
+      return nextText;
+    }
+
+    const replacedText = replaceFirstReferenceCandidate(nextText, candidate);
+    if (replacedText !== nextText) {
+      linkedIds.add(candidate.id);
+    }
+    return replacedText;
+  }, text);
+}
+
+function buildChronicleReferenceCandidates(state) {
+  const aliasesById = new Map();
+  const addAlias = (id, alias) => {
+    const cleanAlias = String(alias || "").trim();
+    if (!id || cleanAlias.length < 3) {
+      return;
+    }
+    const currentAliases = aliasesById.get(id) || new Set();
+    currentAliases.add(cleanAlias);
+    aliasesById.set(id, currentAliases);
+  };
+
+  (state.characters || []).forEach((character) => {
+    addAlias(character.id, character.name);
+    if (character.id === "damakos") {
+      addAlias(character.id, "Damakos");
+    }
+  });
+
+  (state.glossary || []).forEach((entry) => {
+    addAlias(entry.id, entry.name);
+    addAlias(entry.id, String(entry.name || "").split(",")[0]);
+  });
+
+  Object.entries(CHRONICLE_REFERENCE_ALIASES).forEach(([id, aliases]) => {
+    aliases.forEach((alias) => addAlias(id, alias));
+  });
+
+  return [...aliasesById.entries()]
+    .flatMap(([id, aliases]) => [...aliases].map((alias) => ({ id, alias })))
+    .sort((left, right) => right.alias.length - left.alias.length || left.alias.localeCompare(right.alias, "ca"));
+}
+
+function replaceFirstReferenceCandidate(text, candidate) {
+  const tokenPattern = /(\[\[[^\]]+\]\]|\{\{media:[^{}]+\}\})/g;
+  const parts = String(text).split(tokenPattern);
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_])(${escapeRegExp(candidate.alias)})(?=$|[^\\p{L}\\p{N}_])`, "iu");
+
+  let replaced = false;
+  const nextParts = parts.map((part) => {
+    if (replaced || tokenPattern.test(part)) {
+      tokenPattern.lastIndex = 0;
+      return part;
+    }
+
+    const nextPart = part.replace(pattern, (fullMatch, prefix, label) => {
+      replaced = true;
+      return `${prefix}[[${candidate.id}|${label}]]`;
+    });
+    tokenPattern.lastIndex = 0;
+    return nextPart;
+  });
+
+  return replaced ? nextParts.join("") : text;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const CHRONICLE_REFERENCE_ALIASES = {
+  "abominacions-del-sagnatori": ["abominacions"],
+  "acantilado-del-silencio": ["Acantilado del Silencio", "Acantilado"],
+  "ancora-de-submissio": ["àncora de cadena", "àncora de submissió"],
+  andoras: ["Andoras"],
+  "avatar-de-nishaar": ["gat negre"],
+  "canviaformes-del-plaer": ["dimonis canviaformes", "canviaformes"],
+  "catedral-del-silencio": ["Catedral"],
+  "concilio-del-silencio": ["Concilio del Silencio"],
+  "criatura-mineral-encadenada": ["criatura mineral"],
+  "cuina-del-sagnatori": ["cuina"],
+  dren: ["Dren"],
+  elyse: ["Elyse"],
+  "espasa-viva-de-nelthan": ["espasa viva"],
+  "fossa-ritual": ["Fossa ritual", "Fossa"],
+  "gran-hierofante": ["Gran Hierofante", "Hierofante"],
+  "hermana-seraphe": ["Hermana Seraphe", "Seraphe"],
+  "insignies-de-voluntari": ["insígnies de voluntari", "insígnies", "insignia"],
+  "ish-nael": ["Ish'Nael", "Ish’Nael"],
+  kaelor: ["Kaelor"],
+  "marca-de-nishaar": ["marca de Nisha'ar", "marca de Nisha’ar"],
+  "mar-de-sang": ["mar de sang", "marea de sang"],
+  mijo: ["Mijo"],
+  nishaar: ["Nisha'ar", "Nisha’ar"],
+  "pedra-vermella-del-receptori": ["pedra vermella"],
+  "piscina-central": ["Piscina Central"],
+  "portadores-del-velo": ["Portadores del Velo"],
+  "quarto-de-manteniment": ["quarto de manteniment"],
+  receptori: ["Receptori"],
+  "reina-elisabeth": ["Reina Elisabeth", "Elisabeth"],
+  "sagnatori": ["Sagnatori"],
+  "sala-dels-plaers": ["Sala dels Plaers"],
+  uric: ["Uric"],
+  "varron-thayne": ["Varron Thayne", "Varron"],
+  "voluntaris-del-sagnatori": ["voluntaris"],
+  "voz-de-kaelor": ["Voz de Kaelor", "Voz"],
+  "zaher-ar-kal": ["Zaher-Ar'Kal", "Zaher-Ar’Kal"],
+};
 
 function renderChronicleCoverPlate(current) {
   return `

@@ -95,6 +95,13 @@ const authStatus = document.querySelector("[data-auth-status]");
 let lastLightboxTrigger = null;
 let pendingRichMediaInsert = null;
 
+const IMAGE_OPTIMIZATION_OPTIONS = {
+  maxWidth: 1800,
+  maxHeight: 1800,
+  quality: 0.82,
+  mimeType: "image/webp",
+};
+
 const runtimeParams = new URLSearchParams(window.location.search);
 const authPreviewMode = runtimeParams.has("authPreview");
 const qaMode = runtimeParams.has("qaRun") || runtimeParams.has("captureRun");
@@ -978,6 +985,9 @@ function renderAuthPreviewButton() {
 }
 
 function getAuthFeedbackText(key) {
+  if (["openingSignIn", "restoringSession", "loadingCampaign"].includes(key)) {
+    return "Obrint el compendi...";
+  }
   return AUTH_FEEDBACK[key]?.text || "";
 }
 
@@ -1058,8 +1068,49 @@ function updateSaveNotice() {
     return;
   }
 
-  saveNoticeEl.textContent = state.ui.saveNotice || "";
+  const message = state.ui.saveNotice || "";
+  saveNoticeEl.innerHTML = message
+    ? `
+      ${renderSyncStatusIcon(getCloudSyncState(), getCloudSyncLabel())}
+      <span>${escapeHtml(message)}</span>
+    `
+    : "";
   saveNoticeEl.classList.toggle("visible", Boolean(state.ui.saveNotice));
+}
+
+function getCloudSyncState() {
+  if (cloudSession.saving || cloudSession.awaitingServer || cloudSession.pendingInitialPublish || cloudSaveTimer !== null) {
+    return "syncing";
+  }
+
+  if (cloudSession.lastError || (cloudSession.enabled && (!cloudSession.ready || !cloudSession.idToken))) {
+    return "unsynced";
+  }
+
+  return "synced";
+}
+
+function getCloudSyncLabel(syncState = getCloudSyncState()) {
+  if (syncState === "syncing") {
+    return "Sincronitzant";
+  }
+
+  if (syncState === "unsynced") {
+    return "Desincronitzat";
+  }
+
+  return "Sincronitzat";
+}
+
+function renderSyncStatusIcon(syncState = getCloudSyncState(), label = getCloudSyncLabel(syncState)) {
+  return `
+    <span
+      class="sync-status-icon sync-status-${escapeAttribute(syncState)}"
+      role="img"
+      aria-label="${escapeAttribute(label)}"
+      title="${escapeAttribute(label)}"
+    ></span>
+  `;
 }
 
 function renderCharactersModule() {
@@ -1125,6 +1176,8 @@ function renderOptionsModule() {
     return;
   }
 
+  const syncState = getCloudSyncState();
+  const syncLabel = getCloudSyncLabel(syncState);
   const lastSavedLabel = formatShortDate(state.ui.lastSaved?.at) || "Encara no";
   const lastSyncLabel = formatShortDate(cloudSession.lastSyncAt) || "Encara no";
   const userLabel = cloudSession.user?.email || "No connectat";
@@ -1145,12 +1198,16 @@ function renderOptionsModule() {
         <article class="section-card options-card">
           <div class="options-card-copy">
             <p class="eyebrow">Google Drive</p>
-            <h3>Sincronitzacio compartida</h3>
+            <div class="options-sync-heading">
+              ${renderSyncStatusIcon(syncState, syncLabel)}
+              <h3>Sincronitzacio compartida</h3>
+            </div>
             <p>${escapeHtml(cloudSession.status || "Preparat")}</p>
           </div>
           <div class="options-stat-list">
             <span class="badge">${escapeHtml(userLabel)}</span>
             <span class="badge">Rol: ${escapeHtml(roleLabel)}</span>
+            <span class="badge sync-state-badge">${escapeHtml(syncLabel)}</span>
             <span class="badge">Darrer sync: ${escapeHtml(lastSyncLabel)}</span>
             ${cloudSession.saving ? '<span class="badge">Desant...</span>' : ""}
             ${cloudSession.lastError ? `<span class="badge warning">Error: ${escapeHtml(cloudSession.lastError)}</span>` : ""}
@@ -1757,7 +1814,7 @@ async function pushStateToCloud(options = {}) {
 
   cloudSession.saving = true;
   cloudSession.status = "Desant canvis a Drive...";
-  render([RENDER_PARTS.options]);
+  render([RENDER_PARTS.notice, RENDER_PARTS.options]);
   try {
     if (target.type === "campaign") {
       await saveCampaignToCloud(cloudSession.idToken, stripTransientUiState(state));
@@ -1772,7 +1829,7 @@ async function pushStateToCloud(options = {}) {
     cloudSession.status = cloudSession.lastError;
   } finally {
     cloudSession.saving = false;
-    render([RENDER_PARTS.options]);
+    render([RENDER_PARTS.notice, RENDER_PARTS.options]);
   }
 }
 
@@ -2184,7 +2241,10 @@ async function handleGlossaryImageSelection(input) {
     return;
   }
 
-  const assetTokens = (await Promise.all(files.map((file) => storeAssetFile(file)))).filter(Boolean);
+  const assetTokens = (await Promise.all(files.map(async (file) => {
+    const optimizedFile = await optimizeImageFile(file);
+    return storeAssetFile(optimizedFile);
+  }))).filter(Boolean);
   if (assetTokens.length) {
     updateGlossaryDraftImageAssets(glossaryId, (images) => [...images, ...assetTokens]);
   }
@@ -2300,6 +2360,114 @@ function normalizeGlossaryDraftImageAssets(draftValue, fallback) {
   return Array.isArray(fallback)
     ? fallback.map((value) => String(value || "").trim()).filter(Boolean)
     : [];
+}
+
+async function optimizeImageFile(file, options = IMAGE_OPTIMIZATION_OPTIONS) {
+  if (!shouldOptimizeImageFile(file)) {
+    return file;
+  }
+
+  try {
+    const image = await loadImageForOptimization(file);
+    const size = getOptimizedImageSize(image.width, image.height, options);
+    if (!size.width || !size.height) {
+      releaseOptimizedImage(image);
+      return file;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      releaseOptimizedImage(image);
+      return file;
+    }
+
+    context.drawImage(image, 0, 0, size.width, size.height);
+    releaseOptimizedImage(image);
+
+    const optimizedBlob = await canvasToBlob(canvas, options.mimeType, options.quality);
+    if (!optimizedBlob || optimizedBlob.size >= file.size) {
+      return file;
+    }
+
+    return createOptimizedImageFile(file, optimizedBlob, options.mimeType);
+  } catch (error) {
+    console.warn("No s'ha pogut optimitzar la imatge seleccionada.", error);
+    return file;
+  }
+}
+
+function shouldOptimizeImageFile(file) {
+  const mimeType = String(file?.type || "").toLowerCase();
+  return file instanceof File
+    && mimeType.startsWith("image/")
+    && !["image/gif", "image/svg+xml"].includes(mimeType);
+}
+
+async function loadImageForOptimization(file) {
+  if ("createImageBitmap" in window) {
+    return createImageBitmap(file, { imageOrientation: "from-image" });
+  }
+
+  const source = await readFileAsDataUrl(file);
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image), { once: true });
+    image.addEventListener("error", () => reject(new Error("La imatge no s'ha pogut carregar.")), { once: true });
+    image.src = source;
+  });
+}
+
+function releaseOptimizedImage(image) {
+  if (typeof image?.close === "function") {
+    image.close();
+  }
+}
+
+function getOptimizedImageSize(width, height, options) {
+  const maxWidth = Number(options.maxWidth) || width;
+  const maxHeight = Number(options.maxHeight) || height;
+  const scale = Math.min(1, maxWidth / width, maxHeight / height);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
+function canvasToBlob(canvas, mimeType, quality) {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), mimeType, quality);
+  });
+}
+
+function createOptimizedImageFile(originalFile, blob, mimeType) {
+  const extension = getImageExtension(mimeType);
+  const optimizedName = replaceFileExtension(originalFile.name || "imatge", extension);
+  return new File([blob], optimizedName, {
+    type: blob.type || mimeType,
+    lastModified: Date.now(),
+  });
+}
+
+function getImageExtension(mimeType) {
+  if (mimeType === "image/jpeg") {
+    return "jpg";
+  }
+
+  if (mimeType === "image/png") {
+    return "png";
+  }
+
+  return "webp";
+}
+
+function replaceFileExtension(fileName, extension) {
+  const cleanExtension = extension.replace(/^\./, "");
+  return fileName.includes(".")
+    ? fileName.replace(/\.[^.]+$/, `.${cleanExtension}`)
+    : `${fileName}.${cleanExtension}`;
 }
 
 function readFileAsDataUrl(file) {
