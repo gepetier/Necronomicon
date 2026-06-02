@@ -90,6 +90,7 @@ function handleRequest(request) {
       current.characters = (current.characters || []).map((item) => (
         item && item.id === character.id ? character : item
       ));
+      updateLibraryActiveCharacter(current, character);
       saveCampaign(current, user.email);
       return ok({
         user: decorateUser(user, current.access),
@@ -219,6 +220,31 @@ function normalizeCampaign(candidate) {
       },
     },
   };
+}
+
+function updateLibraryActiveCharacter(campaign, character) {
+  if (!Array.isArray(campaign.campaigns) || !campaign.activeCampaignId) {
+    return;
+  }
+
+  campaign.campaigns = campaign.campaigns.map((entry) => {
+    if (!entry || entry.id !== campaign.activeCampaignId || !entry.state) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      updatedAt: new Date().toISOString(),
+      state: {
+        ...entry.state,
+        characters: Array.isArray(entry.state.characters)
+          ? entry.state.characters.map((item) => (
+            item && item.id === character.id ? character : item
+          ))
+          : [character],
+      },
+    };
+  });
 }
 
 function decorateUser(user, access) {

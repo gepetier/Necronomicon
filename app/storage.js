@@ -2,6 +2,12 @@ import { DATA_VERSION, STORAGE_KEY, seedData } from "../data.js";
 import { sanitizePlayerNotes, splitLines, splitTags } from "./utils.js";
 
 const LEGACY_STORAGE_KEYS = ["campaign-compendium-v2"];
+const CAMPAIGN_LIBRARY_KIND = "necronomicon-campaign-library";
+const DEFAULT_CAMPAIGN_ID = "meledar";
+const DEFAULT_CAMPAIGN_NAME = "Meledar";
+const DEFAULT_CAMPAIGN_SYSTEM = "D&D 5e";
+
+let campaignLibrary = null;
 
 const DEFAULT_ACCESS = {
   roles: {
@@ -33,18 +39,31 @@ const DEFAULT_ACCESS = {
 export function loadState() {
   const saved = readStoredState();
   if (!saved) {
-    return structuredClone(seedData);
+    const initialState = sanitizeState(structuredClone(seedData));
+    campaignLibrary = createLibraryFromState(initialState);
+    return initialState;
   }
 
   try {
-    return migrateStoredState(JSON.parse(saved));
+    const parsed = JSON.parse(saved);
+    if (isCampaignLibraryPayload(parsed)) {
+      campaignLibrary = normalizeCampaignLibrary(parsed);
+      return getActiveCampaignState();
+    }
+
+    const singleState = migrateStoredState(parsed);
+    campaignLibrary = createLibraryFromState(singleState);
+    return singleState;
   } catch {
-    return structuredClone(seedData);
+    const fallbackState = sanitizeState(structuredClone(seedData));
+    campaignLibrary = createLibraryFromState(fallbackState);
+    return fallbackState;
   }
 }
 
 export function persistState(state) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(createPersistedPayload(state)));
+  updateActiveCampaignState(state);
+  writeCampaignLibrary();
   LEGACY_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
 }
 
@@ -56,10 +75,20 @@ export function createPersistedPayload(nextState) {
 }
 
 export function migrateStoredState(payload) {
+  if (isCampaignLibraryPayload(payload)) {
+    campaignLibrary = normalizeCampaignLibrary(payload);
+    return getActiveCampaignState();
+  }
+
   const isEnvelope =
     payload &&
     typeof payload === "object" &&
     Object.prototype.hasOwnProperty.call(payload, "state");
+  if (isEnvelope && isCampaignLibraryPayload(payload.state)) {
+    campaignLibrary = normalizeCampaignLibrary(payload.state);
+    return getActiveCampaignState();
+  }
+
   const version = isEnvelope ? Number(payload.version) || 0 : 0;
   let nextState = isEnvelope ? payload.state : payload;
 
@@ -98,6 +127,86 @@ export function migrateStoredState(payload) {
   return sanitizeState(nextState);
 }
 
+export function getCampaignCatalog() {
+  ensureCampaignLibrary();
+  return {
+    activeCampaignId: campaignLibrary.activeCampaignId,
+    campaigns: campaignLibrary.campaigns.map((campaign) => ({
+      id: campaign.id,
+      name: campaign.name,
+      system: campaign.system,
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt,
+      isActive: campaign.id === campaignLibrary.activeCampaignId,
+      counts: {
+        characters: campaign.state.characters.length,
+        chronicles: campaign.state.chronicles.length,
+        glossary: campaign.state.glossary.length,
+      },
+    })),
+  };
+}
+
+export function getActiveCampaignMeta() {
+  ensureCampaignLibrary();
+  const active = findActiveCampaignRecord();
+  return {
+    id: active.id,
+    name: active.name,
+    system: active.system,
+    createdAt: active.createdAt,
+    updatedAt: active.updatedAt,
+  };
+}
+
+export function activateCampaign(campaignId, currentState) {
+  ensureCampaignLibrary();
+  updateActiveCampaignState(currentState);
+  const target = campaignLibrary.campaigns.find((campaign) => campaign.id === campaignId);
+  if (!target) {
+    return getActiveCampaignState();
+  }
+
+  campaignLibrary.activeCampaignId = target.id;
+  writeCampaignLibrary();
+  return getActiveCampaignState();
+}
+
+export function createCampaign({ name, system } = {}, currentState) {
+  ensureCampaignLibrary();
+  updateActiveCampaignState(currentState);
+
+  const campaignName = String(name || "").trim() || "Nova campanya";
+  const campaignSystem = String(system || "").trim() || "Sistema no especificat";
+  const campaignId = createUniqueCampaignId(campaignName);
+  const createdAt = new Date().toISOString();
+  const newState = createStarterCampaignState({
+    id: campaignId,
+    name: campaignName,
+    system: campaignSystem,
+    createdAt,
+  });
+
+  campaignLibrary.campaigns.push({
+    id: campaignId,
+    name: campaignName,
+    system: campaignSystem,
+    createdAt,
+    updatedAt: createdAt,
+    version: DATA_VERSION,
+    state: newState,
+  });
+  campaignLibrary.activeCampaignId = campaignId;
+  writeCampaignLibrary();
+  return getActiveCampaignState();
+}
+
+export function createCloudCampaignPayload(currentState) {
+  ensureCampaignLibrary();
+  updateActiveCampaignState(currentState);
+  return createCampaignLibraryPayload();
+}
+
 function readStoredState() {
   const current = window.localStorage.getItem(STORAGE_KEY);
   if (current) {
@@ -112,6 +221,335 @@ function readStoredState() {
   }
 
   return "";
+}
+
+function ensureCampaignLibrary() {
+  if (!campaignLibrary) {
+    campaignLibrary = createLibraryFromState(sanitizeState(structuredClone(seedData)));
+  }
+}
+
+function isCampaignLibraryPayload(payload) {
+  return Boolean(
+    payload
+      && typeof payload === "object"
+      && (
+        payload.kind === CAMPAIGN_LIBRARY_KIND
+        || Array.isArray(payload.campaigns)
+      ),
+  );
+}
+
+function normalizeCampaignLibrary(payload) {
+  const sourceCampaigns = Array.isArray(payload?.campaigns) ? payload.campaigns : [];
+  const campaigns = sourceCampaigns
+    .map((campaign) => normalizeCampaignRecord(campaign))
+    .filter(Boolean);
+
+  if (!campaigns.length) {
+    return createLibraryFromState(sanitizeState(structuredClone(seedData)));
+  }
+
+  const activeCampaignId = campaigns.some((campaign) => campaign.id === payload.activeCampaignId)
+    ? payload.activeCampaignId
+    : campaigns[0].id;
+
+  return {
+    kind: CAMPAIGN_LIBRARY_KIND,
+    version: DATA_VERSION,
+    activeCampaignId,
+    campaigns,
+  };
+}
+
+function normalizeCampaignRecord(campaign) {
+  if (!campaign || typeof campaign !== "object") {
+    return null;
+  }
+
+  const fallbackId = createCampaignId(campaign.name || DEFAULT_CAMPAIGN_NAME);
+  const id = String(campaign.id || campaign.state?.meta?.id || fallbackId).trim() || fallbackId;
+  const name = String(campaign.name || campaign.state?.meta?.name || DEFAULT_CAMPAIGN_NAME).trim() || DEFAULT_CAMPAIGN_NAME;
+  const system = String(campaign.system || campaign.state?.meta?.system || DEFAULT_CAMPAIGN_SYSTEM).trim() || DEFAULT_CAMPAIGN_SYSTEM;
+  const createdAt = String(campaign.createdAt || campaign.state?.meta?.createdAt || new Date().toISOString());
+  const updatedAt = String(campaign.updatedAt || campaign.state?.meta?.updatedAt || createdAt);
+  const version = Number(campaign.version) || DATA_VERSION;
+  const state = migrateStoredState({
+    version,
+    state: {
+      ...(campaign.state || {}),
+      meta: {
+        ...(campaign.state?.meta || {}),
+        id,
+        name,
+        system,
+        createdAt,
+        updatedAt,
+      },
+    },
+  });
+
+  return {
+    id,
+    name,
+    system,
+    createdAt,
+    updatedAt,
+    version: DATA_VERSION,
+    state,
+  };
+}
+
+function createLibraryFromState(state) {
+  const safeState = sanitizeState(state);
+  const meta = safeState.meta || {};
+  const id = String(meta.id || DEFAULT_CAMPAIGN_ID);
+  const now = new Date().toISOString();
+  const name = String(meta.name || DEFAULT_CAMPAIGN_NAME);
+  const system = String(meta.system || DEFAULT_CAMPAIGN_SYSTEM);
+  const createdAt = String(meta.createdAt || now);
+  const updatedAt = String(meta.updatedAt || now);
+
+  safeState.meta = {
+    ...safeState.meta,
+    id,
+    name,
+    system,
+    createdAt,
+    updatedAt,
+  };
+
+  return {
+    kind: CAMPAIGN_LIBRARY_KIND,
+    version: DATA_VERSION,
+    activeCampaignId: id,
+    campaigns: [
+      {
+        id,
+        name,
+        system,
+        createdAt,
+        updatedAt,
+        version: DATA_VERSION,
+        state: safeState,
+      },
+    ],
+  };
+}
+
+function findActiveCampaignRecord() {
+  ensureCampaignLibrary();
+  return (
+    campaignLibrary.campaigns.find((campaign) => campaign.id === campaignLibrary.activeCampaignId)
+    || campaignLibrary.campaigns[0]
+  );
+}
+
+function getActiveCampaignState() {
+  const active = findActiveCampaignRecord();
+  const state = migrateStoredState({
+    version: active.version || DATA_VERSION,
+    state: {
+      ...(active.state || {}),
+      meta: {
+        ...(active.state?.meta || {}),
+        id: active.id,
+        name: active.name,
+        system: active.system,
+        createdAt: active.createdAt,
+        updatedAt: active.updatedAt,
+      },
+    },
+  });
+  active.state = state;
+  active.version = DATA_VERSION;
+  return structuredClone(state);
+}
+
+function updateActiveCampaignState(state) {
+  if (!state) {
+    return;
+  }
+
+  ensureCampaignLibrary();
+  const active = findActiveCampaignRecord();
+  const now = new Date().toISOString();
+  const meta = {
+    ...(state.meta || {}),
+    id: active.id,
+    name: active.name,
+    system: active.system,
+    createdAt: active.createdAt,
+    updatedAt: now,
+  };
+  const safeState = sanitizeState({
+    ...state,
+    meta,
+  });
+
+  active.name = meta.name;
+  active.system = meta.system;
+  active.updatedAt = now;
+  active.version = DATA_VERSION;
+  active.state = safeState;
+}
+
+function writeCampaignLibrary() {
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(createCampaignLibraryPayload()));
+}
+
+function createCampaignLibraryPayload() {
+  ensureCampaignLibrary();
+  const active = findActiveCampaignRecord();
+  const topLevelState = active.state || {};
+  return {
+    kind: CAMPAIGN_LIBRARY_KIND,
+    version: DATA_VERSION,
+    activeCampaignId: campaignLibrary.activeCampaignId,
+    campaigns: campaignLibrary.campaigns.map((campaign) => ({
+      id: campaign.id,
+      name: campaign.name,
+      system: campaign.system,
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt,
+      version: DATA_VERSION,
+      state: campaign.state,
+    })),
+    meta: topLevelState.meta,
+    characters: topLevelState.characters,
+    chronicles: topLevelState.chronicles,
+    glossary: topLevelState.glossary,
+    access: topLevelState.access,
+    ui: topLevelState.ui,
+  };
+}
+
+function createStarterCampaignState({ id, name, system, createdAt }) {
+  const chronicleId = "sessio-1";
+  const characterId = "protagonista";
+  const glossaryId = "primer-lloc";
+
+  return sanitizeState({
+    meta: {
+      id,
+      name,
+      system,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    characters: [
+      {
+        id: characterId,
+        name: "Nou personatge",
+        title: "Fitxa inicial",
+        lineage: "Arquetip",
+        className: system,
+        level: 1,
+        summary: "Substitueix aquesta fitxa pel primer personatge o NPC important de la campanya.",
+        quickNotes: "Objectius, trets destacats i ganxos de joc.",
+        lore: {
+          origin: "",
+          bonds: "",
+          secrets: "",
+          goals: "",
+          wounds: "",
+        },
+        sheet: {
+          ac: "",
+          hp: "",
+          proficiency: "",
+          abilities: "",
+          features: "Anota aqui atributs, habilitats, avantatges, poders o qualsevol bloc de sistema que necessitis.",
+        },
+        inventory: {
+          items: "",
+          currency: "",
+          artifacts: "",
+          notes: "",
+        },
+        history: "",
+        sigil: "N",
+        portrait: "",
+        playerNotes: [],
+        palette: ["#4f3f34", "#c49a5d"],
+      },
+    ],
+    chronicles: [
+      {
+        id: chronicleId,
+        chapter: "Sessio 1",
+        title: `Inici de ${name}`,
+        date: "",
+        summary: "",
+        content: "Escriu aqui la primera cronica de la campanya.",
+        highlights: "",
+        imageNote: "",
+        imageAssets: [],
+        playerNotes: [],
+        voiceNotes: [],
+        characterIds: [characterId],
+        palette: ["#64483d", "#c8a86d"],
+      },
+    ],
+    glossary: [
+      {
+        id: glossaryId,
+        name: "Primer lloc",
+        category: "Llocs",
+        description: "Canvia aquesta entrada pel primer lloc, faccio o concepte important.",
+        tags: [system],
+        notes: "",
+        latestStatus: "",
+        lastSeenChronicleId: chronicleId,
+        imageAssets: [],
+        playerNotes: [],
+        characterIds: [],
+        chronicleIds: [chronicleId],
+        palette: ["#54616a", "#c6a26a"],
+      },
+    ],
+    access: structuredClone(DEFAULT_ACCESS),
+    ui: {
+      ...structuredClone(seedData.ui),
+      currentModule: "chronicles",
+      selectedCharacterId: characterId,
+      selectedCharacterTab: "lore",
+      showCharacterGrid: true,
+      selectedChronicleId: chronicleId,
+      showChronicleLanding: true,
+      selectedGlossaryId: glossaryId,
+      glossaryCategory: "Totes",
+      glossaryChronicleIds: [],
+      glossarySearch: "",
+      chronicleIndexSearch: "",
+      saveNotice: "",
+    },
+  });
+}
+
+function createUniqueCampaignId(name) {
+  ensureCampaignLibrary();
+  const baseId = createCampaignId(name);
+  const existingIds = new Set(campaignLibrary.campaigns.map((campaign) => campaign.id));
+  if (!existingIds.has(baseId)) {
+    return baseId;
+  }
+
+  let index = 2;
+  while (existingIds.has(`${baseId}-${index}`)) {
+    index += 1;
+  }
+  return `${baseId}-${index}`;
+}
+
+function createCampaignId(name) {
+  const slug = String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || `campanya-${Date.now()}`;
 }
 
 function migrateLegacySeedContent(candidate) {
@@ -375,9 +813,11 @@ function mergeUniqueStrings(currentValues, addedValues) {
 function sanitizeState(candidate) {
   const safe = structuredClone(seedData);
   if (!candidate || typeof candidate !== "object") {
+    safe.meta = sanitizeCampaignMeta(null);
     return safe;
   }
 
+  safe.meta = sanitizeCampaignMeta(candidate.meta);
   safe.characters = Array.isArray(candidate.characters) && candidate.characters.length
     ? candidate.characters.map((character, index) => sanitizeCharacter(character, seedData.characters[index] || seedData.characters[0]))
     : safe.characters;
@@ -428,6 +868,18 @@ function sanitizeState(candidate) {
   }
 
   return safe;
+}
+
+function sanitizeCampaignMeta(meta) {
+  const source = meta && typeof meta === "object" ? meta : {};
+  const now = new Date().toISOString();
+  return {
+    id: String(source.id || DEFAULT_CAMPAIGN_ID),
+    name: String(source.name || DEFAULT_CAMPAIGN_NAME),
+    system: String(source.system || DEFAULT_CAMPAIGN_SYSTEM),
+    createdAt: String(source.createdAt || now),
+    updatedAt: String(source.updatedAt || source.createdAt || now),
+  };
 }
 
 function sanitizeAccess(access) {

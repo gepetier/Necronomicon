@@ -1,4 +1,9 @@
 import {
+  activateCampaign as storageActivateCampaign,
+  createCampaign as storageCreateCampaign,
+  createCloudCampaignPayload as storageCreateCloudCampaignPayload,
+  getActiveCampaignMeta as storageGetActiveCampaignMeta,
+  getCampaignCatalog as storageGetCampaignCatalog,
   loadState as loadStoredState,
   migrateStoredState as storageMigrateStoredState,
   persistState as storagePersistState,
@@ -254,6 +259,12 @@ function handleClick(event) {
     cloudSession.user = null;
     updateCloudStatus("Sessio tancada. Torna a iniciar sessio per sincronitzar.", { renderOptions: false });
     void initializeCloudSession();
+    return;
+  }
+
+  const campaignSwitch = event.target.closest("[data-switch-campaign]");
+  if (campaignSwitch) {
+    switchCampaign(campaignSwitch.dataset.switchCampaign || "");
     return;
   }
 
@@ -800,6 +811,11 @@ function handleSubmit(event) {
 
   if (form.dataset.form === "permissions") {
     savePermissions(formData);
+    return;
+  }
+
+  if (form.dataset.form === "campaign-create") {
+    createCampaign(formData);
   }
 }
 
@@ -892,11 +908,19 @@ async function handleGoogleCredential(credential, options = {}) {
   try {
     const response = await loadCampaignFromCloud(credential);
     const localBeforeCloud = state;
+    const localCatalogBeforeCloud = storageGetCampaignCatalog();
+    const cloudHasCampaignCatalog = Array.isArray(response.campaign?.campaigns);
     const cloudState = storageMigrateStoredState({
       version: response.version || 0,
       state: response.campaign,
     });
-    const shouldSeedCloud = isCloudCampaignEmpty(response.campaign) && hasCampaignContent(localBeforeCloud);
+    const shouldPreserveLocalCatalog =
+      !cloudHasCampaignCatalog
+      && localCatalogBeforeCloud.campaigns.length > 1
+      && hasCampaignContent(localBeforeCloud);
+    const shouldSeedCloud =
+      (isCloudCampaignEmpty(response.campaign) || shouldPreserveLocalCatalog)
+      && hasCampaignContent(localBeforeCloud);
     state = shouldSeedCloud
       ? {
         ...localBeforeCloud,
@@ -932,6 +956,10 @@ async function handleGoogleCredential(credential, options = {}) {
 }
 
 function isCloudCampaignEmpty(campaign) {
+  if (Array.isArray(campaign?.campaigns)) {
+    return !campaign.campaigns.some((item) => hasCampaignContent(item?.state));
+  }
+
   return !(
     Array.isArray(campaign?.characters) && campaign.characters.length
     || Array.isArray(campaign?.chronicles) && campaign.chronicles.length
@@ -940,6 +968,10 @@ function isCloudCampaignEmpty(campaign) {
 }
 
 function hasCampaignContent(candidate) {
+  if (Array.isArray(candidate?.campaigns)) {
+    return candidate.campaigns.some((item) => hasCampaignContent(item?.state));
+  }
+
   return Boolean(
     Array.isArray(candidate?.characters) && candidate.characters.length
     || Array.isArray(candidate?.chronicles) && candidate.chronicles.length
@@ -1183,6 +1215,7 @@ function renderOptionsModule() {
   const userLabel = cloudSession.user?.email || "No connectat";
   const roleLabel = cloudSession.user?.role || "local";
   const canManagePermissions = Boolean(cloudSession.user?.permissions?.managePermissions) || !cloudSession.enabled;
+  const campaignMeta = storageGetActiveCampaignMeta();
 
   optionsModule.innerHTML = `
     <section class="module-surface options-shell">
@@ -1190,11 +1223,13 @@ function renderOptionsModule() {
         <div class="module-section-copy">
           <p class="eyebrow">Configuracio</p>
           <h3>Opcions de campanya</h3>
-          <p>Sincronitzacio de Drive, permisos i eines de manteniment del compendi.</p>
+          <p>Campanyes disponibles, sincronitzacio de Drive, permisos i eines de manteniment del compendi.</p>
         </div>
       </div>
 
       <div class="options-grid">
+        ${renderCampaignManager(campaignMeta)}
+
         <article class="section-card options-card">
           <div class="options-card-copy">
             <p class="eyebrow">Google Drive</p>
@@ -1202,7 +1237,7 @@ function renderOptionsModule() {
               ${renderSyncStatusIcon(syncState, syncLabel)}
               <h3>Sincronitzacio compartida</h3>
             </div>
-            <p>${escapeHtml(cloudSession.status || "Preparat")}</p>
+            <p>${escapeHtml(cloudSession.status || "Preparat")} Drive publica la campanya activa: ${escapeHtml(campaignMeta.name)}.</p>
           </div>
           <div class="options-stat-list">
             <span class="badge">${escapeHtml(userLabel)}</span>
@@ -1226,8 +1261,8 @@ function renderOptionsModule() {
         <article class="section-card options-card">
           <div class="options-card-copy">
             <p class="eyebrow">Copia local</p>
-            <h3>JSON de campanya</h3>
-            <p>Personatges, croniques, glossari, notes i recursos incrustats.</p>
+            <h3>JSON de campanya activa</h3>
+            <p>Exporta o importa nomes la campanya oberta. El selector de campanyes queda preservat localment.</p>
           </div>
           <div class="options-actions">
             <button type="button" class="secondary" data-export-backup>
@@ -1244,9 +1279,10 @@ function renderOptionsModule() {
         <article class="section-card options-card options-status-card">
           <div>
             <p class="eyebrow">Estat</p>
-            <h3>Dades actives</h3>
+            <h3>${escapeHtml(campaignMeta.name)}</h3>
           </div>
           <div class="options-stat-list">
+            <span class="badge">Sistema: ${escapeHtml(campaignMeta.system)}</span>
             <span class="badge">${state.characters.length} personatges</span>
             <span class="badge">${state.chronicles.length} croniques</span>
             <span class="badge">${state.glossary.length} entrades</span>
@@ -1264,6 +1300,60 @@ function renderOptionsModule() {
         </article>
       </div>
     </section>
+  `;
+}
+
+function renderCampaignManager(activeMeta) {
+  const catalog = storageGetCampaignCatalog();
+  const campaignRows = catalog.campaigns
+    .map((campaign) => `
+      <article class="campaign-switch-card ${campaign.isActive ? "active" : ""}">
+        <div class="campaign-switch-copy">
+          <p class="eyebrow">${campaign.isActive ? "Oberta" : "Disponible"}</p>
+          <h4>${escapeHtml(campaign.name)}</h4>
+          <p>${escapeHtml(campaign.system)}</p>
+          <div class="options-stat-list">
+            <span class="badge">${campaign.counts.characters} personatges</span>
+            <span class="badge">${campaign.counts.chronicles} croniques</span>
+            <span class="badge">${campaign.counts.glossary} glossari</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="secondary"
+          data-switch-campaign="${escapeAttribute(campaign.id)}"
+          ${campaign.isActive ? "disabled" : ""}
+        >
+          ${campaign.isActive ? "Activa" : "Obre"}
+        </button>
+      </article>
+    `)
+    .join("");
+
+  return `
+    <article class="section-card options-card campaign-manager-card">
+      <div class="options-card-copy">
+        <p class="eyebrow">Campanyes</p>
+        <h3>Compendi multi-campanya</h3>
+        <p>Campanya activa: ${escapeHtml(activeMeta.name)}. Cada campanya conserva personatges, croniques, glossari, notes i permisos propis.</p>
+      </div>
+
+      <div class="campaign-switch-list">
+        ${campaignRows}
+      </div>
+
+      <form data-form="campaign-create" class="campaign-create-form">
+        <label class="field">
+          <span>Nom</span>
+          <input name="campaignName" maxlength="80" placeholder="Ex. Deadlands: Santa Sang" required />
+        </label>
+        <label class="field">
+          <span>Sistema</span>
+          <input name="campaignSystem" maxlength="80" value="Savage Worlds" placeholder="Savage Worlds" />
+        </label>
+        <button type="submit" class="primary">Crea campanya</button>
+      </form>
+    </article>
   `;
 }
 
@@ -1705,6 +1795,58 @@ function savePermissions(formData) {
   showSaveNotice("Permisos desats", { cloud: true });
 }
 
+function switchCampaign(campaignId) {
+  if (!campaignId || campaignId === storageGetActiveCampaignMeta().id) {
+    return;
+  }
+
+  if (!confirmSwitchingCampaign()) {
+    return;
+  }
+
+  state = storageActivateCampaign(campaignId, state);
+  ensureUiStateShape();
+  clearChronicleReturn();
+  closeSidebarPreview();
+  persistStateImmediately({ cloud: true });
+  render();
+  showSaveNotice(`Campanya oberta: ${storageGetActiveCampaignMeta().name}`, { cloud: true });
+}
+
+function createCampaign(formData) {
+  const name = readString(formData, "campaignName");
+  const system = readString(formData, "campaignSystem") || "Savage Worlds";
+
+  if (!name) {
+    return;
+  }
+
+  if (!confirmSwitchingCampaign()) {
+    return;
+  }
+
+  state = storageCreateCampaign({ name, system }, state);
+  ensureUiStateShape();
+  clearChronicleReturn();
+  closeSidebarPreview();
+  persistStateImmediately({ cloud: true });
+  render();
+  showSaveNotice(`Campanya creada: ${storageGetActiveCampaignMeta().name}`, { cloud: true });
+}
+
+function confirmSwitchingCampaign() {
+  const hasPendingWork = ["characters", "chronicles", "glossary"].some((module) => (
+    hasModuleDrafts(module) || state.ui.editModes?.[module]
+  ));
+  if (!hasPendingWork) {
+    return true;
+  }
+
+  return window.confirm(
+    "Hi ha edicio o esborranys oberts. Canviar de campanya descartara aquests canvis no desats. Vols continuar?",
+  );
+}
+
 function getAccessState() {
   const roles = state.access?.roles && typeof state.access.roles === "object" ? state.access.roles : {};
   const users = state.access?.users && typeof state.access.users === "object" ? state.access.users : {};
@@ -1817,7 +1959,10 @@ async function pushStateToCloud(options = {}) {
   render([RENDER_PARTS.notice, RENDER_PARTS.options]);
   try {
     if (target.type === "campaign") {
-      await saveCampaignToCloud(cloudSession.idToken, stripTransientUiState(state));
+      await saveCampaignToCloud(
+        cloudSession.idToken,
+        storageCreateCloudCampaignPayload(stripTransientUiState(state)),
+      );
     } else if (target.type === "character") {
       await saveCharacterToCloud(cloudSession.idToken, target.character);
     }

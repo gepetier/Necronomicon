@@ -9,7 +9,13 @@ import {
   createAssetToken,
   replaceAssetSourcesInState,
 } from "../app/assets.js";
-import { migrateStoredState } from "../app/storage.js";
+import {
+  createCampaign,
+  getCampaignCatalog,
+  loadState,
+  migrateStoredState,
+  persistState,
+} from "../app/storage.js";
 import { plainTextFromRichText, renderRichText } from "../app/utils.js";
 
 test("backup payload wraps state and asset bundle", () => {
@@ -85,4 +91,36 @@ test("rich text rendering preserves references and asset-backed media links", ()
 
   const plain = plainTextFromRichText("**Text** [[ilu|Ilu]] {{media:file|Mapa|asset://doc-1}}");
   assert.equal(plain, "Text Ilu Mapa");
+});
+
+test("storage wraps legacy state in a campaign catalog and creates a Savage Worlds campaign", () => {
+  const previousWindow = globalThis.window;
+  const storage = new Map();
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => storage.get(key) || null,
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: (key) => storage.delete(key),
+    },
+  };
+
+  try {
+    persistState(structuredClone(seedData));
+    const loaded = loadState();
+    assert.equal(loaded.characters[0].id, seedData.characters[0].id);
+    assert.equal(getCampaignCatalog().campaigns.length, 1);
+
+    const savage = createCampaign(
+      { name: "Deadlands: Santa Sang", system: "Savage Worlds" },
+      loaded,
+    );
+    const catalog = getCampaignCatalog();
+
+    assert.equal(catalog.campaigns.length, 2);
+    assert.equal(catalog.campaigns.find((campaign) => campaign.isActive).system, "Savage Worlds");
+    assert.equal(savage.meta.name, "Deadlands: Santa Sang");
+    assert.equal(savage.chronicles[0].title, "Inici de Deadlands: Santa Sang");
+  } finally {
+    globalThis.window = previousWindow;
+  }
 });
