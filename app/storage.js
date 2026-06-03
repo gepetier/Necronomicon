@@ -11,26 +11,38 @@ let campaignLibrary = null;
 
 const DEFAULT_ACCESS = {
   roles: {
-    dm: {
+    superadmin: {
       editAnyCharacter: true,
       editOwnCharacter: true,
       editChronicles: true,
+      editAssignedChronicles: true,
       editGlossary: true,
+      editAssignedGlossary: true,
       managePermissions: true,
+      manageCampaigns: true,
+      publishCampaign: true,
+    },
+    gm: {
+      editAnyCharacter: true,
+      editOwnCharacter: true,
+      editChronicles: true,
+      editAssignedChronicles: true,
+      editGlossary: true,
+      editAssignedGlossary: true,
+      managePermissions: false,
+      manageCampaigns: false,
+      publishCampaign: true,
     },
     player: {
       editAnyCharacter: false,
       editOwnCharacter: true,
       editChronicles: false,
+      editAssignedChronicles: true,
       editGlossary: false,
+      editAssignedGlossary: true,
       managePermissions: false,
-    },
-    viewer: {
-      editAnyCharacter: false,
-      editOwnCharacter: false,
-      editChronicles: false,
-      editGlossary: false,
-      managePermissions: false,
+      manageCampaigns: false,
+      publishCampaign: false,
     },
   },
   users: {},
@@ -138,6 +150,7 @@ export function getCampaignCatalog() {
       createdAt: campaign.createdAt,
       updatedAt: campaign.updatedAt,
       isActive: campaign.id === campaignLibrary.activeCampaignId,
+      access: campaign.state.access,
       counts: {
         characters: campaign.state.characters.length,
         chronicles: campaign.state.chronicles.length,
@@ -886,16 +899,26 @@ function sanitizeAccess(access) {
   const source = access && typeof access === "object" ? access : {};
   const roles = source.roles && typeof source.roles === "object" ? source.roles : {};
   const users = source.users && typeof source.users === "object" ? source.users : {};
+  const migratedRoles = { ...roles };
+
+  if (roles.dm && !migratedRoles.gm) {
+    migratedRoles.gm = roles.dm;
+  }
+  if (roles.viewer && !migratedRoles.player) {
+    migratedRoles.player = roles.viewer;
+  }
+  delete migratedRoles.dm;
+  delete migratedRoles.viewer;
 
   return {
     roles: Object.fromEntries(
       Object.entries({
         ...DEFAULT_ACCESS.roles,
-        ...roles,
+        ...migratedRoles,
       }).map(([roleId, permissions]) => [
-        roleId,
+        normalizeRoleId(roleId),
         {
-          ...DEFAULT_ACCESS.roles.viewer,
+          ...DEFAULT_ACCESS.roles.player,
           ...(permissions && typeof permissions === "object" ? permissions : {}),
         },
       ]),
@@ -906,12 +929,22 @@ function sanitizeAccess(access) {
         .map(([email, user]) => [
           email.toLowerCase(),
           {
-            role: typeof user?.role === "string" ? user.role : "viewer",
+            role: normalizeRoleId(typeof user?.role === "string" ? user.role : "player"),
             characterIds: Array.isArray(user?.characterIds) ? user.characterIds.map(String) : [],
           },
         ]),
     ),
   };
+}
+
+function normalizeRoleId(roleId) {
+  if (roleId === "dm") {
+    return "gm";
+  }
+  if (roleId === "viewer") {
+    return "player";
+  }
+  return ["superadmin", "gm", "player"].includes(roleId) ? roleId : String(roleId || "player");
 }
 
 function sanitizeDrafts(candidateDrafts, fallbackDrafts) {
@@ -943,6 +976,9 @@ function sanitizeChronicle(chronicle, fallback) {
     ...structuredClone(fallback),
     ...chronicle,
     characterIds: Array.isArray(chronicle?.characterIds) ? chronicle.characterIds : fallback.characterIds,
+    editableByUserEmails: Array.isArray(chronicle?.editableByUserEmails)
+      ? chronicle.editableByUserEmails.map((email) => String(email || "").trim().toLowerCase()).filter(Boolean)
+      : [],
     imageAssets: Array.isArray(chronicle?.imageAssets) ? chronicle.imageAssets : splitLines(chronicle?.imageAssets || fallback.imageAssets?.join("\n") || ""),
     playerNotes: sanitizePlayerNotes(chronicle?.playerNotes),
     voiceNotes: Array.isArray(chronicle?.voiceNotes) ? chronicle.voiceNotes : splitLines(chronicle?.voiceNotes || fallback.voiceNotes?.join("\n") || ""),
@@ -958,6 +994,9 @@ function sanitizeGlossary(entry, fallback) {
     imageAssets: Array.isArray(entry?.imageAssets) ? entry.imageAssets : splitLines(entry?.imageAssets || fallback.imageAssets?.join("\n") || ""),
     characterIds: Array.isArray(entry?.characterIds) ? entry.characterIds : fallback.characterIds,
     chronicleIds: Array.isArray(entry?.chronicleIds) ? entry.chronicleIds : fallback.chronicleIds,
+    editableByUserEmails: Array.isArray(entry?.editableByUserEmails)
+      ? entry.editableByUserEmails.map((email) => String(email || "").trim().toLowerCase()).filter(Boolean)
+      : [],
     playerNotes: sanitizePlayerNotes(entry?.playerNotes),
     palette: Array.isArray(entry?.palette) ? entry.palette : fallback.palette,
   };

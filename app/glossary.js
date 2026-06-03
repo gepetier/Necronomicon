@@ -25,16 +25,20 @@ export function renderGlossaryModule({
   renderPlayerNotesPanel,
   shouldShowGlossaryReturnFab,
   getViewStateLabel,
+  canEditGlossaryEntry = () => true,
+  canCreateGlossaryEntry = true,
+  canDeleteGlossaryEntry = true,
 }) {
   const entries = getFilteredGlossaryEntries();
   const current = entries.find((entry) => entry.id === state.ui.selectedGlossaryId) || entries[0] || null;
   const categories = getGlossaryCategories(state.glossary);
   const activeFilterCount = getActiveFilterCount(state);
   const returnLabel = shouldShowGlossaryReturnFab(current?.id) ? getViewStateLabel(state.ui.glossaryReturnView) : "";
+  const isEditingCurrent = state.ui.editModes.glossary && current && canEditGlossaryEntry(current);
 
   rootEl.innerHTML = `
     <section class="glossary-shell ${state.ui.notesPanelOpen ? "notes-open" : ""}">
-      <div class="glossary-layout ${state.ui.editModes.glossary && current ? "glossary-layout-editing" : ""}">
+      <div class="glossary-layout ${isEditingCurrent ? "glossary-layout-editing" : ""}">
         <aside class="glossary-nav-panel module-surface">
           <section class="glossary-search-panel">
             <div class="glossary-search-head">
@@ -42,10 +46,10 @@ export function renderGlossaryModule({
                 <p class="eyebrow">Glossari</p>
                 <h3>Busca i filtra</h3>
               </div>
-              <button type="button" class="secondary glossary-create-button" data-create-glossary>
+              ${canCreateGlossaryEntry ? `<button type="button" class="secondary glossary-create-button" data-create-glossary>
                 <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
                 <span>Nova</span>
-              </button>
+              </button>` : ""}
             </div>
             <label class="glossary-search-field">
               <span class="sr-only">Cerca al glossari</span>
@@ -79,7 +83,7 @@ export function renderGlossaryModule({
             </div>
             <div class="glossary-list">
               ${entries.length
-                ? entries.map((entry) => renderGlossaryCard(entry, state.ui.selectedGlossaryId, state)).join("")
+                ? entries.map((entry) => renderGlossaryCard(entry, state.ui.selectedGlossaryId, state, { canEditGlossaryEntry, canDeleteGlossaryEntry })).join("")
                 : renderGlossaryEmptyState(state)}
             </div>
           </section>
@@ -108,7 +112,7 @@ export function renderGlossaryModule({
 
         <div class="glossary-detail-wrap">
           ${current ? renderGlossaryDetail(current, state, findCharacter, returnLabel) : renderGlossaryEmptyDetail()}
-          ${state.ui.editModes.glossary && current ? renderGlossaryEditor(current, state) : ""}
+          ${isEditingCurrent ? renderGlossaryEditor(current, state) : ""}
           ${renderPlayerNotesPanel()}
         </div>
       </div>
@@ -138,6 +142,10 @@ export function saveGlossary(formData, { findGlossaryEntry }) {
     .filter(Boolean);
   entry.characterIds = formData.getAll("characterIds").map(String);
   entry.chronicleIds = formData.getAll("chronicleIds").map(String);
+  entry.editableByUserEmails = readString(formData, "editableByUserEmails")
+    .split(/[\n,]/)
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function createGlossaryEntry(state) {
@@ -154,6 +162,7 @@ export function createGlossaryEntry(state) {
     playerNotes: [],
     characterIds: [],
     chronicleIds: [],
+    editableByUserEmails: [],
     palette: ["#54616a", "#c6a26a"],
   };
   state.glossary.unshift(entry);
@@ -218,8 +227,10 @@ function renderGlossaryChronicleMenu(state, chronicles) {
     .join("");
 }
 
-function renderGlossaryCard(entry, selectedGlossaryId, state) {
+function renderGlossaryCard(entry, selectedGlossaryId, state, permissions = {}) {
   const isActive = entry.id === selectedGlossaryId;
+  const canEdit = permissions.canEditGlossaryEntry?.(entry) !== false;
+  const canDelete = permissions.canDeleteGlossaryEntry?.(entry) !== false;
 
   return `
     <article
@@ -233,9 +244,10 @@ function renderGlossaryCard(entry, selectedGlossaryId, state) {
       <div class="glossary-entry-head">
         <h3>${escapeHtml(entry.name)}</h3>
         ${
-          isActive
+          isActive && (canEdit || canDelete)
             ? `
         <div class="glossary-entry-actions">
+          ${canEdit ? `
           <button
             type="button"
             class="secondary glossary-entry-action"
@@ -246,6 +258,8 @@ function renderGlossaryCard(entry, selectedGlossaryId, state) {
             ${renderGlossaryActionIcon("edit")}
             <span class="sr-only">Edita</span>
           </button>
+          ` : ""}
+          ${canDelete ? `
           <button
             type="button"
             class="secondary glossary-entry-action"
@@ -256,6 +270,7 @@ function renderGlossaryCard(entry, selectedGlossaryId, state) {
             ${renderGlossaryActionIcon("delete")}
             <span class="sr-only">Esborra</span>
           </button>
+          ` : ""}
         </div>`
             : ""
         }
@@ -502,6 +517,11 @@ function renderGlossaryEditor(entry, state) {
                     help: "Resumeix l'estat actual de l'element: mort, desaparegut, controlat, visitat, perdut, etc.",
                   },
                 )}
+                <label class="field span-2">
+                  <span>Editors jugadors</span>
+                  <textarea name="editableByUserEmails" rows="3" placeholder="correu@exemple.com">${escapeHtml(readDraftValue(draft.editableByUserEmails, (entry?.editableByUserEmails || []).join("\n")))}</textarea>
+                  <small class="field-help">Correus separats per comes o salts de linia. Els GM i superadmin no necessiten estar aqui.</small>
+                </label>
                 <label class="field">
                   <span>Ultima sessio vista o visitada</span>
                   <select name="lastSeenChronicleId">

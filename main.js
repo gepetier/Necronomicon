@@ -67,6 +67,8 @@ import {
   renderGoogleButton,
   saveCampaignToCloud,
   saveCharacterToCloud,
+  saveChronicleToCloud,
+  saveGlossaryEntryToCloud,
   storeCredential,
 } from "./app/cloud-sync.js";
 
@@ -89,6 +91,7 @@ const optionsModule = document.querySelector("#optionsModule");
 const sidebarContextPanel = document.querySelector("#sidebarContextPanel");
 const sidebar = document.querySelector(".sidebar");
 const sidebarToggle = document.querySelector("[data-sidebar-toggle]");
+const sidebarCampaignSwitcher = document.querySelector("[data-sidebar-campaign-switcher]");
 const imageLightbox = document.querySelector("#imageLightbox");
 const imageLightboxMedia = document.querySelector("#imageLightboxMedia");
 const richMediaPicker = document.querySelector("#richMediaPicker");
@@ -96,6 +99,7 @@ const backupImportPicker = document.querySelector("#backupImportPicker");
 const authGate = document.querySelector("#authGate");
 const googleSignInButton = document.querySelector("#googleSignInButton");
 const authStatus = document.querySelector("[data-auth-status]");
+const authCampaignSelect = document.querySelector("[data-auth-campaign-select]");
 
 let lastLightboxTrigger = null;
 let pendingRichMediaInsert = null;
@@ -156,6 +160,7 @@ const cloudSession = {
   status: authPreviewMode ? "" : qaMode ? "Mode QA local" : getAuthFeedbackText("booting"),
   saving: false,
   awaitingServer: false,
+  selectingCampaign: false,
   lastSyncAt: "",
   lastError: "",
   pendingInitialPublish: false,
@@ -248,6 +253,10 @@ function handleClick(event) {
   }
 
   if (event.target.closest("[data-cloud-publish]")) {
+    if (!canPublishCampaign()) {
+      denyPermission("No tens permisos per publicar tota la campanya.");
+      return;
+    }
     void pushStateToCloud({ target: { type: "campaign" } });
     return;
   }
@@ -257,8 +266,15 @@ function handleClick(event) {
     cloudSession.ready = false;
     cloudSession.idToken = "";
     cloudSession.user = null;
+    cloudSession.selectingCampaign = false;
     updateCloudStatus("Sessio tancada. Torna a iniciar sessio per sincronitzar.", { renderOptions: false });
     void initializeCloudSession();
+    return;
+  }
+
+  const loginCampaignSelect = event.target.closest("[data-select-login-campaign]");
+  if (loginCampaignSelect) {
+    selectLoginCampaign(loginCampaignSelect.dataset.selectLoginCampaign || "");
     return;
   }
 
@@ -303,6 +319,14 @@ function handleClick(event) {
   }
 
   if (event.target.closest("[data-open-character-editor]")) {
+    const editableCharacter = state.characters.find((character) => canEditCharacter(character));
+    if (!editableCharacter) {
+      denyPermission("No tens cap fitxa assignada per editar.");
+      return;
+    }
+    if (!canEditCharacter(state.ui.selectedCharacterId)) {
+      state.ui.selectedCharacterId = editableCharacter.id;
+    }
     state.ui.currentModule = "characters";
     state.ui.showCharacterGrid = false;
     state.ui.editModes.characters = true;
@@ -373,17 +397,32 @@ function handleClick(event) {
 
   const glossaryEditCard = event.target.closest("[data-edit-glossary-card]");
   if (glossaryEditCard) {
-    openGlossaryEditor(glossaryEditCard.dataset.editGlossaryCard || "");
+    const glossaryId = glossaryEditCard.dataset.editGlossaryCard || "";
+    if (!canEditGlossaryEntry(glossaryId)) {
+      denyPermission("No tens permisos per editar aquesta entrada del glossari.");
+      return;
+    }
+    openGlossaryEditor(glossaryId);
     return;
   }
 
   const glossaryDeleteCard = event.target.closest("[data-delete-glossary-card]");
   if (glossaryDeleteCard) {
-    deleteGlossaryEntryById(glossaryDeleteCard.dataset.deleteGlossaryCard || "");
+    const glossaryId = glossaryDeleteCard.dataset.deleteGlossaryCard || "";
+    if (!canDeleteGlossaryEntry(findGlossaryEntry(glossaryId))) {
+      denyPermission("No tens permisos per esborrar aquesta entrada del glossari.");
+      return;
+    }
+    deleteGlossaryEntryById(glossaryId);
     return;
   }
 
   if (event.target.closest("[data-open-glossary-image-picker]")) {
+    const glossaryId = event.target.closest('form[data-form="glossary"]')?.querySelector('input[name="id"]')?.value || state.ui.selectedGlossaryId;
+    if (!canEditGlossaryEntry(glossaryId)) {
+      denyPermission("No tens permisos per editar les imatges d'aquesta entrada.");
+      return;
+    }
     const form = event.target.closest('form[data-form="glossary"]');
     const picker = form?.querySelector("[data-glossary-image-picker]");
     if (picker instanceof HTMLInputElement) {
@@ -395,6 +434,10 @@ function handleClick(event) {
   const glossaryRemoveImage = event.target.closest("[data-remove-glossary-image]");
   if (glossaryRemoveImage) {
     const glossaryId = glossaryRemoveImage.dataset.glossaryId || "";
+    if (!canEditGlossaryEntry(glossaryId)) {
+      denyPermission("No tens permisos per editar les imatges d'aquesta entrada.");
+      return;
+    }
     const imageIndex = Number.parseInt(glossaryRemoveImage.dataset.removeGlossaryImage || "-1", 10);
     if (glossaryId && Number.isInteger(imageIndex) && imageIndex >= 0) {
       updateGlossaryDraftImageAssets(glossaryId, (images) => images.filter((_, index) => index !== imageIndex));
@@ -745,6 +788,11 @@ function handleInput(event) {
     return;
   }
 
+  if (event.target instanceof HTMLSelectElement && event.target.dataset.sidebarCampaignSwitch !== undefined) {
+    switchAccessibleCampaign(event.target.value);
+    return;
+  }
+
   if (event.target instanceof HTMLTextAreaElement && event.target.dataset.refInput === "glossary") {
     scheduleReferenceSuggestions(event.target);
   }
@@ -793,12 +841,20 @@ function handleSubmit(event) {
   }
 
   if (form.dataset.form === "chronicle") {
+    if (!canEditChronicle(readString(formData, "id"))) {
+      denyPermission("No tens permisos per desar aquesta cronica.");
+      return;
+    }
     clearChronicleDraft(readString(formData, "id"));
     saveChronicle(formData);
     return;
   }
 
   if (form.dataset.form === "glossary") {
+    if (!canEditGlossaryEntry(readString(formData, "id"))) {
+      denyPermission("No tens permisos per desar aquesta entrada del glossari.");
+      return;
+    }
     clearGlossaryDraft(readString(formData, "id"));
     saveGlossary(formData);
     return;
@@ -858,7 +914,19 @@ async function initializeCloudSession() {
   if (authPreviewMode) {
     cloudSession.status = runtimeParams.get("authStatus") || "";
     cloudSession.awaitingServer = runtimeParams.has("authWaiting");
+    cloudSession.selectingCampaign = runtimeParams.has("authCampaignSelect");
+    if (cloudSession.selectingCampaign) {
+      cloudSession.ready = true;
+      cloudSession.user = {
+        email: "dm@preview.local",
+        name: "DM preview",
+        role: "superadmin",
+        permissions: getAccessState().roles.superadmin,
+        characterIds: state.characters.map((character) => character.id),
+      };
+    }
     renderAuthPreviewButton();
+    renderAuthCampaignSelection();
     updateAuthGate();
     return;
   }
@@ -933,15 +1001,15 @@ async function handleGoogleCredential(credential, options = {}) {
     };
     cloudSession.ready = true;
     cloudSession.awaitingServer = false;
+    cloudSession.selectingCampaign = true;
     cloudSession.pendingInitialPublish = shouldSeedCloud;
     cloudSession.lastSyncAt = new Date().toISOString();
     cloudSession.lastError = "";
     ensureUiStateShape();
-    openCharactersAfterLogin();
     persistStateImmediately({ skipCloud: true });
-    render();
     updateAuthFeedback(shouldSeedCloud ? "firstPublish" : "campaignReady");
-    if (shouldSeedCloud && cloudSession.user?.permissions?.managePermissions) {
+    prepareCampaignSelectionAfterLogin();
+    if (shouldSeedCloud && canPublishCampaign()) {
       await pushStateToCloud({ target: { type: "campaign" } });
       cloudSession.pendingInitialPublish = false;
     }
@@ -951,6 +1019,7 @@ async function handleGoogleCredential(credential, options = {}) {
     cloudSession.user = null;
     cloudSession.ready = false;
     cloudSession.awaitingServer = false;
+    cloudSession.selectingCampaign = false;
     updateCloudStatus(error instanceof Error ? error.message : String(error), { error: true });
   }
 }
@@ -979,6 +1048,44 @@ function hasCampaignContent(candidate) {
   );
 }
 
+function prepareCampaignSelectionAfterLogin() {
+  const accessibleCampaigns = getAccessibleCampaignsForCurrentUser();
+  if (!accessibleCampaigns.length) {
+    cloudSession.selectingCampaign = true;
+    cloudSession.status = "No tens cap campanya activa assignada.";
+    renderAuthCampaignSelection(accessibleCampaigns);
+    updateAuthGate();
+    return;
+  }
+
+  cloudSession.selectingCampaign = true;
+  cloudSession.status = "Tria una campanya per obrir el compendi.";
+  renderAuthCampaignSelection(accessibleCampaigns);
+  updateAuthGate();
+}
+
+function selectLoginCampaign(campaignId) {
+  const accessibleCampaigns = getAccessibleCampaignsForCurrentUser();
+  const target = accessibleCampaigns.find((campaign) => campaign.id === campaignId);
+  if (!target) {
+    denyPermission("No tens acces a aquesta campanya.");
+    return;
+  }
+
+  state = storageActivateCampaign(campaignId, state);
+  ensureUiStateShape();
+  syncCloudUserWithActiveCampaignAccess();
+  cloudSession.selectingCampaign = false;
+  cloudSession.ready = true;
+  cloudSession.awaitingServer = false;
+  cloudSession.status = `Campanya oberta: ${target.name}.`;
+  openCharactersAfterLogin();
+  persistStateImmediately({ skipCloud: true });
+  renderAuthCampaignSelection([]);
+  updateAuthGate();
+  render();
+}
+
 function openCharactersAfterLogin() {
   state.ui.currentModule = "characters";
   state.ui.showCharacterGrid = true;
@@ -996,16 +1103,233 @@ function updateAuthGate() {
     return;
   }
 
-  authGate.hidden = !cloudSession.enabled || cloudSession.ready;
-  document.body.classList.toggle("auth-required", cloudSession.enabled && !cloudSession.ready);
+  const shouldShowAuthGate = cloudSession.enabled && (!cloudSession.ready || cloudSession.selectingCampaign);
+  authGate.hidden = !shouldShowAuthGate;
+  document.body.classList.toggle("auth-required", shouldShowAuthGate);
+  document.body.classList.toggle("auth-selecting-campaign", cloudSession.selectingCampaign);
   document.body.classList.toggle(
     "auth-waiting-server",
-    cloudSession.enabled && !cloudSession.ready && cloudSession.awaitingServer,
+    shouldShowAuthGate && cloudSession.awaitingServer,
   );
   if (authStatus) {
     authStatus.textContent = cloudSession.status || "";
     authStatus.classList.toggle("error", Boolean(cloudSession.lastError));
   }
+}
+
+function renderAuthCampaignSelection(campaigns = getAccessibleCampaignsForCurrentUser()) {
+  if (!authCampaignSelect) {
+    return;
+  }
+
+  if (!cloudSession.selectingCampaign) {
+    authCampaignSelect.hidden = true;
+    authCampaignSelect.innerHTML = "";
+    return;
+  }
+
+  authCampaignSelect.hidden = false;
+  const campaignRows = campaigns.length
+    ? campaigns.map((campaign) => `
+      <article class="auth-campaign-card ${campaign.isActive ? "active" : ""}">
+        <div class="auth-campaign-card-copy">
+          <p class="eyebrow">${campaign.isActive ? "Darrera oberta" : "Campanya activa"}</p>
+          <h3>${escapeHtml(campaign.name)}</h3>
+          <p>${escapeHtml(campaign.system || "Sistema no especificat")}</p>
+          <div class="auth-campaign-badges">
+            <span>${escapeHtml(formatRoleLabel(campaign.userAccess.role))}</span>
+            <span>${campaign.counts.characters} personatges</span>
+            <span>${campaign.counts.chronicles} croniques</span>
+          </div>
+        </div>
+        <button type="button" data-select-login-campaign="${escapeAttribute(campaign.id)}">
+          Obre
+        </button>
+      </article>
+    `).join("")
+    : `
+      <div class="auth-campaign-empty">
+        <p class="eyebrow">Sense campanyes</p>
+        <h3>No hi ha cap campanya assignada</h3>
+        <p>Demana al superadmin o GM que afegeixi el teu correu als permisos d'una campanya.</p>
+      </div>
+    `;
+
+  authCampaignSelect.innerHTML = `
+    <section class="auth-campaign-panel" aria-label="Selector de campanya">
+      <div class="auth-campaign-head">
+        <p class="eyebrow">Compendis actius</p>
+        <h2>Tria campanya</h2>
+        <p>${escapeHtml(cloudSession.user?.email || "Usuari connectat")}</p>
+      </div>
+      <div class="auth-campaign-list">
+        ${campaignRows}
+      </div>
+      <button type="button" class="secondary auth-campaign-logout" data-cloud-logout>
+        Tanca sessio
+      </button>
+    </section>
+  `;
+}
+
+function getAccessibleCampaignsForCurrentUser() {
+  const catalog = getCampaignCatalogForSelection();
+  const email = String(cloudSession.user?.email || "").toLowerCase();
+  const sessionRole = normalizeRoleId(cloudSession.user?.role || "");
+  const sessionIsSuperadmin = sessionRole === "superadmin";
+
+  return catalog.campaigns
+    .map((campaign) => ({
+      ...campaign,
+      userAccess: getUserAccessForCampaign(campaign, email, sessionIsSuperadmin),
+    }))
+    .filter((campaign) => campaign.userAccess.hasAccess)
+    .sort((left, right) => Number(right.isActive) - Number(left.isActive) || left.name.localeCompare(right.name, "ca"));
+}
+
+function getCampaignCatalogForSelection() {
+  const catalog = storageGetCampaignCatalog();
+  if (!authPreviewMode || !cloudSession.selectingCampaign || catalog.campaigns.length > 1) {
+    return catalog;
+  }
+
+  return {
+    ...catalog,
+    campaigns: [
+      ...catalog.campaigns,
+      {
+        id: "preview-savage-worlds",
+        name: "Savage Worlds",
+        system: "Savage Worlds",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isActive: false,
+        access: structuredClone(state.access),
+        counts: {
+          characters: 3,
+          chronicles: 2,
+          glossary: 12,
+        },
+      },
+    ],
+  };
+}
+
+function getUserAccessForCampaign(campaign, email, forceSuperadmin = false) {
+  const access = normalizeAccessShape(campaign.access);
+  if (forceSuperadmin || !cloudSession.enabled) {
+    return {
+      hasAccess: true,
+      role: "superadmin",
+      characterIds: [],
+      permissions: access.roles.superadmin,
+    };
+  }
+
+  const configured = email ? access.users[email] : null;
+  if (!configured) {
+    return {
+      hasAccess: false,
+      role: "player",
+      characterIds: [],
+      permissions: access.roles.player,
+    };
+  }
+
+  const role = normalizeRoleId(configured.role || "player");
+  return {
+    hasAccess: true,
+    role,
+    characterIds: Array.isArray(configured.characterIds) ? configured.characterIds : [],
+    permissions: access.roles[role] || access.roles.player,
+  };
+}
+
+function normalizeAccessShape(access) {
+  const sourceRoles = access?.roles && typeof access.roles === "object" ? access.roles : {};
+  const sourceUsers = access?.users && typeof access.users === "object" ? access.users : {};
+  const roles = {
+    superadmin: {
+      editAnyCharacter: true,
+      editOwnCharacter: true,
+      editChronicles: true,
+      editAssignedChronicles: true,
+      editGlossary: true,
+      editAssignedGlossary: true,
+      managePermissions: true,
+      manageCampaigns: true,
+      publishCampaign: true,
+      ...(sourceRoles.superadmin || {}),
+    },
+    gm: {
+      editAnyCharacter: true,
+      editOwnCharacter: true,
+      editChronicles: true,
+      editAssignedChronicles: true,
+      editGlossary: true,
+      editAssignedGlossary: true,
+      managePermissions: false,
+      manageCampaigns: false,
+      publishCampaign: true,
+      ...(sourceRoles.gm || sourceRoles.dm || {}),
+    },
+    player: {
+      editAnyCharacter: false,
+      editOwnCharacter: true,
+      editChronicles: false,
+      editAssignedChronicles: true,
+      editGlossary: false,
+      editAssignedGlossary: true,
+      managePermissions: false,
+      manageCampaigns: false,
+      publishCampaign: false,
+      ...(sourceRoles.player || sourceRoles.viewer || {}),
+    },
+  };
+  const users = Object.fromEntries(
+    Object.entries(sourceUsers)
+      .filter(([email]) => typeof email === "string" && email.includes("@"))
+      .map(([email, user]) => [
+        email.toLowerCase(),
+        {
+          role: normalizeRoleId(user?.role || "player"),
+          characterIds: Array.isArray(user?.characterIds) ? user.characterIds.map(String) : [],
+        },
+      ]),
+  );
+  return { roles, users };
+}
+
+function syncCloudUserWithActiveCampaignAccess() {
+  if (!cloudSession.user) {
+    return;
+  }
+
+  const email = String(cloudSession.user.email || "").toLowerCase();
+  const access = getUserAccessForCampaign(
+    {
+      access: state.access,
+      isActive: true,
+    },
+    email,
+    normalizeRoleId(cloudSession.user.role || "") === "superadmin",
+  );
+  cloudSession.user = {
+    ...cloudSession.user,
+    role: access.role,
+    characterIds: access.characterIds,
+    permissions: access.permissions,
+  };
+}
+
+function formatRoleLabel(roleId) {
+  if (roleId === "superadmin") {
+    return "Superadmin";
+  }
+  if (roleId === "gm") {
+    return "GM";
+  }
+  return "Jugador";
 }
 
 function renderAuthPreviewButton() {
@@ -1081,18 +1405,58 @@ function updateSidebar() {
     view.hidden = !isActive;
   });
 
+  renderSidebarCampaignSwitcher();
+
   if (!sidebarContextPanel) {
     return;
   }
 
   if (state.ui.currentModule === "chronicles" && !state.ui.showChronicleLanding) {
     sidebarContextPanel.hidden = false;
-    sidebarContextPanel.innerHTML = renderChronicleSidebarView(state, getSelectedChronicle());
+    sidebarContextPanel.innerHTML = renderChronicleSidebarView(state, getSelectedChronicle(), {
+      canEditChronicle,
+      canCreateChronicle: canCreateChronicle(),
+    });
     return;
   }
 
   sidebarContextPanel.hidden = true;
   sidebarContextPanel.innerHTML = "";
+}
+
+function renderSidebarCampaignSwitcher() {
+  if (!sidebarCampaignSwitcher) {
+    return;
+  }
+
+  const campaigns = getAccessibleCampaignsForCurrentUser();
+  const activeCampaignId = storageGetActiveCampaignMeta().id;
+  if (campaigns.length <= 1) {
+    sidebarCampaignSwitcher.hidden = true;
+    sidebarCampaignSwitcher.innerHTML = "";
+    return;
+  }
+
+  sidebarCampaignSwitcher.hidden = false;
+  const activeCampaign = campaigns.find((campaign) => campaign.id === activeCampaignId)
+    || campaigns.find((campaign) => campaign.isActive)
+    || campaigns[0];
+
+  sidebarCampaignSwitcher.innerHTML = `
+    <label class="sidebar-campaign-switcher">
+      <span class="sidebar-campaign-label">Campanya activa</span>
+      <select data-sidebar-campaign-switch aria-label="Canvia de campanya">
+        ${campaigns.map((campaign) => `
+          <option value="${escapeAttribute(campaign.id)}" ${campaign.id === activeCampaignId ? "selected" : ""}>
+            ${escapeHtml(campaign.name)}
+          </option>
+        `).join("")}
+      </select>
+      <span class="sidebar-campaign-meta">
+        ${escapeHtml(activeCampaign.system || "Sistema no especificat")} · ${escapeHtml(formatRoleLabel(activeCampaign.userAccess.role))}
+      </span>
+    </label>
+  `;
 }
 
 function updateSaveNotice() {
@@ -1154,6 +1518,8 @@ function renderCharactersModule() {
     shouldShowCharacterReturnFab,
     renderPlayerNotesPanel,
     renderPlayerNotesFab,
+    canEditCharacter,
+    canEditAnyCharacter: canEditAnyCharacter(),
   });
 }
 
@@ -1184,6 +1550,9 @@ function renderChroniclesModule() {
     getSelectedChronicle,
     renderPlayerNotesPanel,
     renderPlayerNotesFab,
+    canEditChronicle,
+    canCreateChronicle: canCreateChronicle(),
+    canDeleteChronicle: canDeleteChronicle(),
   });
 }
 
@@ -1200,6 +1569,9 @@ function renderGlossaryModule() {
     renderPlayerNotesPanel,
     shouldShowGlossaryReturnFab,
     getViewStateLabel,
+    canEditGlossaryEntry,
+    canCreateGlossaryEntry: canCreateGlossaryEntry(),
+    canDeleteGlossaryEntry,
   });
 }
 
@@ -1212,9 +1584,12 @@ function renderOptionsModule() {
   const syncLabel = getCloudSyncLabel(syncState);
   const lastSavedLabel = formatShortDate(state.ui.lastSaved?.at) || "Encara no";
   const lastSyncLabel = formatShortDate(cloudSession.lastSyncAt) || "Encara no";
-  const userLabel = cloudSession.user?.email || "No connectat";
-  const roleLabel = cloudSession.user?.role || "local";
-  const canManagePermissions = Boolean(cloudSession.user?.permissions?.managePermissions) || !cloudSession.enabled;
+  const currentUserAccess = getCurrentUserAccess();
+  const userLabel = currentUserAccess.email || "No connectat";
+  const roleLabel = currentUserAccess.role || "local";
+  const permissionsEditable = canManagePermissions();
+  const campaignsEditable = canManageCampaigns();
+  const publishEnabled = canPublishCampaign();
   const campaignMeta = storageGetActiveCampaignMeta();
 
   optionsModule.innerHTML = `
@@ -1228,7 +1603,7 @@ function renderOptionsModule() {
       </div>
 
       <div class="options-grid">
-        ${renderCampaignManager(campaignMeta)}
+        ${renderCampaignManager(campaignMeta, campaignsEditable)}
 
         <article class="section-card options-card">
           <div class="options-card-copy">
@@ -1248,7 +1623,7 @@ function renderOptionsModule() {
             ${cloudSession.lastError ? `<span class="badge warning">Error: ${escapeHtml(cloudSession.lastError)}</span>` : ""}
           </div>
           <div class="options-actions">
-            <button type="button" class="secondary" data-cloud-publish ${canManagePermissions ? "" : "disabled"}>
+            <button type="button" class="secondary" data-cloud-publish ${publishEnabled ? "" : "disabled"}>
               <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
               <span>Publica a Drive</span>
             </button>
@@ -1296,14 +1671,14 @@ function renderOptionsModule() {
             <h3>Rols i usuaris</h3>
             <p>Defineix qui pot editar fitxes, croniques, glossari i permisos.</p>
           </div>
-          ${renderPermissionsForm(canManagePermissions)}
+          ${renderPermissionsForm(permissionsEditable)}
         </article>
       </div>
     </section>
   `;
 }
 
-function renderCampaignManager(activeMeta) {
+function renderCampaignManager(activeMeta, canManageCampaigns) {
   const catalog = storageGetCampaignCatalog();
   const campaignRows = catalog.campaigns
     .map((campaign) => `
@@ -1322,7 +1697,7 @@ function renderCampaignManager(activeMeta) {
           type="button"
           class="secondary"
           data-switch-campaign="${escapeAttribute(campaign.id)}"
-          ${campaign.isActive ? "disabled" : ""}
+          ${campaign.isActive || !canManageCampaigns ? "disabled" : ""}
         >
           ${campaign.isActive ? "Activa" : "Obre"}
         </button>
@@ -1345,13 +1720,13 @@ function renderCampaignManager(activeMeta) {
       <form data-form="campaign-create" class="campaign-create-form">
         <label class="field">
           <span>Nom</span>
-          <input name="campaignName" maxlength="80" placeholder="Ex. Deadlands: Santa Sang" required />
+          <input name="campaignName" maxlength="80" placeholder="Ex. Deadlands: Santa Sang" required ${canManageCampaigns ? "" : "disabled"} />
         </label>
         <label class="field">
           <span>Sistema</span>
-          <input name="campaignSystem" maxlength="80" value="Savage Worlds" placeholder="Savage Worlds" />
+          <input name="campaignSystem" maxlength="80" value="Savage Worlds" placeholder="Savage Worlds" ${canManageCampaigns ? "" : "disabled"} />
         </label>
-        <button type="submit" class="primary">Crea campanya</button>
+        <button type="submit" class="primary" ${canManageCampaigns ? "" : "disabled"}>Crea campanya</button>
       </form>
     </article>
   `;
@@ -1365,14 +1740,18 @@ function renderPermissionsForm(canManagePermissions) {
         <legend>${escapeHtml(roleId)}</legend>
         ${renderPermissionCheckbox(roleId, "editAnyCharacter", "Qualsevol fitxa", permissions.editAnyCharacter, canManagePermissions)}
         ${renderPermissionCheckbox(roleId, "editOwnCharacter", "Fitxa assignada", permissions.editOwnCharacter, canManagePermissions)}
-        ${renderPermissionCheckbox(roleId, "editChronicles", "Croniques", permissions.editChronicles, canManagePermissions)}
-        ${renderPermissionCheckbox(roleId, "editGlossary", "Glossari", permissions.editGlossary, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "editChronicles", "Totes les croniques", permissions.editChronicles, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "editAssignedChronicles", "Croniques assignades", permissions.editAssignedChronicles, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "editGlossary", "Tot el glossari", permissions.editGlossary, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "editAssignedGlossary", "Glossari assignat", permissions.editAssignedGlossary, canManagePermissions)}
         ${renderPermissionCheckbox(roleId, "managePermissions", "Permisos", permissions.managePermissions, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "manageCampaigns", "Campanyes", permissions.manageCampaigns, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "publishCampaign", "Publica campanya", permissions.publishCampaign, canManagePermissions)}
       </fieldset>
     `)
     .join("");
   const userEntries = Object.entries(access.users);
-  const renderedUsers = [...userEntries, ["", { role: "viewer", characterIds: [] }]]
+  const renderedUsers = [...userEntries, ["", { role: "player", characterIds: [] }]]
     .map(([email, user], index) => renderPermissionUserRow(email, user, index, access, canManagePermissions))
     .join("");
 
@@ -1543,6 +1922,10 @@ function saveCharacterEdits() {
   if (!character) {
     return;
   }
+  if (!canEditCharacter(character)) {
+    denyPermission("No tens permisos per desar aquesta fitxa.");
+    return;
+  }
 
   applyCharacterOverviewDraft(character);
   applyCharacterTabDrafts(character);
@@ -1614,6 +1997,10 @@ function applyCharacterTabDrafts(character) {
 }
 
 function saveChronicle(formData) {
+  if (!canEditChronicle(readString(formData, "id"))) {
+    denyPermission("No tens permisos per desar aquesta cronica.");
+    return;
+  }
   saveChronicleEntry(formData, {
     getSelectedChronicle,
     showSaveNotice: () => {},
@@ -1676,6 +2063,11 @@ function saveChronicleDraft(chronicleId) {
     state.ui.editModes.chronicles = false;
     return;
   }
+  if (!canEditChronicle(chronicle)) {
+    denyPermission("No tens permisos per desar aquesta cronica.");
+    state.ui.editModes.chronicles = false;
+    return;
+  }
 
   const formData = new FormData();
   formData.set("id", chronicle.id);
@@ -1685,6 +2077,12 @@ function saveChronicleDraft(chronicleId) {
   formData.set("summary", draft.summary !== undefined ? String(draft.summary) : chronicle.summary || "");
   formData.set("content", draft.content !== undefined ? String(draft.content) : chronicle.content || "");
   formData.set("highlights", draft.highlights !== undefined ? String(draft.highlights) : chronicle.highlights || "");
+  formData.set(
+    "editableByUserEmails",
+    draft.editableByUserEmails !== undefined
+      ? String(draft.editableByUserEmails)
+      : (chronicle.editableByUserEmails || []).join("\n"),
+  );
   formData.set("imageNote", draft.imageNote !== undefined ? String(draft.imageNote) : chronicle.imageNote || "");
   formData.set(
     "imageAssets",
@@ -1748,6 +2146,10 @@ function deletePlayerNote(noteId) {
 }
 
 function saveGlossary(formData) {
+  if (!canEditGlossaryEntry(readString(formData, "id"))) {
+    denyPermission("No tens permisos per desar aquesta entrada del glossari.");
+    return;
+  }
   saveGlossaryEntry(formData, { findGlossaryEntry });
   state.ui.editModes.glossary = false;
   showSaveNotice("Entrada desada", { cloud: true });
@@ -1755,7 +2157,7 @@ function saveGlossary(formData) {
 }
 
 function savePermissions(formData) {
-  if (cloudSession.enabled && !cloudSession.user?.permissions?.managePermissions) {
+  if (!canManagePermissions()) {
     window.alert("No tens permisos per modificar permisos.");
     return;
   }
@@ -1768,13 +2170,17 @@ function savePermissions(formData) {
         editAnyCharacter: formData.has(`role:${roleId}:editAnyCharacter`),
         editOwnCharacter: formData.has(`role:${roleId}:editOwnCharacter`),
         editChronicles: formData.has(`role:${roleId}:editChronicles`),
+        editAssignedChronicles: formData.has(`role:${roleId}:editAssignedChronicles`),
         editGlossary: formData.has(`role:${roleId}:editGlossary`),
+        editAssignedGlossary: formData.has(`role:${roleId}:editAssignedGlossary`),
         managePermissions: formData.has(`role:${roleId}:managePermissions`),
+        manageCampaigns: formData.has(`role:${roleId}:manageCampaigns`),
+        publishCampaign: formData.has(`role:${roleId}:publishCampaign`),
       },
     ]),
   );
   const emails = formData.getAll("userEmail").map((value) => String(value || "").trim().toLowerCase());
-  const userRoles = formData.getAll("userRole").map((value) => String(value || "viewer"));
+  const userRoles = formData.getAll("userRole").map((value) => normalizeRoleId(String(value || "player")));
   const userCharacterIds = formData.getAll("userCharacterIds").map((value) => String(value || ""));
   const users = {};
 
@@ -1783,7 +2189,7 @@ function savePermissions(formData) {
       return;
     }
     users[email] = {
-      role: roles[userRoles[index]] ? userRoles[index] : "viewer",
+      role: roles[userRoles[index]] ? userRoles[index] : "player",
       characterIds: userCharacterIds[index]
         .split(",")
         .map((item) => item.trim())
@@ -1796,6 +2202,10 @@ function savePermissions(formData) {
 }
 
 function switchCampaign(campaignId) {
+  if (!canManageCampaigns()) {
+    denyPermission("No tens permisos per canviar de campanya.");
+    return;
+  }
   if (!campaignId || campaignId === storageGetActiveCampaignMeta().id) {
     return;
   }
@@ -1806,6 +2216,7 @@ function switchCampaign(campaignId) {
 
   state = storageActivateCampaign(campaignId, state);
   ensureUiStateShape();
+  syncCloudUserWithActiveCampaignAccess();
   clearChronicleReturn();
   closeSidebarPreview();
   persistStateImmediately({ cloud: true });
@@ -1813,7 +2224,39 @@ function switchCampaign(campaignId) {
   showSaveNotice(`Campanya oberta: ${storageGetActiveCampaignMeta().name}`, { cloud: true });
 }
 
+function switchAccessibleCampaign(campaignId) {
+  const activeCampaignId = storageGetActiveCampaignMeta().id;
+  if (!campaignId || campaignId === activeCampaignId) {
+    return;
+  }
+
+  const target = getAccessibleCampaignsForCurrentUser().find((campaign) => campaign.id === campaignId);
+  if (!target) {
+    denyPermission("No tens acces a aquesta campanya.");
+    render([RENDER_PARTS.sidebar, RENDER_PARTS.notice]);
+    return;
+  }
+
+  if (!confirmSwitchingCampaign()) {
+    render([RENDER_PARTS.sidebar]);
+    return;
+  }
+
+  state = storageActivateCampaign(campaignId, state);
+  ensureUiStateShape();
+  syncCloudUserWithActiveCampaignAccess();
+  clearChronicleReturn();
+  closeSidebarPreview();
+  persistStateImmediately({ skipCloud: true });
+  render();
+  showSaveNotice(`Campanya oberta: ${target.name}`);
+}
+
 function createCampaign(formData) {
+  if (!canManageCampaigns()) {
+    denyPermission("No tens permisos per crear campanyes.");
+    return;
+  }
   const name = readString(formData, "campaignName");
   const system = readString(formData, "campaignSystem") || "Savage Worlds";
 
@@ -1827,6 +2270,7 @@ function createCampaign(formData) {
 
   state = storageCreateCampaign({ name, system }, state);
   ensureUiStateShape();
+  syncCloudUserWithActiveCampaignAccess();
   clearChronicleReturn();
   closeSidebarPreview();
   persistStateImmediately({ cloud: true });
@@ -1852,36 +2296,187 @@ function getAccessState() {
   const users = state.access?.users && typeof state.access.users === "object" ? state.access.users : {};
   return {
     roles: {
-      dm: {
+      superadmin: {
         editAnyCharacter: true,
         editOwnCharacter: true,
         editChronicles: true,
+        editAssignedChronicles: true,
         editGlossary: true,
+        editAssignedGlossary: true,
         managePermissions: true,
-        ...(roles.dm || {}),
+        manageCampaigns: true,
+        publishCampaign: true,
+        ...(roles.superadmin || {}),
+      },
+      gm: {
+        editAnyCharacter: true,
+        editOwnCharacter: true,
+        editChronicles: true,
+        editAssignedChronicles: true,
+        editGlossary: true,
+        editAssignedGlossary: true,
+        managePermissions: false,
+        manageCampaigns: false,
+        publishCampaign: true,
+        ...(roles.gm || roles.dm || {}),
       },
       player: {
         editAnyCharacter: false,
         editOwnCharacter: true,
         editChronicles: false,
+        editAssignedChronicles: true,
         editGlossary: false,
+        editAssignedGlossary: true,
         managePermissions: false,
-        ...(roles.player || {}),
-      },
-      viewer: {
-        editAnyCharacter: false,
-        editOwnCharacter: false,
-        editChronicles: false,
-        editGlossary: false,
-        managePermissions: false,
-        ...(roles.viewer || {}),
+        manageCampaigns: false,
+        publishCampaign: false,
+        ...(roles.player || roles.viewer || {}),
       },
       ...Object.fromEntries(
-        Object.entries(roles).filter(([roleId]) => !["dm", "player", "viewer"].includes(roleId)),
+        Object.entries(roles).filter(([roleId]) => !["superadmin", "gm", "dm", "player", "viewer"].includes(roleId)),
       ),
     },
     users,
   };
+}
+
+function getCurrentUserAccess() {
+  if (!cloudSession.enabled) {
+    return {
+      email: "local",
+      role: "superadmin",
+      characterIds: state.characters.map((character) => character.id),
+      permissions: getAccessState().roles.superadmin,
+    };
+  }
+
+  const email = String(cloudSession.user?.email || "").toLowerCase();
+  const access = getAccessState();
+  const configured = email ? access.users[email] : null;
+  const role = normalizeRoleId(configured?.role || cloudSession.user?.role || "player");
+  return {
+    ...(cloudSession.user || {}),
+    email,
+    role,
+    characterIds: Array.isArray(configured?.characterIds)
+      ? configured.characterIds
+      : Array.isArray(cloudSession.user?.characterIds)
+        ? cloudSession.user.characterIds
+        : [],
+    permissions: access.roles[role] || access.roles.player,
+  };
+}
+
+function normalizeRoleId(roleId) {
+  if (roleId === "dm") {
+    return "gm";
+  }
+  if (roleId === "viewer") {
+    return "player";
+  }
+  return ["superadmin", "gm", "player"].includes(roleId) ? roleId : "player";
+}
+
+function getCurrentPermissions() {
+  return getCurrentUserAccess().permissions || {};
+}
+
+function isSuperadmin() {
+  return getCurrentUserAccess().role === "superadmin";
+}
+
+function canManagePermissions() {
+  return Boolean(getCurrentPermissions().managePermissions);
+}
+
+function canManageCampaigns() {
+  return Boolean(getCurrentPermissions().manageCampaigns);
+}
+
+function canPublishCampaign() {
+  return Boolean(getCurrentPermissions().publishCampaign || getCurrentPermissions().managePermissions);
+}
+
+function canEditAnyCharacter() {
+  return Boolean(getCurrentPermissions().editAnyCharacter);
+}
+
+function canEditCharacter(characterOrId) {
+  const characterId = typeof characterOrId === "string" ? characterOrId : characterOrId?.id;
+  const user = getCurrentUserAccess();
+  const permissions = user.permissions || {};
+  if (!characterId) {
+    return false;
+  }
+  if (permissions.editAnyCharacter) {
+    return true;
+  }
+  return Boolean(
+    permissions.editOwnCharacter
+      && Array.isArray(user.characterIds)
+      && user.characterIds.includes(characterId),
+  );
+}
+
+function canCreateChronicle() {
+  return Boolean(getCurrentPermissions().editChronicles);
+}
+
+function canDeleteChronicle(chronicle = getSelectedChronicle()) {
+  return Boolean(chronicle && getCurrentPermissions().editChronicles);
+}
+
+function canEditChronicle(chronicleOrId) {
+  const chronicle = typeof chronicleOrId === "string"
+    ? state.chronicles.find((item) => item.id === chronicleOrId)
+    : chronicleOrId;
+  const permissions = getCurrentPermissions();
+  if (!chronicle) {
+    return false;
+  }
+  if (permissions.editChronicles) {
+    return true;
+  }
+  return Boolean(
+    permissions.editAssignedChronicles
+      && isCurrentUserAssignedToItem(chronicle),
+  );
+}
+
+function canCreateGlossaryEntry() {
+  return Boolean(getCurrentPermissions().editGlossary);
+}
+
+function canDeleteGlossaryEntry(entry = findGlossaryEntry(state.ui.selectedGlossaryId)) {
+  return Boolean(entry && getCurrentPermissions().editGlossary);
+}
+
+function canEditGlossaryEntry(entryOrId) {
+  const entry = typeof entryOrId === "string" ? findGlossaryEntry(entryOrId) : entryOrId;
+  const permissions = getCurrentPermissions();
+  if (!entry) {
+    return false;
+  }
+  if (permissions.editGlossary) {
+    return true;
+  }
+  return Boolean(
+    permissions.editAssignedGlossary
+      && isCurrentUserAssignedToItem(entry),
+  );
+}
+
+function isCurrentUserAssignedToItem(item) {
+  const email = getCurrentUserAccess().email;
+  return Boolean(
+    email
+      && Array.isArray(item?.editableByUserEmails)
+      && item.editableByUserEmails.map((value) => String(value || "").toLowerCase()).includes(email),
+  );
+}
+
+function denyPermission(message = "No tens permisos per fer aquesta accio.") {
+  window.alert(message);
 }
 
 function persistAndRender(parts = FULL_RENDER_PARTS, options = {}) {
@@ -1965,6 +2560,10 @@ async function pushStateToCloud(options = {}) {
       );
     } else if (target.type === "character") {
       await saveCharacterToCloud(cloudSession.idToken, target.character);
+    } else if (target.type === "chronicle") {
+      await saveChronicleToCloud(cloudSession.idToken, target.chronicle);
+    } else if (target.type === "glossary") {
+      await saveGlossaryEntryToCloud(cloudSession.idToken, target.entry);
     }
     cloudSession.lastSyncAt = new Date().toISOString();
     cloudSession.lastError = "";
@@ -1979,9 +2578,9 @@ async function pushStateToCloud(options = {}) {
 }
 
 function inferCloudSaveTarget() {
-  const user = cloudSession.user || {};
+  const user = getCurrentUserAccess();
   const permissions = user.permissions || {};
-  if (permissions.managePermissions || permissions.editChronicles || permissions.editGlossary || permissions.editAnyCharacter) {
+  if (permissions.publishCampaign || permissions.managePermissions) {
     return { type: "campaign" };
   }
 
@@ -1993,6 +2592,16 @@ function inferCloudSaveTarget() {
     && user.characterIds.includes(character.id)
   ) {
     return { type: "character", character };
+  }
+
+  const chronicle = getSelectedChronicle();
+  if (chronicle && canEditChronicle(chronicle)) {
+    return { type: "chronicle", chronicle };
+  }
+
+  const entry = findGlossaryEntry(state.ui.selectedGlossaryId);
+  if (entry && canEditGlossaryEntry(entry)) {
+    return { type: "glossary", entry };
   }
 
   return null;
@@ -2090,6 +2699,10 @@ function isImageLightboxOpen() {
 }
 
 function createChronicle() {
+  if (!canCreateChronicle()) {
+    denyPermission("No tens permisos per crear croniques.");
+    return;
+  }
   createChronicleEntry(state);
   state.ui.newChronicleId = state.ui.selectedChronicleId;
   state.ui.chronicleIndexSearch = "";
@@ -2100,6 +2713,10 @@ function createChronicle() {
 }
 
 function deleteChronicle() {
+  if (!canDeleteChronicle()) {
+    denyPermission("No tens permisos per esborrar aquesta cronica.");
+    return;
+  }
   if (!window.confirm("Vols esborrar aquesta crònica? Aquesta acció no es pot desfer.")) {
     return;
   }
@@ -2132,6 +2749,10 @@ function discardChronicleChanges(options = {}) {
 }
 
 function createGlossaryEntry() {
+  if (!canCreateGlossaryEntry()) {
+    denyPermission("No tens permisos per crear entrades del glossari.");
+    return;
+  }
   createGlossaryItem(state);
   clearGlossaryDraft(state.ui.selectedGlossaryId);
   state.ui.editModes.glossary = true;
@@ -2139,6 +2760,10 @@ function createGlossaryEntry() {
 }
 
 function deleteGlossaryEntry() {
+  if (!canDeleteGlossaryEntry()) {
+    denyPermission("No tens permisos per esborrar aquesta entrada del glossari.");
+    return;
+  }
   if (!window.confirm("Vols esborrar aquesta entrada del glossari? Aquesta acció no es pot desfer.")) {
     return;
   }
@@ -2151,6 +2776,10 @@ function deleteGlossaryEntry() {
 
 function openGlossaryEditor(glossaryId) {
   if (!glossaryId || !findGlossaryEntry(glossaryId)) {
+    return;
+  }
+  if (!canEditGlossaryEntry(glossaryId)) {
+    denyPermission("No tens permisos per editar aquesta entrada del glossari.");
     return;
   }
 
@@ -2170,6 +2799,19 @@ function deleteGlossaryEntryById(glossaryId) {
 
 function toggleModuleEdit(module) {
   if (!module || !Object.prototype.hasOwnProperty.call(state.ui.editModes, module)) {
+    return;
+  }
+  const isOpeningEditMode = !state.ui.editModes[module];
+  if (module === "characters" && isOpeningEditMode && !canEditCharacter(state.ui.selectedCharacterId)) {
+    denyPermission("No tens permisos per editar aquesta fitxa.");
+    return;
+  }
+  if (module === "chronicles" && isOpeningEditMode && !canEditChronicle(state.ui.selectedChronicleId)) {
+    denyPermission("No tens permisos per editar aquesta cronica.");
+    return;
+  }
+  if (module === "glossary" && isOpeningEditMode && !canEditGlossaryEntry(state.ui.selectedGlossaryId)) {
+    denyPermission("No tens permisos per editar aquesta entrada del glossari.");
     return;
   }
 
@@ -2236,6 +2878,9 @@ function updateDraftFromForm(form) {
 
   if (form.dataset.form === "character-overview") {
     const characterId = String(draft.id || "");
+    if (characterId && !canEditCharacter(characterId)) {
+      return;
+    }
     if (characterId) {
       state.ui.drafts.characters.overview[characterId] = draft;
     }
@@ -2244,6 +2889,9 @@ function updateDraftFromForm(form) {
   if (form.dataset.form === "character-tab") {
     const characterId = String(draft.id || "");
     const tab = String(draft.tab || "");
+    if (characterId && !canEditCharacter(characterId)) {
+      return;
+    }
     if (characterId && tab) {
       state.ui.drafts.characters.tabs[characterId] = state.ui.drafts.characters.tabs[characterId] || {};
       state.ui.drafts.characters.tabs[characterId][tab] = draft;
@@ -2252,6 +2900,9 @@ function updateDraftFromForm(form) {
 
   if (form.dataset.form === "chronicle") {
     const chronicleId = String(draft.id || "");
+    if (chronicleId && !canEditChronicle(chronicleId)) {
+      return;
+    }
     if (chronicleId) {
       state.ui.drafts.chronicles[chronicleId] = draft;
     }
@@ -2259,6 +2910,9 @@ function updateDraftFromForm(form) {
 
   if (form.dataset.form === "glossary") {
     const glossaryId = String(draft.id || "");
+    if (glossaryId && !canEditGlossaryEntry(glossaryId)) {
+      return;
+    }
     if (glossaryId) {
       state.ui.drafts.glossary[glossaryId] = draft;
     }
@@ -2362,6 +3016,9 @@ function updateGlossaryDraftImageAssets(glossaryId, updater) {
   if (!entry || typeof updater !== "function") {
     return;
   }
+  if (!canEditGlossaryEntry(entry)) {
+    return;
+  }
 
   const draft = state.ui.drafts.glossary[glossaryId] || {};
   const currentImages = normalizeGlossaryDraftImageAssets(draft.imageAssets, entry.imageAssets || []);
@@ -2382,6 +3039,11 @@ async function handleGlossaryImageSelection(input) {
   const files = Array.from(input.files || []).filter((file) => file instanceof File);
 
   if (!glossaryId || !files.length) {
+    input.value = "";
+    return;
+  }
+  if (!canEditGlossaryEntry(glossaryId)) {
+    denyPermission("No tens permisos per editar les imatges d'aquesta entrada.");
     input.value = "";
     return;
   }

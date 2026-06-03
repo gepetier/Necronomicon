@@ -1,3 +1,5 @@
+import { DATA_VERSION, STORAGE_KEY, seedData } from "./data.js";
+
 const params = new URLSearchParams(window.location.search);
 const scenario = params.get("scenario") || "characters-grid";
 const frame = document.querySelector("#appFrame");
@@ -15,6 +17,9 @@ bootstrap().catch((error) => {
 async function bootstrap() {
   resetStorage(window.localStorage);
   await resetAssetStore(window.indexedDB);
+  if (scenario === "sidebar-campaign-switch") {
+    seedCampaignSwitchCatalog(window.localStorage);
+  }
   const frameLoaded = onceLoaded(frame);
   const appParams = new URLSearchParams({ captureRun: String(Date.now()) });
   if (scenario === "auth-landing") {
@@ -25,6 +30,11 @@ async function bootstrap() {
     appParams.set("authPreview", "1");
     appParams.set("authStatus", "Obrint el compendi...");
     appParams.set("authWaiting", "1");
+  }
+  if (scenario === "auth-campaign-select") {
+    appParams.set("authPreview", "1");
+    appParams.set("authCampaignSelect", "1");
+    appParams.set("authStatus", "Tria una campanya.");
   }
   frame.src = `/index.html?${appParams.toString()}`;
   await frameLoaded;
@@ -98,6 +108,7 @@ async function runScenario(context, scenarioName) {
   const handlers = {
     "auth-landing": async () => {},
     "auth-waiting": async () => {},
+    "auth-campaign-select": async () => {},
     "characters-grid": async () => {},
     "sidebar-preview": async () => {
       const toggle = context.query("[data-sidebar-toggle]");
@@ -109,6 +120,17 @@ async function runScenario(context, scenarioName) {
     },
     "sidebar-pinned": async () => {
       await context.click("[data-sidebar-toggle]");
+    },
+    "sidebar-campaign-switch": async () => {
+      context.win.scrollTo(0, 0);
+      await delay(120);
+      const toggle = context.query("[data-sidebar-toggle]");
+      if (toggle instanceof context.win.HTMLElement) {
+        toggle.dispatchEvent(new context.win.PointerEvent("pointerenter", { bubbles: true }));
+        context.doc.body.classList.add("sidebar-preview");
+      }
+      forceSidebarOpenForCapture(context);
+      await delay(220);
     },
     "options-tools": async () => {
       await context.click('[data-module-link="options"]');
@@ -301,6 +323,98 @@ async function openCharacter(context) {
 
   firstCard.click();
   await delay(160);
+}
+
+async function createSecondCampaign(context) {
+  await context.click('[data-module-link="options"]');
+  await context.type('input[name="campaignName"]', "Savage Worlds");
+  await context.type('input[name="campaignSystem"]', "Savage Worlds");
+  const form = context.query('form[data-form="campaign-create"]');
+  if (!(form instanceof context.win.HTMLFormElement)) {
+    throw new Error("No s'ha trobat el formulari de nova campanya.");
+  }
+  form.requestSubmit();
+  await delay(260);
+}
+
+function seedCampaignSwitchCatalog(storage) {
+  const now = "2026-06-03T00:00:00.000Z";
+  const meledarState = createCampaignStateForCapture({
+    id: "meledar",
+    name: "Meledar",
+    system: "D&D 5e",
+    createdAt: now,
+  });
+  const savageState = createCampaignStateForCapture({
+    id: "savage-worlds",
+    name: "Savage Worlds",
+    system: "Savage Worlds",
+    createdAt: now,
+  });
+
+  storage.setItem(STORAGE_KEY, JSON.stringify({
+    kind: "necronomicon-campaign-library",
+    version: DATA_VERSION,
+    activeCampaignId: "savage-worlds",
+    campaigns: [
+      {
+        id: "meledar",
+        name: "Meledar",
+        system: "D&D 5e",
+        createdAt: now,
+        updatedAt: now,
+        version: DATA_VERSION,
+        state: meledarState,
+      },
+      {
+        id: "savage-worlds",
+        name: "Savage Worlds",
+        system: "Savage Worlds",
+        createdAt: now,
+        updatedAt: now,
+        version: DATA_VERSION,
+        state: savageState,
+      },
+    ],
+    meta: savageState.meta,
+    characters: savageState.characters,
+    chronicles: savageState.chronicles,
+    glossary: savageState.glossary,
+    access: savageState.access,
+    ui: savageState.ui,
+  }));
+}
+
+function createCampaignStateForCapture({ id, name, system, createdAt }) {
+  const state = structuredClone(seedData);
+  state.meta = {
+    ...(state.meta || {}),
+    id,
+    name,
+    system,
+    createdAt,
+    updatedAt: createdAt,
+  };
+  state.ui = {
+    ...(state.ui || {}),
+    currentModule: "characters",
+    saveNotice: "",
+  };
+  return state;
+}
+
+function forceSidebarOpenForCapture(context) {
+  const shell = context.query(".app-shell");
+  const sidebarScroll = context.query(".sidebar .sidebar-scroll");
+  if (shell instanceof context.win.HTMLElement) {
+    shell.style.gridTemplateColumns = "var(--sidebar-expanded) minmax(0, 1fr)";
+  }
+  if (sidebarScroll instanceof context.win.HTMLElement) {
+    sidebarScroll.style.opacity = "1";
+    sidebarScroll.style.visibility = "visible";
+    sidebarScroll.style.pointerEvents = "auto";
+    sidebarScroll.style.transform = "none";
+  }
 }
 
 async function openChronicle(context, chronicleId = "") {

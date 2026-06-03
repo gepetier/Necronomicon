@@ -3,32 +3,43 @@ const CONFIG = {
   DRIVE_FOLDER_ID: "1zyOcMrfnJ88RJ7PKWesT16ciS3MrlQI6",
   CAMPAIGN_FILE_NAME: "campaign.json",
   BACKUP_PREFIX: "campaign-backup-",
-  // TODO: replace with the DM/admin Google account before deploying.
   BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
 };
 
 const DEFAULT_ACCESS = {
   roles: {
-    dm: {
+    superadmin: {
       editAnyCharacter: true,
       editOwnCharacter: true,
       editChronicles: true,
+      editAssignedChronicles: true,
       editGlossary: true,
+      editAssignedGlossary: true,
       managePermissions: true,
+      manageCampaigns: true,
+      publishCampaign: true,
+    },
+    gm: {
+      editAnyCharacter: true,
+      editOwnCharacter: true,
+      editChronicles: true,
+      editAssignedChronicles: true,
+      editGlossary: true,
+      editAssignedGlossary: true,
+      managePermissions: false,
+      manageCampaigns: false,
+      publishCampaign: true,
     },
     player: {
       editAnyCharacter: false,
       editOwnCharacter: true,
       editChronicles: false,
+      editAssignedChronicles: true,
       editGlossary: false,
+      editAssignedGlossary: true,
       managePermissions: false,
-    },
-    viewer: {
-      editAnyCharacter: false,
-      editOwnCharacter: false,
-      editChronicles: false,
-      editGlossary: false,
-      managePermissions: false,
+      manageCampaigns: false,
+      publishCampaign: false,
     },
   },
   users: {},
@@ -91,6 +102,48 @@ function handleRequest(request) {
         item && item.id === character.id ? character : item
       ));
       updateLibraryActiveCharacter(current, character);
+      saveCampaign(current, user.email);
+      return ok({
+        user: decorateUser(user, current.access),
+        campaign: current,
+      });
+    }
+
+    if (request.action === "saveChronicle") {
+      const current = loadCampaign();
+      const actor = decorateUser(user, current.access);
+      const chronicle = request.chronicle || null;
+      if (!chronicle || !chronicle.id) {
+        throw new Error("Cronica no valida.");
+      }
+      const currentChronicle = findActiveCampaignItem(current, "chronicles", String(chronicle.id));
+      if (!canEditChronicle(actor, currentChronicle || chronicle)) {
+        throw new Error("No tens permisos per editar aquesta cronica.");
+      }
+
+      current.chronicles = upsertById(current.chronicles, chronicle);
+      updateLibraryActiveItem(current, "chronicles", chronicle);
+      saveCampaign(current, user.email);
+      return ok({
+        user: decorateUser(user, current.access),
+        campaign: current,
+      });
+    }
+
+    if (request.action === "saveGlossaryEntry") {
+      const current = loadCampaign();
+      const actor = decorateUser(user, current.access);
+      const entry = request.entry || null;
+      if (!entry || !entry.id) {
+        throw new Error("Entrada de glossari no valida.");
+      }
+      const currentEntry = findActiveCampaignItem(current, "glossary", String(entry.id));
+      if (!canEditGlossaryEntry(actor, currentEntry || entry)) {
+        throw new Error("No tens permisos per editar aquesta entrada del glossari.");
+      }
+
+      current.glossary = upsertById(current.glossary, entry);
+      updateLibraryActiveItem(current, "glossary", entry);
       saveCampaign(current, user.email);
       return ok({
         user: decorateUser(user, current.access),
@@ -203,6 +256,16 @@ function normalizeCampaign(candidate) {
   const access = campaign.access && typeof campaign.access === "object"
     ? campaign.access
     : DEFAULT_ACCESS;
+  const accessRoles = access.roles || {};
+  const migratedRoles = { ...accessRoles };
+  if (accessRoles.dm && !migratedRoles.gm) {
+    migratedRoles.gm = accessRoles.dm;
+  }
+  if (accessRoles.viewer && !migratedRoles.player) {
+    migratedRoles.player = accessRoles.viewer;
+  }
+  delete migratedRoles.dm;
+  delete migratedRoles.viewer;
 
   return {
     ...campaign,
@@ -213,13 +276,39 @@ function normalizeCampaign(candidate) {
     access: {
       roles: {
         ...DEFAULT_ACCESS.roles,
-        ...(access.roles || {}),
+        ...migratedRoles,
       },
       users: {
-        ...(access.users || {}),
+        ...normalizeAccessUsers(access.users || {}),
       },
     },
   };
+}
+
+function normalizeAccessUsers(users) {
+  return Object.keys(users || {}).reduce((nextUsers, email) => {
+    const user = users[email] || {};
+    const normalizedEmail = String(email || "").toLowerCase();
+    if (!normalizedEmail || normalizedEmail.indexOf("@") === -1) {
+      return nextUsers;
+    }
+    nextUsers[normalizedEmail] = {
+      ...user,
+      role: normalizeRoleId(user.role || "player"),
+      characterIds: Array.isArray(user.characterIds) ? user.characterIds.map(String) : [],
+    };
+    return nextUsers;
+  }, {});
+}
+
+function normalizeRoleId(role) {
+  if (role === "dm") {
+    return "gm";
+  }
+  if (role === "viewer") {
+    return "player";
+  }
+  return ["superadmin", "gm", "player"].indexOf(role) >= 0 ? role : "player";
 }
 
 function updateLibraryActiveCharacter(campaign, character) {
@@ -247,6 +336,56 @@ function updateLibraryActiveCharacter(campaign, character) {
   });
 }
 
+function findActiveCampaignItem(campaign, collectionName, itemId) {
+  const activeState = getActiveCampaignState(campaign);
+  const collection = Array.isArray(activeState && activeState[collectionName])
+    ? activeState[collectionName]
+    : Array.isArray(campaign[collectionName])
+      ? campaign[collectionName]
+      : [];
+  return collection.find((item) => item && String(item.id) === String(itemId)) || null;
+}
+
+function getActiveCampaignState(campaign) {
+  if (!Array.isArray(campaign.campaigns) || !campaign.activeCampaignId) {
+    return campaign;
+  }
+  const active = campaign.campaigns.find((entry) => entry && entry.id === campaign.activeCampaignId);
+  return active && active.state ? active.state : campaign;
+}
+
+function upsertById(collection, item) {
+  const list = Array.isArray(collection) ? collection : [];
+  const exists = list.some((current) => current && current.id === item.id);
+  if (!exists) {
+    return [...list, item];
+  }
+  return list.map((current) => (
+    current && current.id === item.id ? item : current
+  ));
+}
+
+function updateLibraryActiveItem(campaign, collectionName, item) {
+  if (!Array.isArray(campaign.campaigns) || !campaign.activeCampaignId) {
+    return;
+  }
+
+  campaign.campaigns = campaign.campaigns.map((entry) => {
+    if (!entry || entry.id !== campaign.activeCampaignId || !entry.state) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      updatedAt: new Date().toISOString(),
+      state: {
+        ...entry.state,
+        [collectionName]: upsertById(entry.state[collectionName], item),
+      },
+    };
+  });
+}
+
 function decorateUser(user, access) {
   const email = String(user.email || "").toLowerCase();
   const normalizedAccess = normalizeCampaign({ access }).access;
@@ -257,20 +396,21 @@ function decorateUser(user, access) {
   const role = configured && configured.role
     ? configured.role
     : bootstrapAdmin
-      ? "dm"
-      : "viewer";
-  const permissions = normalizedAccess.roles[role] || normalizedAccess.roles.viewer;
+      ? "superadmin"
+      : "player";
+  const normalizedRole = normalizeRoleId(role);
+  const permissions = normalizedAccess.roles[normalizedRole] || normalizedAccess.roles.player;
 
   return {
     ...user,
-    role,
+    role: normalizedRole,
     characterIds: Array.isArray(configured && configured.characterIds) ? configured.characterIds : [],
     permissions,
   };
 }
 
 function canManageCampaign(user) {
-  return Boolean(user && user.permissions && user.permissions.managePermissions);
+  return Boolean(user && user.permissions && (user.permissions.publishCampaign || user.permissions.managePermissions));
 }
 
 function canEditCharacter(user, characterId) {
@@ -284,6 +424,43 @@ function canEditCharacter(user, characterId) {
     user.permissions.editOwnCharacter
       && Array.isArray(user.characterIds)
       && user.characterIds.includes(characterId),
+  );
+}
+
+function canEditChronicle(user, chronicle) {
+  if (!user || !user.permissions || !chronicle) {
+    return false;
+  }
+  if (user.permissions.editChronicles) {
+    return true;
+  }
+  return Boolean(
+    user.permissions.editAssignedChronicles
+      && isUserAssignedToItem(user, chronicle),
+  );
+}
+
+function canEditGlossaryEntry(user, entry) {
+  if (!user || !user.permissions || !entry) {
+    return false;
+  }
+  if (user.permissions.editGlossary) {
+    return true;
+  }
+  return Boolean(
+    user.permissions.editAssignedGlossary
+      && isUserAssignedToItem(user, entry),
+  );
+}
+
+function isUserAssignedToItem(user, item) {
+  const email = String(user.email || "").toLowerCase();
+  return Boolean(
+    email
+      && Array.isArray(item.editableByUserEmails)
+      && item.editableByUserEmails
+        .map((value) => String(value || "").toLowerCase())
+        .indexOf(email) >= 0,
   );
 }
 

@@ -22,29 +22,33 @@ export function renderChroniclesModule({
   getSelectedChronicle,
   renderPlayerNotesPanel,
   renderPlayerNotesFab,
+  canEditChronicle = () => true,
+  canCreateChronicle = true,
+  canDeleteChronicle = true,
 }) {
   const current = getSelectedChronicle();
   const primaryImage = current?.imageAssets?.[0] || "";
   const showLanding = state.ui.showChronicleLanding && !state.ui.editModes.chronicles;
+  const isEditingCurrent = state.ui.editModes.chronicles && canEditChronicle(current);
 
   rootEl.innerHTML = `
-    <section class="book-shell ${showLanding ? "chronicle-landing-shell" : ""} ${state.ui.notesPanelOpen ? "notes-open" : ""} ${state.ui.editModes.chronicles ? "chronicles-editing" : ""}">
+    <section class="book-shell ${showLanding ? "chronicle-landing-shell" : ""} ${state.ui.notesPanelOpen ? "notes-open" : ""} ${isEditingCurrent ? "chronicles-editing" : ""}">
       ${showLanding
-        ? renderChronicleLanding(state)
+        ? renderChronicleLanding(state, { canCreateChronicle })
         : `
           <div class="book-layout">
-            ${renderChronicleIndexPanel(state, current, { variant: "inline" })}
-            ${state.ui.editModes.chronicles
-              ? renderChronicleEditingStage(current, state)
-              : renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab, state)}
+            ${renderChronicleIndexPanel(state, current, { variant: "inline", canEditChronicle, canCreateChronicle })}
+            ${isEditingCurrent
+              ? renderChronicleEditingStage(current, state, { canDeleteChronicle })
+              : renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab, state, { canEditChronicle })}
           </div>
         `}
     </section>
   `;
 }
 
-export function renderChronicleSidebarPanel(state, current) {
-  return renderChronicleIndexPanel(state, current, { variant: "sidebar" });
+export function renderChronicleSidebarPanel(state, current, permissions = {}) {
+  return renderChronicleIndexPanel(state, current, { variant: "sidebar", ...permissions });
 }
 
 export function saveChronicle(formData, { getSelectedChronicle, showSaveNotice }) {
@@ -81,6 +85,10 @@ export function saveChronicle(formData, { getSelectedChronicle, showSaveNotice }
   if (formData.has("characterIds")) {
     chronicle.characterIds = formData.getAll("characterIds").map(String);
   }
+  chronicle.editableByUserEmails = readString(formData, "editableByUserEmails")
+    .split(/[\n,]/)
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
 
   showSaveNotice("Cronica desada");
 }
@@ -99,6 +107,7 @@ export function createChronicle(state) {
     playerNotes: [],
     voiceNotes: [],
     characterIds: [],
+    editableByUserEmails: [],
     palette: ["#64483d", "#c8a86d"],
   };
   state.chronicles.push(newChronicle);
@@ -114,7 +123,7 @@ export function deleteChronicle(state) {
   state.ui.selectedChronicleId = state.chronicles[0].id;
 }
 
-function renderChronicleIndexEntry(chronicle, state) {
+function renderChronicleIndexEntry(chronicle, state, canEditChronicle = () => true) {
   const isActive = chronicle.id === state.ui.selectedChronicleId;
   const dateLabel = formatShortDate(chronicle.date) || chronicle.date || "Sense data";
 
@@ -134,7 +143,7 @@ function renderChronicleIndexEntry(chronicle, state) {
           <strong>${escapeHtml(chronicle.title)}</strong>
           <small>${escapeHtml(dateLabel)}</small>
         </div>
-        ${isActive
+        ${isActive && canEditChronicle(chronicle)
           ? `
             <button
               type="button"
@@ -153,7 +162,8 @@ function renderChronicleIndexEntry(chronicle, state) {
   `;
 }
 
-function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab, state) {
+function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab, state, permissions = {}) {
+  const canEditChronicle = permissions.canEditChronicle || (() => true);
   const linkedContent = autoLinkChronicleReferences(current?.content || "", state);
   const bodyParts = splitChronicleBody(linkedContent);
   const openingBody = bodyParts.opening || "Encara no hi ha cos de capitol.";
@@ -168,7 +178,7 @@ function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel
             <h3>${escapeHtml(current?.title || "Sense cronica")}</h3>
             <span>${escapeHtml(current?.date || "")}</span>
           </div>
-          <button
+          ${canEditChronicle(current) ? `<button
             type="button"
             class="secondary module-edit-button chronicle-page-edit"
             data-toggle-edit="chronicles"
@@ -177,7 +187,7 @@ function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel
           >
             <span class="module-action-icon">${renderModuleActionIcon("chronicles")}</span>
             <span>Edita cronica</span>
-          </button>
+          </button>` : ""}
         </div>
         <figure class="book-image-frame">
           ${primaryImage
@@ -367,7 +377,8 @@ function renderChronicleCoverPlate(current) {
   `;
 }
 
-function renderChronicleLanding(state) {
+function renderChronicleLanding(state, permissions = {}) {
+  const canCreateChronicle = permissions.canCreateChronicle !== false;
   const featuredChronicle = state.chronicles[0] || null;
   const latestChronicle = state.chronicles.at(-1) || featuredChronicle;
   const featuredImage = featuredChronicle?.imageAssets?.[0] || latestChronicle?.imageAssets?.[0] || "";
@@ -404,10 +415,10 @@ function renderChronicleLanding(state) {
             <p class="eyebrow">Index complet</p>
             <h3>Totes les entrades</h3>
           </div>
-          <button type="button" class="chapter-create-button" data-create-chronicle>
+          ${canCreateChronicle ? `<button type="button" class="chapter-create-button" data-create-chronicle>
             <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
             <span>Nova cronica</span>
-          </button>
+          </button>` : ""}
         </div>
         <div class="chronicle-atlas-grid" role="list" aria-label="Totes les croniques">
           ${state.chronicles.map((chronicle, index) => renderChronicleLandingCard(chronicle, index)).join("")}
@@ -449,7 +460,7 @@ function renderChronicleLandingCard(chronicle, index) {
   `;
 }
 
-function renderChronicleIndexPanel(state, current, { variant }) {
+function renderChronicleIndexPanel(state, current, { variant, canEditChronicle = () => true, canCreateChronicle = true }) {
   const chronicleSearch = state.ui.chronicleIndexSearch?.trim().toLowerCase() || "";
   const visibleChronicles = state.chronicles.filter((chronicle) => chronicleMatchesSearch(chronicle, chronicleSearch));
   const totalChronicles = state.chronicles.length;
@@ -492,7 +503,7 @@ function renderChronicleIndexPanel(state, current, { variant }) {
       <div class="chapter-list-shell">
         <div class="chapter-list" role="listbox" aria-label="Capitols de campanya">
           ${visibleChronicles.length
-            ? visibleChronicles.map((chronicle) => renderChronicleIndexEntry(chronicle, state)).join("")
+            ? visibleChronicles.map((chronicle) => renderChronicleIndexEntry(chronicle, state, canEditChronicle)).join("")
             : `
               <div class="chapter-list-empty">
                 <p class="eyebrow">Sense coincidencies</p>
@@ -501,27 +512,27 @@ function renderChronicleIndexPanel(state, current, { variant }) {
             `}
         </div>
       </div>
-      <div class="chapter-index-actions">
+      ${canCreateChronicle ? `<div class="chapter-index-actions">
         <button type="button" class="chapter-create-button" data-create-chronicle>
           <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
           <span>Nova cronica</span>
         </button>
-      </div>
+      </div>` : ""}
     </aside>
   `;
 }
 
-function renderChronicleEditingStage(current, state) {
+function renderChronicleEditingStage(current, state, permissions = {}) {
   return `
     <div class="chronicle-edit-stage ${state.ui.notesPanelOpen ? "notes-open" : ""}">
       <div class="chronicle-edit-main">
-        ${renderChronicleEditor(current, state)}
+        ${renderChronicleEditor(current, state, permissions)}
       </div>
     </div>
   `;
 }
 
-function renderChronicleEditor(chronicle, state) {
+function renderChronicleEditor(chronicle, state, permissions = {}) {
   const draft = state.ui.drafts.chronicles[chronicle?.id || ""] || {};
   const hasPendingDraft = Object.keys(draft).length > 0;
   const editorStatus = renderEditorStatus(state, "chronicles", chronicle?.id || "", hasPendingDraft);
@@ -552,6 +563,11 @@ function renderChronicleEditor(chronicle, state) {
                 ${renderRichTextareaField("summary", "Resum principal", readDraftValue(draft.summary, chronicle?.summary || ""), 5)}
                 ${renderRichTextareaField("content", "Cos del capitol", readDraftValue(draft.content, chronicle?.content || ""), 10)}
                 ${renderRichTextareaField("highlights", "Fites clau", readDraftValue(draft.highlights, chronicle?.highlights || ""), 6)}
+                <label class="field span-2">
+                  <span>Editors jugadors</span>
+                  <textarea name="editableByUserEmails" rows="3" placeholder="correu@exemple.com">${escapeHtml(readDraftValue(draft.editableByUserEmails, (chronicle?.editableByUserEmails || []).join("\n")))}</textarea>
+                  <small class="field-help">Correus separats per comes o salts de linia. Els GM i superadmin no necessiten estar aqui.</small>
+                </label>
               </div>
             `,
           )}
@@ -560,7 +576,7 @@ function renderChronicleEditor(chronicle, state) {
           "Desa cronica",
           `
             <button type="button" class="secondary" data-discard-chronicle-edit>Descarta canvis</button>
-            <button type="button" class="secondary" data-delete-chronicle>Esborra cronica</button>
+            ${permissions.canDeleteChronicle !== false ? '<button type="button" class="secondary" data-delete-chronicle>Esborra cronica</button>' : ""}
           `,
         )}
       </form>

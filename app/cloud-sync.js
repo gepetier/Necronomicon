@@ -117,6 +117,24 @@ export async function saveCharacterToCloud(idToken, character) {
   return { ok: true };
 }
 
+export async function saveChronicleToCloud(idToken, chronicle) {
+  await postWithoutCors({
+    action: "saveChronicle",
+    idToken,
+    chronicle,
+  });
+  return { ok: true };
+}
+
+export async function saveGlossaryEntryToCloud(idToken, entry) {
+  await postWithoutCors({
+    action: "saveGlossaryEntry",
+    idToken,
+    entry,
+  });
+  return { ok: true };
+}
+
 function jsonpRequest(payload) {
   return new Promise((resolve, reject) => {
     const callbackName = `__necronomiconCloudCallback${Date.now()}${jsonpCounter++}`;

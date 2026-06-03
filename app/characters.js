@@ -33,8 +33,11 @@ export function renderCharactersModule({
   shouldShowCharacterReturnFab,
   renderPlayerNotesPanel,
   renderPlayerNotesFab,
+  canEditCharacter = () => true,
+  canEditAnyCharacter = true,
 }) {
   if (state.ui.showCharacterGrid) {
+    const editableCharacters = state.characters.filter((character) => canEditCharacter(character));
     rootEl.innerHTML = `
       <section class="module-surface module-surface-characters">
         <div class="module-section-header">
@@ -43,12 +46,12 @@ export function renderCharactersModule({
             <h3>Personatges de campanya</h3>
             <p>Obre una carta o entra directament a l'editor de la fitxa seleccionada.</p>
           </div>
-          <div class="module-inline-actions">
+          ${editableCharacters.length ? `<div class="module-inline-actions">
             <button type="button" class="secondary module-edit-button" data-open-character-editor>
               <span class="module-action-icon">${renderModuleActionIcon("characters")}</span>
-              <span>${state.ui.editModes.characters ? "Continua edició" : "Edita fitxes"}</span>
+              <span>${state.ui.editModes.characters ? "Continua edició" : canEditAnyCharacter ? "Edita fitxes" : "Edita la teva fitxa"}</span>
             </button>
-          </div>
+          </div>` : ""}
         </div>
         <div class="character-grid">
           ${state.characters.map((character) => renderCharacterCard(character, state)).join("")}
@@ -69,10 +72,13 @@ export function renderCharactersModule({
       shouldShowCharacterReturnFab,
       renderPlayerNotesPanel,
       renderPlayerNotesFab,
+      canEditCharacter,
+      canEditAnyCharacter,
     });
     return;
   }
   const returnLabel = shouldShowCharacterReturnFab?.(character.id) ? getViewStateLabel?.(state.ui.glossaryReturnView) : "";
+  const canEditCurrentCharacter = canEditCharacter(character);
 
   rootEl.innerHTML = `
     <section class="detail-card ${state.ui.notesPanelOpen ? "notes-open" : ""}">
@@ -81,7 +87,7 @@ export function renderCharactersModule({
         <button id="backToGridButtonInline" type="button" class="secondary" data-back-to-grid>
           Torna a les cartes
         </button>
-        <button
+        ${canEditCurrentCharacter ? `<button
           type="button"
           class="secondary module-edit-button"
           data-toggle-edit="characters"
@@ -89,7 +95,7 @@ export function renderCharactersModule({
         >
           <span class="module-action-icon">${renderModuleActionIcon("characters")}</span>
           <span>${state.ui.editModes.characters ? "Tanca edició" : "Edita fitxa"}</span>
-        </button>
+        </button>` : ""}
       </div>
       <div class="detail-grid">
         <div class="detail-portrait" style="${paletteStyle(character.palette)}">
@@ -145,14 +151,14 @@ export function renderCharactersModule({
           >
             ${renderCharacterTabContent(character, state.ui.selectedCharacterTab)}
           </div>
-          ${state.ui.editModes.characters ? renderCharacterEditor(character, state.ui.selectedCharacterTab, state) : ""}
+          ${state.ui.editModes.characters && canEditCurrentCharacter ? renderCharacterEditor(character, state.ui.selectedCharacterTab, state) : ""}
         </div>
       </div>
       ${renderPlayerNotesPanel()}
       ${renderPlayerNotesFab()}
-      <div class="editor-actions">
+      ${state.ui.editModes.characters && canEditCurrentCharacter ? `<div class="editor-actions">
         <button type="button" data-save-character>Desa personatge</button>
-      </div>
+      </div>` : ""}
     </section>
   `;
 }
