@@ -57,6 +57,23 @@ import {
   readBackupStatePayload,
 } from "./app/backup.js";
 import {
+  canCreateChronicle as permissionsCanCreateChronicle,
+  canCreateGlossaryEntry as permissionsCanCreateGlossaryEntry,
+  canDeleteChronicle as permissionsCanDeleteChronicle,
+  canDeleteGlossaryEntry as permissionsCanDeleteGlossaryEntry,
+  canEditAnyCharacter as permissionsCanEditAnyCharacter,
+  canEditCharacter as permissionsCanEditCharacter,
+  canEditChronicle as permissionsCanEditChronicle,
+  canEditGlossaryEntry as permissionsCanEditGlossaryEntry,
+  canManageCampaigns as permissionsCanManageCampaigns,
+  canManagePermissions as permissionsCanManagePermissions,
+  canPublishCampaign as permissionsCanPublishCampaign,
+  getUserAccessForCampaign as resolveCampaignUserAccess,
+  normalizeAccessShape,
+  normalizeRoleId,
+  resolveCurrentUserAccess,
+} from "./app/permissions.js";
+import {
   clearStoredCredential,
   decodeCredential,
   getStoredCredential,
@@ -191,6 +208,7 @@ initialize();
 
 function initialize() {
   ensureUiStateShape();
+  applyCaptureUserOverride();
 
   document.addEventListener("click", handleClick);
   document.addEventListener("keydown", handleKeydown);
@@ -208,6 +226,38 @@ function initialize() {
   installQaHooks();
   void migrateEmbeddedAssets({ announce: false });
   void initializeCloudSession();
+}
+
+function applyCaptureUserOverride() {
+  if (!qaMode || !runtimeParams.has("captureUserRole")) {
+    return;
+  }
+
+  const role = normalizeRoleId(runtimeParams.get("captureUserRole") || "player");
+  const email = String(runtimeParams.get("captureUserEmail") || `${role}@preview.local`).toLowerCase();
+  const characterIds = role === "player" ? [state.characters[0]?.id].filter(Boolean) : [];
+  state.access = normalizeAccessShape({
+    ...(state.access || {}),
+    users: {
+      ...(state.access?.users || {}),
+      [email]: {
+        role,
+        characterIds,
+      },
+    },
+  });
+  cloudSession.enabled = true;
+  cloudSession.ready = true;
+  cloudSession.awaitingServer = false;
+  cloudSession.selectingCampaign = false;
+  cloudSession.status = "Mode captura amb usuari simulat";
+  cloudSession.user = {
+    email,
+    name: "Usuari captura",
+    role,
+    permissions: getAccessState().roles[role],
+    characterIds,
+  };
 }
 
 function handleClick(event) {
@@ -243,11 +293,19 @@ function handleClick(event) {
   }
 
   if (event.target.closest("[data-export-backup]")) {
+    if (!canPublishCampaign()) {
+      denyPermission("No tens permisos per exportar la campanya completa.");
+      return;
+    }
     void exportCampaignBackup();
     return;
   }
 
   if (event.target.closest("[data-import-backup]")) {
+    if (!canManageCampaigns()) {
+      denyPermission("No tens permisos per importar una campanya completa.");
+      return;
+    }
     backupImportPicker?.click();
     return;
   }
@@ -911,6 +969,11 @@ async function initializeCloudSession() {
     return;
   }
 
+  if (qaMode && runtimeParams.has("captureUserRole")) {
+    updateAuthGate();
+    return;
+  }
+
   if (authPreviewMode) {
     cloudSession.status = runtimeParams.get("authStatus") || "";
     cloudSession.awaitingServer = runtimeParams.has("authWaiting");
@@ -1216,88 +1279,12 @@ function getCampaignCatalogForSelection() {
 }
 
 function getUserAccessForCampaign(campaign, email, forceSuperadmin = false) {
-  const access = normalizeAccessShape(campaign.access);
-  if (forceSuperadmin || !cloudSession.enabled) {
-    return {
-      hasAccess: true,
-      role: "superadmin",
-      characterIds: [],
-      permissions: access.roles.superadmin,
-    };
-  }
-
-  const configured = email ? access.users[email] : null;
-  if (!configured) {
-    return {
-      hasAccess: false,
-      role: "player",
-      characterIds: [],
-      permissions: access.roles.player,
-    };
-  }
-
-  const role = normalizeRoleId(configured.role || "player");
-  return {
-    hasAccess: true,
-    role,
-    characterIds: Array.isArray(configured.characterIds) ? configured.characterIds : [],
-    permissions: access.roles[role] || access.roles.player,
-  };
-}
-
-function normalizeAccessShape(access) {
-  const sourceRoles = access?.roles && typeof access.roles === "object" ? access.roles : {};
-  const sourceUsers = access?.users && typeof access.users === "object" ? access.users : {};
-  const roles = {
-    superadmin: {
-      editAnyCharacter: true,
-      editOwnCharacter: true,
-      editChronicles: true,
-      editAssignedChronicles: true,
-      editGlossary: true,
-      editAssignedGlossary: true,
-      managePermissions: true,
-      manageCampaigns: true,
-      publishCampaign: true,
-      ...(sourceRoles.superadmin || {}),
-    },
-    gm: {
-      editAnyCharacter: true,
-      editOwnCharacter: true,
-      editChronicles: true,
-      editAssignedChronicles: true,
-      editGlossary: true,
-      editAssignedGlossary: true,
-      managePermissions: false,
-      manageCampaigns: false,
-      publishCampaign: true,
-      ...(sourceRoles.gm || sourceRoles.dm || {}),
-    },
-    player: {
-      editAnyCharacter: false,
-      editOwnCharacter: true,
-      editChronicles: false,
-      editAssignedChronicles: true,
-      editGlossary: false,
-      editAssignedGlossary: true,
-      managePermissions: false,
-      manageCampaigns: false,
-      publishCampaign: false,
-      ...(sourceRoles.player || sourceRoles.viewer || {}),
-    },
-  };
-  const users = Object.fromEntries(
-    Object.entries(sourceUsers)
-      .filter(([email]) => typeof email === "string" && email.includes("@"))
-      .map(([email, user]) => [
-        email.toLowerCase(),
-        {
-          role: normalizeRoleId(user?.role || "player"),
-          characterIds: Array.isArray(user?.characterIds) ? user.characterIds.map(String) : [],
-        },
-      ]),
-  );
-  return { roles, users };
+  return resolveCampaignUserAccess({
+    campaign,
+    email,
+    forceSuperadmin,
+    cloudEnabled: cloudSession.enabled,
+  });
 }
 
 function syncCloudUserWithActiveCampaignAccess() {
@@ -1603,7 +1590,9 @@ function renderOptionsModule() {
       </div>
 
       <div class="options-grid">
-        ${renderCampaignManager(campaignMeta, campaignsEditable)}
+        ${campaignsEditable
+          ? renderCampaignManager(campaignMeta)
+          : renderCampaignAccessSummary(campaignMeta, currentUserAccess)}
 
         <article class="section-card options-card">
           <div class="options-card-copy">
@@ -1612,7 +1601,7 @@ function renderOptionsModule() {
               ${renderSyncStatusIcon(syncState, syncLabel)}
               <h3>Sincronitzacio compartida</h3>
             </div>
-            <p>${escapeHtml(cloudSession.status || "Preparat")} Drive publica la campanya activa: ${escapeHtml(campaignMeta.name)}.</p>
+            <p>${escapeHtml(cloudSession.status || "Preparat")} Drive sincronitza la campanya activa: ${escapeHtml(campaignMeta.name)}.</p>
           </div>
           <div class="options-stat-list">
             <span class="badge">${escapeHtml(userLabel)}</span>
@@ -1623,33 +1612,41 @@ function renderOptionsModule() {
             ${cloudSession.lastError ? `<span class="badge warning">Error: ${escapeHtml(cloudSession.lastError)}</span>` : ""}
           </div>
           <div class="options-actions">
-            <button type="button" class="secondary" data-cloud-publish ${publishEnabled ? "" : "disabled"}>
-              <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
-              <span>Publica a Drive</span>
-            </button>
+            ${publishEnabled ? `
+              <button type="button" class="secondary" data-cloud-publish>
+                <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
+                <span>Publica a Drive</span>
+              </button>
+            ` : ""}
             <button type="button" class="secondary" data-cloud-logout>
               <span>Tanca sessio</span>
             </button>
           </div>
         </article>
 
-        <article class="section-card options-card">
-          <div class="options-card-copy">
-            <p class="eyebrow">Copia local</p>
-            <h3>JSON de campanya activa</h3>
-            <p>Exporta o importa nomes la campanya oberta. El selector de campanyes queda preservat localment.</p>
-          </div>
-          <div class="options-actions">
-            <button type="button" class="secondary" data-export-backup>
-              <span class="module-action-icon">${renderModuleActionIcon("download")}</span>
-              <span>Exporta JSON</span>
-            </button>
-            <button type="button" class="secondary" data-import-backup>
-              <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
-              <span>Importa JSON</span>
-            </button>
-          </div>
-        </article>
+        ${publishEnabled || campaignsEditable ? `
+          <article class="section-card options-card">
+            <div class="options-card-copy">
+              <p class="eyebrow">Copia local</p>
+              <h3>JSON de campanya activa</h3>
+              <p>Exporta o importa nomes la campanya oberta. El selector de campanyes queda preservat localment.</p>
+            </div>
+            <div class="options-actions">
+              ${publishEnabled ? `
+                <button type="button" class="secondary" data-export-backup>
+                  <span class="module-action-icon">${renderModuleActionIcon("download")}</span>
+                  <span>Exporta JSON</span>
+                </button>
+              ` : ""}
+              ${campaignsEditable ? `
+                <button type="button" class="secondary" data-import-backup>
+                  <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
+                  <span>Importa JSON</span>
+                </button>
+              ` : ""}
+            </div>
+          </article>
+        ` : ""}
 
         <article class="section-card options-card options-status-card">
           <div>
@@ -1668,17 +1665,19 @@ function renderOptionsModule() {
         <article class="section-card options-card options-permissions-card">
           <div class="options-card-copy">
             <p class="eyebrow">Permisos</p>
-            <h3>Rols i usuaris</h3>
-            <p>Defineix qui pot editar fitxes, croniques, glossari i permisos.</p>
+            <h3>${permissionsEditable ? "Rols i usuaris" : "El teu acces"}</h3>
+            <p>${permissionsEditable
+              ? "Defineix qui pot editar fitxes, croniques, glossari i permisos."
+              : "Aquest resum mostra el teu rol dins la campanya oberta. Els permisos els gestiona un superadmin."}</p>
           </div>
-          ${renderPermissionsForm(permissionsEditable)}
+          ${permissionsEditable ? renderPermissionsForm(true) : renderAccessSummary(currentUserAccess)}
         </article>
       </div>
     </section>
   `;
 }
 
-function renderCampaignManager(activeMeta, canManageCampaigns) {
+function renderCampaignManager(activeMeta) {
   const catalog = storageGetCampaignCatalog();
   const campaignRows = catalog.campaigns
     .map((campaign) => `
@@ -1697,7 +1696,7 @@ function renderCampaignManager(activeMeta, canManageCampaigns) {
           type="button"
           class="secondary"
           data-switch-campaign="${escapeAttribute(campaign.id)}"
-          ${campaign.isActive || !canManageCampaigns ? "disabled" : ""}
+          ${campaign.isActive ? "disabled" : ""}
         >
           ${campaign.isActive ? "Activa" : "Obre"}
         </button>
@@ -1720,15 +1719,62 @@ function renderCampaignManager(activeMeta, canManageCampaigns) {
       <form data-form="campaign-create" class="campaign-create-form">
         <label class="field">
           <span>Nom</span>
-          <input name="campaignName" maxlength="80" placeholder="Ex. Deadlands: Santa Sang" required ${canManageCampaigns ? "" : "disabled"} />
+          <input name="campaignName" maxlength="80" placeholder="Ex. Deadlands: Santa Sang" required />
         </label>
         <label class="field">
           <span>Sistema</span>
-          <input name="campaignSystem" maxlength="80" value="Savage Worlds" placeholder="Savage Worlds" ${canManageCampaigns ? "" : "disabled"} />
+          <input name="campaignSystem" maxlength="80" value="Savage Worlds" placeholder="Savage Worlds" />
         </label>
-        <button type="submit" class="primary" ${canManageCampaigns ? "" : "disabled"}>Crea campanya</button>
+        <button type="submit" class="primary">Crea campanya</button>
       </form>
     </article>
+  `;
+}
+
+function renderCampaignAccessSummary(activeMeta, currentUserAccess) {
+  const accessibleCampaigns = getAccessibleCampaignsForCurrentUser();
+  const alternativeCount = Math.max(0, accessibleCampaigns.length - 1);
+  return `
+    <article class="section-card options-card campaign-access-card">
+      <div class="options-card-copy">
+        <p class="eyebrow">Campanya</p>
+        <h3>${escapeHtml(activeMeta.name)}</h3>
+        <p>Estas treballant dins aquesta campanya. Si tens mes campanyes actives, pots canviar-les des del desplegable de la barra lateral.</p>
+      </div>
+      <div class="options-stat-list">
+        <span class="badge">Sistema: ${escapeHtml(activeMeta.system)}</span>
+        <span class="badge">Rol: ${escapeHtml(formatRoleLabel(currentUserAccess.role))}</span>
+        <span class="badge">${accessibleCampaigns.length} campanyes accessibles</span>
+        ${alternativeCount > 0 ? `<span class="badge">${alternativeCount} alternatives a la sidebar</span>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderAccessSummary(currentUserAccess) {
+  const permissions = currentUserAccess.permissions || {};
+  const granted = [
+    permissions.editAnyCharacter || permissions.editOwnCharacter ? "Fitxes assignades" : "",
+    permissions.editChronicles ? "Totes les croniques" : permissions.editAssignedChronicles ? "Croniques assignades" : "",
+    permissions.editGlossary ? "Tot el glossari" : permissions.editAssignedGlossary ? "Glossari assignat" : "",
+    permissions.publishCampaign ? "Publicacio de campanya" : "",
+  ].filter(Boolean);
+
+  return `
+    <div class="access-summary-panel">
+      <div class="options-stat-list">
+        <span class="badge">${escapeHtml(currentUserAccess.email || "Usuari local")}</span>
+        <span class="badge">Rol: ${escapeHtml(formatRoleLabel(currentUserAccess.role))}</span>
+        ${currentUserAccess.characterIds?.length
+          ? `<span class="badge">${currentUserAccess.characterIds.length} fitxes assignades</span>`
+          : ""}
+      </div>
+      <div class="access-summary-list">
+        ${granted.length
+          ? granted.map((label) => `<span>${escapeHtml(label)}</span>`).join("")
+          : "<span>Lectura de la campanya</span>"}
+      </div>
+    </div>
   `;
 }
 
@@ -2341,40 +2387,12 @@ function getAccessState() {
 }
 
 function getCurrentUserAccess() {
-  if (!cloudSession.enabled) {
-    return {
-      email: "local",
-      role: "superadmin",
-      characterIds: state.characters.map((character) => character.id),
-      permissions: getAccessState().roles.superadmin,
-    };
-  }
-
-  const email = String(cloudSession.user?.email || "").toLowerCase();
-  const access = getAccessState();
-  const configured = email ? access.users[email] : null;
-  const role = normalizeRoleId(configured?.role || cloudSession.user?.role || "player");
-  return {
-    ...(cloudSession.user || {}),
-    email,
-    role,
-    characterIds: Array.isArray(configured?.characterIds)
-      ? configured.characterIds
-      : Array.isArray(cloudSession.user?.characterIds)
-        ? cloudSession.user.characterIds
-        : [],
-    permissions: access.roles[role] || access.roles.player,
-  };
-}
-
-function normalizeRoleId(roleId) {
-  if (roleId === "dm") {
-    return "gm";
-  }
-  if (roleId === "viewer") {
-    return "player";
-  }
-  return ["superadmin", "gm", "player"].includes(roleId) ? roleId : "player";
+  return resolveCurrentUserAccess({
+    cloudEnabled: cloudSession.enabled,
+    cloudUser: cloudSession.user,
+    access: state.access,
+    characters: state.characters,
+  });
 }
 
 function getCurrentPermissions() {
@@ -2386,93 +2404,51 @@ function isSuperadmin() {
 }
 
 function canManagePermissions() {
-  return Boolean(getCurrentPermissions().managePermissions);
+  return permissionsCanManagePermissions(getCurrentUserAccess());
 }
 
 function canManageCampaigns() {
-  return Boolean(getCurrentPermissions().manageCampaigns);
+  return permissionsCanManageCampaigns(getCurrentUserAccess());
 }
 
 function canPublishCampaign() {
-  return Boolean(getCurrentPermissions().publishCampaign || getCurrentPermissions().managePermissions);
+  return permissionsCanPublishCampaign(getCurrentUserAccess());
 }
 
 function canEditAnyCharacter() {
-  return Boolean(getCurrentPermissions().editAnyCharacter);
+  return permissionsCanEditAnyCharacter(getCurrentUserAccess());
 }
 
 function canEditCharacter(characterOrId) {
-  const characterId = typeof characterOrId === "string" ? characterOrId : characterOrId?.id;
-  const user = getCurrentUserAccess();
-  const permissions = user.permissions || {};
-  if (!characterId) {
-    return false;
-  }
-  if (permissions.editAnyCharacter) {
-    return true;
-  }
-  return Boolean(
-    permissions.editOwnCharacter
-      && Array.isArray(user.characterIds)
-      && user.characterIds.includes(characterId),
-  );
+  return permissionsCanEditCharacter(getCurrentUserAccess(), characterOrId);
 }
 
 function canCreateChronicle() {
-  return Boolean(getCurrentPermissions().editChronicles);
+  return permissionsCanCreateChronicle(getCurrentUserAccess());
 }
 
 function canDeleteChronicle(chronicle = getSelectedChronicle()) {
-  return Boolean(chronicle && getCurrentPermissions().editChronicles);
+  return permissionsCanDeleteChronicle(getCurrentUserAccess(), chronicle);
 }
 
 function canEditChronicle(chronicleOrId) {
   const chronicle = typeof chronicleOrId === "string"
     ? state.chronicles.find((item) => item.id === chronicleOrId)
     : chronicleOrId;
-  const permissions = getCurrentPermissions();
-  if (!chronicle) {
-    return false;
-  }
-  if (permissions.editChronicles) {
-    return true;
-  }
-  return Boolean(
-    permissions.editAssignedChronicles
-      && isCurrentUserAssignedToItem(chronicle),
-  );
+  return permissionsCanEditChronicle(getCurrentUserAccess(), chronicle);
 }
 
 function canCreateGlossaryEntry() {
-  return Boolean(getCurrentPermissions().editGlossary);
+  return permissionsCanCreateGlossaryEntry(getCurrentUserAccess());
 }
 
 function canDeleteGlossaryEntry(entry = findGlossaryEntry(state.ui.selectedGlossaryId)) {
-  return Boolean(entry && getCurrentPermissions().editGlossary);
+  return permissionsCanDeleteGlossaryEntry(getCurrentUserAccess(), entry);
 }
 
 function canEditGlossaryEntry(entryOrId) {
   const entry = typeof entryOrId === "string" ? findGlossaryEntry(entryOrId) : entryOrId;
-  const permissions = getCurrentPermissions();
-  if (!entry) {
-    return false;
-  }
-  if (permissions.editGlossary) {
-    return true;
-  }
-  return Boolean(
-    permissions.editAssignedGlossary
-      && isCurrentUserAssignedToItem(entry),
-  );
-}
-
-function isCurrentUserAssignedToItem(item) {
-  const email = getCurrentUserAccess().email;
-  return Boolean(
-    email
-      && Array.isArray(item?.editableByUserEmails)
-      && item.editableByUserEmails.map((value) => String(value || "").toLowerCase()).includes(email),
-  );
+  return permissionsCanEditGlossaryEntry(getCurrentUserAccess(), entry);
 }
 
 function denyPermission(message = "No tens permisos per fer aquesta accio.") {

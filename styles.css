@@ -714,6 +714,34 @@ body.sidebar-pinned .app-shell {
   border-top: 1px solid rgba(92, 58, 34, 0.18);
 }
 
+.campaign-access-card {
+  align-content: start;
+}
+
+.access-summary-panel {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.access-summary-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.access-summary-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.15rem;
+  padding: 0.48rem 0.7rem;
+  border-radius: 999px;
+  color: #4b2d1b;
+  background: rgba(246, 225, 185, 0.72);
+  border: 1px solid rgba(124, 75, 38, 0.18);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .options-status-card {
   min-height: 160px;
   align-content: start;

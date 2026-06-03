@@ -78,6 +78,7 @@
 - The default capture catalog is intentionally focused instead of exhaustive; use aliases such as `changed`, `characters`, `chronicles`, `glossary`, `options`, `desktop`, or `mobile` for targeted review.
 - Persistence now supports a local/Drive campaign catalog; the app still renders one active campaign at a time, while `Opcions` can switch campaigns or create a new starter campaign such as `Savage Worlds`.
 - Campaign access now has three canonical roles (`superadmin`, `gm`, `player`), login opens a campaign picker for active accessible campaigns, and the sidebar exposes an accessible-campaign dropdown when more than one campaign is available to the current user.
+- Permission decisions live in `app/permissions.js` with unit coverage for the role matrix; full JSON import is restricted to campaign managers, while full JSON export/publish remains limited to users with campaign publish authority.
 
 ## Pending
 - Before committing/deploying, seed the new Drive `campaign.json` with the desired canonical campaign data; local `data.js` now contains sessions 1-4, but Drive may still need to be updated from the local canonical data.
@@ -153,6 +154,7 @@
 - 2026-05-25: integrated the generated wax-seal sync icons into the save notice and Options Drive card, cleaned the checkerboard background from the assets, refreshed options desktop/mobile captures, and confirmed `npm.cmd run build` plus `npm.cmd run qa:ui` pass.
 - 2026-06-02: added multi-campaign storage with a campaign catalog, `Opcions` campaign switcher/creator defaulting to `Savage Worlds`, Drive payload support for the full catalog, Apps Script character-save synchronization for the active catalog entry, refreshed options captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
 - 2026-06-03: added role-aware campaign selection after login plus a sidebar campaign dropdown for switching between accessible campaigns without requiring campaign-management permission; refreshed auth/sidebar captures and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
+- 2026-06-03: extracted role permission decisions into `app/permissions.js`, added unit tests for superadmin/GM/player/unassigned/local access, simplified `Opcions` for non-manager users, hid restricted JSON tools, refreshed options/sidebar/auth captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, and full `npm.cmd run qa` pass.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

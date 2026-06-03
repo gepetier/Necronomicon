@@ -22,6 +22,10 @@ async function bootstrap() {
   }
   const frameLoaded = onceLoaded(frame);
   const appParams = new URLSearchParams({ captureRun: String(Date.now()) });
+  if (scenario === "options-player-access") {
+    appParams.set("captureUserRole", "player");
+    appParams.set("captureUserEmail", "player@preview.local");
+  }
   if (scenario === "auth-landing") {
     appParams.set("authPreview", "1");
     appParams.set("authStatus", "Ofrenes pendents.");
@@ -133,6 +137,9 @@ async function runScenario(context, scenarioName) {
       await delay(220);
     },
     "options-tools": async () => {
+      await context.click('[data-module-link="options"]');
+    },
+    "options-player-access": async () => {
       await context.click('[data-module-link="options"]');
     },
     "characters-grid-lightbox": async () => {
