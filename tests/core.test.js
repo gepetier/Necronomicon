@@ -10,11 +10,14 @@ import {
   replaceAssetSourcesInState,
 } from "../app/assets.js";
 import {
+  activateCampaign,
   createCampaign,
+  deleteCampaign,
   getCampaignCatalog,
   loadState,
   migrateStoredState,
   persistState,
+  updateCampaign,
 } from "../app/storage.js";
 import { plainTextFromRichText, renderRichText } from "../app/utils.js";
 
@@ -120,7 +123,73 @@ test("storage wraps legacy state in a campaign catalog and creates a Savage Worl
     assert.equal(catalog.campaigns.find((campaign) => campaign.isActive).system, "Savage Worlds");
     assert.equal(savage.meta.name, "Deadlands: Santa Sang");
     assert.equal(savage.chronicles[0].title, "Inici de Deadlands: Santa Sang");
+
+    const renamed = updateCampaign(
+      savage.meta.id,
+      { name: "Deadlands: Sang Nova", system: "Savage Worlds Deluxe" },
+      savage,
+    );
+    assert.equal(renamed.meta.name, "Deadlands: Sang Nova");
+    assert.equal(renamed.meta.system, "Savage Worlds Deluxe");
+
+    const meledarId = getCampaignCatalog().campaigns.find((campaign) => !campaign.isActive).id;
+    const meledar = activateCampaign(meledarId, renamed);
+    const afterDelete = deleteCampaign(renamed.meta.id, meledar);
+    const finalCatalog = getCampaignCatalog();
+    assert.equal(finalCatalog.campaigns.length, 1);
+    assert.equal(finalCatalog.campaigns[0].id, meledarId);
+    assert.equal(afterDelete.meta.id, meledarId);
   } finally {
     globalThis.window = previousWindow;
   }
+});
+
+test("storage repairs stale packaged Meledar character portraits", () => {
+  const migrated = migrateStoredState({
+    version: DATA_VERSION,
+    state: {
+      ...structuredClone(seedData),
+      characters: seedData.characters.map((character) => ({
+        ...structuredClone(character),
+        portrait: `/assets/${character.id}-oldhash.jpg`,
+      })),
+    },
+  });
+
+  const ilu = migrated.characters.find((character) => character.id === "ilu");
+  assert.equal(ilu.portrait, seedData.characters.find((character) => character.id === "ilu").portrait);
+});
+
+test("storage seeds Ruth Baskin only for a Baskins Savage Worlds campaign", () => {
+  const baskins = migrateStoredState({
+    version: DATA_VERSION,
+    state: {
+      ...structuredClone(seedData),
+      meta: {
+        id: "baskins",
+        name: "Baskins",
+        system: "Savage Worlds",
+      },
+    },
+  });
+  const ruth = baskins.characters.find((character) => character.id === "ruth-baskin");
+  assert.ok(ruth);
+  assert.equal(ruth.portrait, "");
+  assert.equal(ruth.sheet.savageState.bennies, 3);
+  assert.equal(ruth.sheet.hp, "Duresa 5");
+  assert.match(ruth.inventory.items, /Rifle curt \| Disparar d8/);
+  assert.match(ruth.inventory.items, /Abric reforcat \| Armadura \+2 \| equipada/);
+
+  const otherSavage = migrateStoredState({
+    version: DATA_VERSION,
+    state: {
+      ...structuredClone(seedData),
+      meta: {
+        id: "deadlands",
+        name: "Deadlands",
+        system: "Savage Worlds",
+      },
+    },
+  });
+  assert.equal(otherSavage.characters.some((character) => character.id === "ruth-baskin"), false);
 });

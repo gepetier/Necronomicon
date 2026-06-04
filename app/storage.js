@@ -214,6 +214,57 @@ export function createCampaign({ name, system } = {}, currentState) {
   return getActiveCampaignState();
 }
 
+export function updateCampaign(campaignId, { name, system } = {}, currentState) {
+  ensureCampaignLibrary();
+  updateActiveCampaignState(currentState);
+
+  const target = campaignLibrary.campaigns.find((campaign) => campaign.id === campaignId);
+  if (!target) {
+    return getActiveCampaignState();
+  }
+
+  const campaignName = String(name || "").trim() || target.name;
+  const campaignSystem = String(system || "").trim() || target.system || DEFAULT_CAMPAIGN_SYSTEM;
+  const now = new Date().toISOString();
+
+  target.name = campaignName;
+  target.system = campaignSystem;
+  target.updatedAt = now;
+  target.state = sanitizeState({
+    ...(target.state || {}),
+    meta: {
+      ...(target.state?.meta || {}),
+      id: target.id,
+      name: campaignName,
+      system: campaignSystem,
+      createdAt: target.createdAt,
+      updatedAt: now,
+    },
+  });
+  target.version = DATA_VERSION;
+  writeCampaignLibrary();
+  return getActiveCampaignState();
+}
+
+export function deleteCampaign(campaignId, currentState) {
+  ensureCampaignLibrary();
+  updateActiveCampaignState(currentState);
+
+  const targetIndex = campaignLibrary.campaigns.findIndex((campaign) => campaign.id === campaignId);
+  if (targetIndex === -1 || campaignLibrary.campaigns.length <= 1) {
+    return getActiveCampaignState();
+  }
+
+  const [removed] = campaignLibrary.campaigns.splice(targetIndex, 1);
+  if (campaignLibrary.activeCampaignId === removed.id) {
+    campaignLibrary.activeCampaignId = campaignLibrary.campaigns[Math.max(0, targetIndex - 1)]?.id
+      || campaignLibrary.campaigns[0].id;
+  }
+
+  writeCampaignLibrary();
+  return getActiveCampaignState();
+}
+
 export function createCloudCampaignPayload(currentState) {
   ensureCampaignLibrary();
   updateActiveCampaignState(currentState);
@@ -834,6 +885,7 @@ function sanitizeState(candidate) {
   safe.characters = Array.isArray(candidate.characters) && candidate.characters.length
     ? candidate.characters.map((character, index) => sanitizeCharacter(character, seedData.characters[index] || seedData.characters[0]))
     : safe.characters;
+  safe.characters = withBaskinsSeedCharacter(safe);
   safe.chronicles = Array.isArray(candidate.chronicles) && candidate.chronicles.length
     ? candidate.chronicles.map((chronicle, index) => sanitizeChronicle(chronicle, seedData.chronicles[index] || seedData.chronicles[0]))
     : safe.chronicles;
@@ -881,6 +933,122 @@ function sanitizeState(candidate) {
   }
 
   return safe;
+}
+
+function withBaskinsSeedCharacter(state) {
+  if (!isBaskinsSavageCampaign(state)) {
+    return state.characters;
+  }
+  if (state.characters.some((character) => character.id === "ruth-baskin")) {
+    return state.characters.map((character) => (
+      character.id === "ruth-baskin" ? enrichBaskinsSeedCharacter(character) : character
+    ));
+  }
+
+  return [
+    ...state.characters,
+    createBaskinsSeedCharacter(),
+  ];
+}
+
+function enrichBaskinsSeedCharacter(character) {
+  const seedCharacter = createBaskinsSeedCharacter();
+  const seedArmor = "Abric reforcat | Armadura +2 | equipada | Proteccio discreta, impermeable fosc";
+  const currentItems = character.inventory?.items || "";
+  const enrichedItems = currentItems.includes("Abric reforcat")
+    ? currentItems
+    : `${currentItems || seedCharacter.inventory.items}\n${seedArmor}`.trim();
+  const oldItems =
+    "Rifle curt, revòlver gastat, ganivet de bota, llibreta de deutes, impermeable fosc, xiulet d'os, tres bales marcades amb inicials.";
+  return {
+    ...seedCharacter,
+    ...character,
+    sheet: {
+      ...seedCharacter.sheet,
+      ...(character.sheet || {}),
+      abilities: String(character.sheet?.abilities || "").includes("Pas ")
+        ? character.sheet.abilities
+        : seedCharacter.sheet.abilities,
+      savageState: {
+        bennies: 3,
+        wounds: 0,
+        fatigue: 0,
+        shaken: false,
+        ...(character.sheet?.savageState || {}),
+      },
+    },
+    inventory: {
+      ...seedCharacter.inventory,
+      ...(character.inventory || {}),
+      items:
+        !character.inventory?.items || character.inventory.items === oldItems
+          ? seedCharacter.inventory.items
+          : enrichedItems,
+    },
+  };
+}
+
+function isBaskinsSavageCampaign(state) {
+  const metaText = `${state.meta?.id || ""} ${state.meta?.name || ""}`.toLowerCase();
+  const systemText = String(state.meta?.system || "").toLowerCase();
+  return metaText.includes("baskins") && systemText.includes("savage");
+}
+
+function createBaskinsSeedCharacter() {
+  return {
+    id: "ruth-baskin",
+    name: "Ruth Baskin",
+    title: "La caçadora que coneix el preu de cada favor",
+    lineage: "Humana",
+    className: "Rastrejadora d'ombres",
+    level: 1,
+    summary:
+      "Ruth Baskin porta el cognom com una marca i una factura pendent. És una rastrejadora de pobles fronterers, hàbil trobant gent desapareguda, llegint mentides petites i cobrant deutes que ningú vol posar per escrit.",
+    quickNotes:
+      "Dispara primer si la conversa fa olor de trampa. Té una llibreta amb noms ratllats, un xiulet d'os i una relació massa familiar amb els corbs del camí vell.",
+    lore: {
+      origin:
+        "Va créixer entre magatzems tancats, camins de pols i històries que els adults deixaven a mitges quan ella entrava a l'habitació. El seu primer encàrrec va ser trobar un germà perdut; el va trobar viu, però no humà del tot.",
+      bonds:
+        "Protegeix qualsevol criatura que hagi estat convertida en eina per algú més poderós. Desconfia dels jutges, dels notaris i dels predicadors massa nets.",
+      secrets:
+        "El seu cognom obre portes en llocs on ningú admet conèixer els Baskin. També tanca altres portes amb panys nous.",
+      goals:
+        "Vol descobrir qui fa servir el nom Baskin per moure diners, morts i miracles falsos entre assentaments.",
+      wounds:
+        "No dorm bé si no sap on són totes les sortides. Quan sent campanes llunyanes, compta inconscientment fins a tretze.",
+    },
+    sheet: {
+      ac: "Parada 6",
+      hp: "Duresa 5",
+      proficiency: "Bennies 3",
+      abilities:
+        "Pas 6\nAgilitat d8, Astúcia d8, Esperit d6, Força d6, Vigor d8\nAtletisme d6, Disparar d8, Furtivitat d6, Investigar d8, Notar d8, Persuadir d6, Provocar d6, Reparar d6, Sobreviure d6",
+      features:
+        "Avantatges: Alerta, Ràpida desenfundant.\nComplicacions: Cautelosa, Lleial als innocents atrapats, Secret familiar.\nNotes: sap seguir rastres en terreny difícil i pot reconstruir una escena mirant què falta, no només què hi ha.",
+      savageState: {
+        bennies: 3,
+        wounds: 0,
+        fatigue: 0,
+        shaken: false,
+      },
+    },
+    inventory: {
+      items:
+        "Rifle curt | Disparar d8 | 2d6 | Rang 12/24/48\nRevolver gastat | Disparar d8 | 2d6+1 | Rang 12/24/48\nGanivet de bota | Atletisme d6 | For+d4 | Cos a cos\nAbric reforcat | Armadura +2 | equipada | Proteccio discreta, impermeable fosc\nLlibreta de deutes, xiulet d'os, tres bales marcades amb inicials.",
+      currency: "14 dòlars, dues monedes antigues i un favor cobrat a mitges.",
+      artifacts:
+        "Xiulet d'os: els corbs responen quan el vent bufa de nord. Ruth encara no sap si els crida o si només els avisa.",
+      notes:
+        "Ideal com a aliada incòmoda, PNJ recurrent o personatge jugador amb ganxos directes sobre la família Baskin.",
+    },
+    history:
+      "Ruth va aprendre aviat que una família pot ser una protecció, una condemna o una signatura falsificada. Després d'un incendi al registre del comtat, va començar a trobar documents amb el seu cognom lligat a compres impossibles: terres que no existien, cadàvers sense nom i una mina que apareixia als mapes només durant la lluna nova.\n\nAra segueix el rastre d'aquests papers. No busca venjança exactament; busca saber qui cobra quan els Baskin sagnen.",
+    sigil: "RB",
+    portrait: "",
+    playerNotes: [],
+    palette: ["#3f2d25", "#b8793e"],
+  };
 }
 
 function sanitizeCampaignMeta(meta) {
@@ -959,16 +1127,48 @@ function sanitizeDrafts(candidateDrafts, fallbackDrafts) {
 }
 
 function sanitizeCharacter(character, fallback) {
+  const characterFallback = findCharacterFallback(character, fallback);
   return {
-    ...structuredClone(fallback),
+    ...structuredClone(characterFallback),
     ...character,
-    lore: { ...structuredClone(fallback).lore, ...(character?.lore || {}) },
-    sheet: { ...structuredClone(fallback).sheet, ...(character?.sheet || {}) },
-    inventory: { ...structuredClone(fallback).inventory, ...(character?.inventory || {}) },
+    lore: { ...structuredClone(characterFallback).lore, ...(character?.lore || {}) },
+    sheet: { ...structuredClone(characterFallback).sheet, ...(character?.sheet || {}) },
+    inventory: { ...structuredClone(characterFallback).inventory, ...(character?.inventory || {}) },
     playerNotes: sanitizePlayerNotes(character?.playerNotes),
-    palette: Array.isArray(character?.palette) ? character.palette : fallback.palette,
-    portrait: typeof character?.portrait === "string" && character.portrait ? character.portrait : fallback.portrait,
+    palette: Array.isArray(character?.palette) ? character.palette : characterFallback.palette,
+    portrait: sanitizeCharacterPortrait(character, characterFallback),
   };
+}
+
+function findCharacterFallback(character, fallback) {
+  const characterId = typeof character?.id === "string" ? character.id : "";
+  return seedData.characters.find((seedCharacter) => seedCharacter.id === characterId) || fallback;
+}
+
+function sanitizeCharacterPortrait(character, fallback) {
+  const portrait = typeof character?.portrait === "string" ? character.portrait.trim() : "";
+  if (!portrait) {
+    return fallback?.id === character?.id ? fallback.portrait : "";
+  }
+
+  return isPackagedCharacterPortrait(character?.id, portrait) ? fallback.portrait : portrait;
+}
+
+function isPackagedCharacterPortrait(characterId, portrait) {
+  const fallback = seedData.characters.find((character) => character.id === characterId);
+  if (!fallback?.portrait) {
+    return false;
+  }
+
+  const normalizedPortrait = String(portrait || "").replaceAll("\\", "/").toLowerCase();
+  const normalizedId = String(characterId || "").toLowerCase();
+  return Boolean(
+    normalizedId
+      && (
+        normalizedPortrait.includes(`/assets/${normalizedId}-`)
+        || normalizedPortrait.includes(`/resources/imatges/${normalizedId}.`)
+      ),
+  );
 }
 
 function sanitizeChronicle(chronicle, fallback) {

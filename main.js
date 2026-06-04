@@ -2,11 +2,13 @@ import {
   activateCampaign as storageActivateCampaign,
   createCampaign as storageCreateCampaign,
   createCloudCampaignPayload as storageCreateCloudCampaignPayload,
+  deleteCampaign as storageDeleteCampaign,
   getActiveCampaignMeta as storageGetActiveCampaignMeta,
   getCampaignCatalog as storageGetCampaignCatalog,
   loadState as loadStoredState,
   migrateStoredState as storageMigrateStoredState,
   persistState as storagePersistState,
+  updateCampaign as storageUpdateCampaign,
 } from "./app/storage.js";
 import {
   createChronicle as createChronicleEntry,
@@ -104,6 +106,7 @@ const saveNoticeEl = document.querySelector("#saveNotice");
 const charactersModule = document.querySelector("#charactersModule");
 const chroniclesModule = document.querySelector("#chroniclesModule");
 const glossaryModule = document.querySelector("#glossaryModule");
+const campaignsModule = document.querySelector("#campaignsModule");
 const optionsModule = document.querySelector("#optionsModule");
 const sidebarContextPanel = document.querySelector("#sidebarContextPanel");
 const sidebar = document.querySelector(".sidebar");
@@ -189,6 +192,7 @@ const RENDER_PARTS = {
   characters: "characters",
   chronicles: "chronicles",
   glossary: "glossary",
+  campaigns: "campaigns",
   options: "options",
   themes: "themes",
   assets: "assets",
@@ -199,6 +203,7 @@ const FULL_RENDER_PARTS = [
   RENDER_PARTS.characters,
   RENDER_PARTS.chronicles,
   RENDER_PARTS.glossary,
+  RENDER_PARTS.campaigns,
   RENDER_PARTS.options,
   RENDER_PARTS.themes,
   RENDER_PARTS.assets,
@@ -261,6 +266,15 @@ function applyCaptureUserOverride() {
 }
 
 function handleClick(event) {
+  const savageConceptTrigger = event.target.closest(".savage-concept");
+  if (savageConceptTrigger) {
+    event.preventDefault();
+    toggleSavageConceptTooltip(savageConceptTrigger);
+    return;
+  }
+
+  closeSavageConceptTooltips();
+
   if (event.target.closest("[data-close-image-lightbox]")) {
     closeImageLightbox();
     return;
@@ -338,7 +352,13 @@ function handleClick(event) {
 
   const campaignSwitch = event.target.closest("[data-switch-campaign]");
   if (campaignSwitch) {
-    switchCampaign(campaignSwitch.dataset.switchCampaign || "");
+    focusCampaign(campaignSwitch.dataset.switchCampaign || "");
+    return;
+  }
+
+  const campaignDelete = event.target.closest("[data-delete-campaign]");
+  if (campaignDelete) {
+    deleteCampaign(campaignDelete.dataset.deleteCampaign || "");
     return;
   }
 
@@ -626,6 +646,18 @@ function handleClick(event) {
     return;
   }
 
+  const savageStateButton = event.target.closest("[data-savage-state]");
+  if (savageStateButton) {
+    updateSavageCharacterState(savageStateButton);
+    return;
+  }
+
+  const savageEquipButton = event.target.closest("[data-savage-equip]");
+  if (savageEquipButton) {
+    updateSavageEquipmentLoadout(savageEquipButton);
+    return;
+  }
+
   if (event.target.closest("[data-toggle-notes]")) {
     state.ui.notesPanelOpen = !state.ui.notesPanelOpen;
     render();
@@ -649,6 +681,10 @@ function handleKeydown(event) {
     return;
   }
 
+  if (event.key === "Escape") {
+    closeSavageConceptTooltips();
+  }
+
   if (event.key === "Escape" && isImageLightboxOpen()) {
     event.preventDefault();
     closeImageLightbox();
@@ -657,6 +693,13 @@ function handleKeydown(event) {
 
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const savageConceptTrigger = target.closest(".savage-concept");
+  if (savageConceptTrigger && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    toggleSavageConceptTooltip(savageConceptTrigger);
     return;
   }
 
@@ -801,6 +844,32 @@ function buildFocusSelector(element) {
   return "";
 }
 
+function toggleSavageConceptTooltip(trigger) {
+  if (!(trigger instanceof HTMLElement)) {
+    return;
+  }
+
+  const shouldOpen = !trigger.classList.contains("open");
+  closeSavageConceptTooltips();
+  trigger.classList.toggle("open", shouldOpen);
+  trigger.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+  trigger
+    .closest(".savage-live-control, .dnd-combat-stat, .savage-skills-panel")
+    ?.classList.toggle("savage-concept-host-open", shouldOpen);
+}
+
+function closeSavageConceptTooltips() {
+  document.querySelectorAll(".savage-concept.open").forEach((trigger) => {
+    if (trigger instanceof HTMLElement) {
+      trigger.classList.remove("open");
+      trigger.setAttribute("aria-expanded", "false");
+    }
+  });
+  document.querySelectorAll(".savage-concept-host-open").forEach((host) => {
+    host.classList.remove("savage-concept-host-open");
+  });
+}
+
 function handleInput(event) {
   if (event.target === backupImportPicker && event.target instanceof HTMLInputElement) {
     void importCampaignBackup(event.target);
@@ -930,6 +999,11 @@ function handleSubmit(event) {
 
   if (form.dataset.form === "campaign-create") {
     createCampaign(formData);
+    return;
+  }
+
+  if (form.dataset.form === "campaign-update") {
+    updateCampaign(formData);
   }
 }
 
@@ -951,6 +1025,9 @@ function render(parts = FULL_RENDER_PARTS) {
   }
   if (renderSet.has(RENDER_PARTS.glossary)) {
     renderGlossaryModule();
+  }
+  if (renderSet.has(RENDER_PARTS.campaigns)) {
+    renderCampaignsModule();
   }
   if (renderSet.has(RENDER_PARTS.options)) {
     renderOptionsModule();
@@ -1343,7 +1420,7 @@ function updateCloudStatus(message, options = {}) {
   cloudSession.lastError = options.error ? message : "";
   updateAuthGate();
   if (options.renderOptions !== false) {
-    render([RENDER_PARTS.options]);
+    render([RENDER_PARTS.options, RENDER_PARTS.campaigns]);
   }
 }
 
@@ -1358,6 +1435,10 @@ function currentModuleRenderParts() {
 
   if (state.ui.currentModule === "glossary") {
     return [RENDER_PARTS.notice, RENDER_PARTS.glossary, RENDER_PARTS.themes, RENDER_PARTS.assets];
+  }
+
+  if (state.ui.currentModule === "campaigns") {
+    return [RENDER_PARTS.notice, RENDER_PARTS.campaigns, RENDER_PARTS.themes, RENDER_PARTS.assets];
   }
 
   if (state.ui.currentModule === "options") {
@@ -1416,34 +1497,8 @@ function renderSidebarCampaignSwitcher() {
     return;
   }
 
-  const campaigns = getAccessibleCampaignsForCurrentUser();
-  const activeCampaignId = storageGetActiveCampaignMeta().id;
-  if (campaigns.length <= 1) {
-    sidebarCampaignSwitcher.hidden = true;
-    sidebarCampaignSwitcher.innerHTML = "";
-    return;
-  }
-
-  sidebarCampaignSwitcher.hidden = false;
-  const activeCampaign = campaigns.find((campaign) => campaign.id === activeCampaignId)
-    || campaigns.find((campaign) => campaign.isActive)
-    || campaigns[0];
-
-  sidebarCampaignSwitcher.innerHTML = `
-    <label class="sidebar-campaign-switcher">
-      <span class="sidebar-campaign-label">Campanya activa</span>
-      <select data-sidebar-campaign-switch aria-label="Canvia de campanya">
-        ${campaigns.map((campaign) => `
-          <option value="${escapeAttribute(campaign.id)}" ${campaign.id === activeCampaignId ? "selected" : ""}>
-            ${escapeHtml(campaign.name)}
-          </option>
-        `).join("")}
-      </select>
-      <span class="sidebar-campaign-meta">
-        ${escapeHtml(activeCampaign.system || "Sistema no especificat")} · ${escapeHtml(formatRoleLabel(activeCampaign.userAccess.role))}
-      </span>
-    </label>
-  `;
+  sidebarCampaignSwitcher.hidden = true;
+  sidebarCampaignSwitcher.innerHTML = "";
 }
 
 function updateSaveNotice() {
@@ -1562,6 +1617,178 @@ function renderGlossaryModule() {
   });
 }
 
+function renderCampaignsModule() {
+  if (!campaignsModule) {
+    return;
+  }
+
+  const currentUserAccess = getCurrentUserAccess();
+  const campaignsEditable = canManageCampaigns();
+  const activeMeta = storageGetActiveCampaignMeta();
+  const catalog = storageGetCampaignCatalog();
+  const visibleCampaigns = campaignsEditable ? catalog.campaigns : getAccessibleCampaignsForCurrentUser();
+  const activeCampaign = visibleCampaigns.find((campaign) => campaign.id === activeMeta.id)
+    || catalog.campaigns.find((campaign) => campaign.id === activeMeta.id);
+
+  campaignsModule.innerHTML = `
+    <section class="module-surface options-shell campaigns-shell">
+      <div class="module-section-header campaigns-header">
+        <div class="module-section-copy">
+          <p class="eyebrow">Campanyes</p>
+          <h3>Biblioteca de campanyes</h3>
+          <p>Centralitza la creacio, edicio, eliminacio i canvi de focus entre campanyes del compendi.</p>
+        </div>
+        <div class="campaign-focus-card">
+          <span class="eyebrow">Focus actual</span>
+          <strong>${escapeHtml(activeMeta.name)}</strong>
+          <span>${escapeHtml(activeMeta.system || "Sistema no especificat")}</span>
+        </div>
+      </div>
+
+      <div class="campaigns-layout">
+        <section class="campaigns-main-list" aria-label="Campanyes disponibles">
+          ${visibleCampaigns.length
+            ? visibleCampaigns.map((campaign) => renderCampaignCard(campaign, {
+                activeCampaignId: activeMeta.id,
+                canEdit: campaignsEditable,
+                canDelete: campaignsEditable && catalog.campaigns.length > 1,
+              })).join("")
+            : renderNoAccessibleCampaigns(currentUserAccess)}
+        </section>
+
+        <aside class="campaigns-side-panel">
+          ${campaignsEditable ? renderCampaignCreatePanel() : renderCampaignReadonlyPanel(currentUserAccess, visibleCampaigns)}
+          <article class="section-card options-card campaigns-status-panel">
+            <div class="options-card-copy">
+              <p class="eyebrow">Resum actiu</p>
+              <h3>${escapeHtml(activeMeta.name)}</h3>
+              <p>${escapeHtml(activeCampaign?.userAccess ? formatRoleLabel(activeCampaign.userAccess.role) : formatRoleLabel(currentUserAccess.role))}</p>
+            </div>
+            <div class="options-stat-list">
+              <span class="badge">Sistema: ${escapeHtml(activeMeta.system || "Sense sistema")}</span>
+              <span class="badge">${state.characters.length} personatges</span>
+              <span class="badge">${state.chronicles.length} croniques</span>
+              <span class="badge">${state.glossary.length} glossari</span>
+            </div>
+          </article>
+        </aside>
+      </div>
+    </section>
+  `;
+}
+
+function renderCampaignCard(campaign, options = {}) {
+  const isActive = campaign.id === options.activeCampaignId;
+  const userAccess = campaign.userAccess;
+  const roleLabel = userAccess ? formatRoleLabel(userAccess.role) : "";
+  const updatedAt = formatShortDate(campaign.updatedAt) || "Sense data";
+  const canDelete = options.canDelete;
+
+  return `
+    <article class="campaign-switch-card campaign-admin-card ${isActive ? "active" : ""}">
+      <div class="campaign-switch-copy">
+        <p class="eyebrow">${isActive ? "Focus actual" : "Disponible"}</p>
+        <h4>${escapeHtml(campaign.name)}</h4>
+        <p>${escapeHtml(campaign.system || "Sistema no especificat")}</p>
+        <div class="options-stat-list">
+          <span class="badge">${campaign.counts.characters} personatges</span>
+          <span class="badge">${campaign.counts.chronicles} croniques</span>
+          <span class="badge">${campaign.counts.glossary} glossari</span>
+          ${roleLabel ? `<span class="badge">Rol: ${escapeHtml(roleLabel)}</span>` : ""}
+          <span class="badge">Actualitzada: ${escapeHtml(updatedAt)}</span>
+        </div>
+      </div>
+
+      <div class="campaign-card-actions">
+        <button
+          type="button"
+          class="secondary"
+          data-switch-campaign="${escapeAttribute(campaign.id)}"
+          ${isActive ? "disabled" : ""}
+        >
+          ${isActive ? "Activa" : "Fes focus"}
+        </button>
+        ${options.canEdit ? `
+          <form data-form="campaign-update" class="campaign-edit-form">
+            <input type="hidden" name="campaignId" value="${escapeAttribute(campaign.id)}" />
+            <label class="field">
+              <span>Nom</span>
+              <input name="campaignName" maxlength="80" value="${escapeAttribute(campaign.name)}" required />
+            </label>
+            <label class="field">
+              <span>Sistema</span>
+              <input name="campaignSystem" maxlength="80" value="${escapeAttribute(campaign.system || "")}" />
+            </label>
+            <div class="options-actions">
+              <button type="submit" class="secondary">Desa canvis</button>
+              <button
+                type="button"
+                class="secondary danger"
+                data-delete-campaign="${escapeAttribute(campaign.id)}"
+                ${canDelete ? "" : "disabled"}
+                title="${escapeAttribute(canDelete ? "Elimina la campanya" : "No es pot eliminar l'unica campanya")}"
+              >
+                Elimina
+              </button>
+            </div>
+          </form>
+        ` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderCampaignCreatePanel() {
+  return `
+    <article class="section-card options-card campaign-manager-card">
+      <div class="options-card-copy">
+        <p class="eyebrow">Nova campanya</p>
+        <h3>Crea un compendi</h3>
+        <p>La campanya nova s'obre immediatament i conserva el cataleg existent.</p>
+      </div>
+      <form data-form="campaign-create" class="campaign-create-form">
+        <label class="field">
+          <span>Nom</span>
+          <input name="campaignName" maxlength="80" placeholder="Ex. Deadlands: Santa Sang" required />
+        </label>
+        <label class="field">
+          <span>Sistema</span>
+          <input name="campaignSystem" maxlength="80" value="Savage Worlds" placeholder="Savage Worlds" />
+        </label>
+        <button type="submit" class="primary">Crea campanya</button>
+      </form>
+    </article>
+  `;
+}
+
+function renderCampaignReadonlyPanel(currentUserAccess, visibleCampaigns) {
+  return `
+    <article class="section-card options-card campaign-access-card">
+      <div class="options-card-copy">
+        <p class="eyebrow">Acces</p>
+        <h3>${escapeHtml(formatRoleLabel(currentUserAccess.role))}</h3>
+        <p>Pots canviar el focus entre les campanyes accessibles. La creacio, edicio i eliminacio requereixen permisos de gestio.</p>
+      </div>
+      <div class="options-stat-list">
+        <span class="badge">${escapeHtml(currentUserAccess.email || "Usuari local")}</span>
+        <span class="badge">${visibleCampaigns.length} campanyes accessibles</span>
+      </div>
+    </article>
+  `;
+}
+
+function renderNoAccessibleCampaigns(currentUserAccess) {
+  return `
+    <article class="section-card campaign-admin-card">
+      <div class="campaign-switch-copy">
+        <p class="eyebrow">Sense acces</p>
+        <h4>No tens cap campanya disponible</h4>
+        <p>${escapeHtml(currentUserAccess.email || "Usuari connectat")}</p>
+      </div>
+    </article>
+  `;
+}
+
 function renderOptionsModule() {
   if (!optionsModule) {
     return;
@@ -1585,15 +1812,11 @@ function renderOptionsModule() {
         <div class="module-section-copy">
           <p class="eyebrow">Configuracio</p>
           <h3>Opcions de campanya</h3>
-          <p>Campanyes disponibles, sincronitzacio de Drive, permisos i eines de manteniment del compendi.</p>
+          <p>Sincronitzacio de Drive, permisos i eines de manteniment del compendi. La gestio de campanyes viu a la pestanya Campanyes.</p>
         </div>
       </div>
 
       <div class="options-grid">
-        ${campaignsEditable
-          ? renderCampaignManager(campaignMeta)
-          : renderCampaignAccessSummary(campaignMeta, currentUserAccess)}
-
         <article class="section-card options-card">
           <div class="options-card-copy">
             <p class="eyebrow">Google Drive</p>
@@ -1659,6 +1882,19 @@ function renderOptionsModule() {
             <span class="badge">${state.chronicles.length} croniques</span>
             <span class="badge">${state.glossary.length} entrades</span>
             <span class="badge">Darrer canvi: ${escapeHtml(lastSavedLabel)}</span>
+          </div>
+        </article>
+
+        <article class="section-card options-card campaign-access-card">
+          <div class="options-card-copy">
+            <p class="eyebrow">Campanyes</p>
+            <h3>${campaignsEditable ? "Gestio centralitzada" : "Focus i acces"}</h3>
+            <p>${campaignsEditable
+              ? "Crea, edita, elimina o canvia el focus de campanya des de la pestanya Campanyes."
+              : "Canvia el focus entre les campanyes accessibles des de la pestanya Campanyes."}</p>
+          </div>
+          <div class="options-actions">
+            <button type="button" class="secondary" data-module-link="campaigns">Obre Campanyes</button>
           </div>
         </article>
 
@@ -2042,6 +2278,99 @@ function applyCharacterTabDrafts(character) {
   });
 }
 
+function updateSavageCharacterState(button) {
+  const character = getSelectedCharacter();
+  if (!character || !canEditCharacter(character)) {
+    denyPermission("No tens permisos per modificar l'estat d'aquesta fitxa.");
+    return;
+  }
+
+  character.sheet = character.sheet || {};
+  const current = normalizeSavageRuntimeState(character.sheet.savageState, character.sheet.proficiency);
+  const key = button.dataset.savageState || "";
+  if (button.dataset.savageToggle === "true") {
+    current[key] = !current[key];
+  } else {
+    const delta = Number(button.dataset.savageDelta || 0);
+    current[key] = clampRuntimeNumber(Number(current[key] || 0) + delta, getSavageRuntimeLimits(key));
+  }
+
+  character.sheet.savageState = current;
+  showSaveNotice("Estat Savage actualitzat", {
+    cloud: true,
+    renderParts: [RENDER_PARTS.notice, RENDER_PARTS.characters, RENDER_PARTS.themes, RENDER_PARTS.assets],
+  });
+}
+
+function updateSavageEquipmentLoadout(button) {
+  const character = getSelectedCharacter();
+  if (!character || !canEditCharacter(character)) {
+    denyPermission("No tens permisos per modificar l'equip d'aquesta fitxa.");
+    return;
+  }
+
+  const itemId = button.dataset.savageEquip || "";
+  const slot = button.dataset.savageEquipSlot || "";
+  if (!itemId || !slot) {
+    return;
+  }
+
+  character.sheet = character.sheet || {};
+  const current = normalizeSavageLoadout(character.sheet.savageLoadout);
+  const key = slot === "armor" ? "equippedArmorIds" : "equippedWeaponIds";
+  const ids = new Set(current[key]);
+  if (button.dataset.savageEquipped === "true") {
+    ids.delete(itemId);
+  } else {
+    ids.add(itemId);
+  }
+  current[key] = Array.from(ids);
+  character.sheet.savageLoadout = current;
+  showSaveNotice("Equip Savage actualitzat", {
+    cloud: true,
+    renderParts: [RENDER_PARTS.notice, RENDER_PARTS.characters, RENDER_PARTS.themes, RENDER_PARTS.assets],
+  });
+}
+
+function normalizeSavageLoadout(candidate) {
+  const source = candidate && typeof candidate === "object" ? candidate : {};
+  return {
+    equippedWeaponIds: Array.isArray(source.equippedWeaponIds) ? source.equippedWeaponIds.map(String) : [],
+    equippedArmorIds: Array.isArray(source.equippedArmorIds) ? source.equippedArmorIds.map(String) : [],
+  };
+}
+
+function normalizeSavageRuntimeState(candidate, fallbackBennies) {
+  const source = candidate && typeof candidate === "object" ? candidate : {};
+  const fallbackBennyCount = parseRuntimeSignedNumber(fallbackBennies) || 3;
+  return {
+    bennies: clampRuntimeNumber(source.bennies ?? fallbackBennyCount, { min: 0, max: 9 }),
+    wounds: clampRuntimeNumber(source.wounds, { min: 0, max: 3 }),
+    fatigue: clampRuntimeNumber(source.fatigue, { min: 0, max: 2 }),
+    shaken: Boolean(source.shaken),
+  };
+}
+
+function parseRuntimeSignedNumber(value) {
+  const match = String(value || "").match(/[+-]?\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function getSavageRuntimeLimits(key) {
+  if (key === "bennies") {
+    return { min: 0, max: 9 };
+  }
+  if (key === "fatigue") {
+    return { min: 0, max: 2 };
+  }
+  return { min: 0, max: 3 };
+}
+
+function clampRuntimeNumber(value, limits) {
+  const number = Number.isFinite(Number(value)) ? Number(value) : 0;
+  return Math.min(limits.max, Math.max(limits.min, Math.trunc(number)));
+}
+
 function saveChronicle(formData) {
   if (!canEditChronicle(readString(formData, "id"))) {
     denyPermission("No tens permisos per desar aquesta cronica.");
@@ -2270,6 +2599,15 @@ function switchCampaign(campaignId) {
   showSaveNotice(`Campanya oberta: ${storageGetActiveCampaignMeta().name}`, { cloud: true });
 }
 
+function focusCampaign(campaignId) {
+  if (canManageCampaigns()) {
+    switchCampaign(campaignId);
+    return;
+  }
+
+  switchAccessibleCampaign(campaignId);
+}
+
 function switchAccessibleCampaign(campaignId) {
   const activeCampaignId = storageGetActiveCampaignMeta().id;
   if (!campaignId || campaignId === activeCampaignId) {
@@ -2322,6 +2660,56 @@ function createCampaign(formData) {
   persistStateImmediately({ cloud: true });
   render();
   showSaveNotice(`Campanya creada: ${storageGetActiveCampaignMeta().name}`, { cloud: true });
+}
+
+function updateCampaign(formData) {
+  if (!canManageCampaigns()) {
+    denyPermission("No tens permisos per modificar campanyes.");
+    return;
+  }
+
+  const campaignId = readString(formData, "campaignId");
+  const name = readString(formData, "campaignName");
+  const system = readString(formData, "campaignSystem") || "Sistema no especificat";
+  if (!campaignId || !name) {
+    return;
+  }
+
+  state = storageUpdateCampaign(campaignId, { name, system }, state);
+  ensureUiStateShape();
+  syncCloudUserWithActiveCampaignAccess();
+  persistStateImmediately({ cloud: true });
+  render();
+  showSaveNotice(`Campanya actualitzada: ${name}`, { cloud: true });
+}
+
+function deleteCampaign(campaignId) {
+  if (!canManageCampaigns()) {
+    denyPermission("No tens permisos per eliminar campanyes.");
+    return;
+  }
+
+  const catalog = storageGetCampaignCatalog();
+  const target = catalog.campaigns.find((campaign) => campaign.id === campaignId);
+  if (!target) {
+    return;
+  }
+  if (catalog.campaigns.length <= 1) {
+    denyPermission("No es pot eliminar l'unica campanya del cataleg.");
+    return;
+  }
+  if (!window.confirm(`Eliminar la campanya "${target.name}"? Aquesta accio no es pot desfer.`)) {
+    return;
+  }
+
+  state = storageDeleteCampaign(campaignId, state);
+  ensureUiStateShape();
+  syncCloudUserWithActiveCampaignAccess();
+  clearChronicleReturn();
+  closeSidebarPreview();
+  persistStateImmediately({ cloud: true });
+  render();
+  showSaveNotice(`Campanya eliminada: ${target.name}`, { cloud: true });
 }
 
 function confirmSwitchingCampaign() {
@@ -2805,7 +3193,7 @@ function toggleModuleEdit(module) {
 }
 
 function ensureUiStateShape() {
-  const validModules = new Set(["characters", "chronicles", "glossary", "options"]);
+  const validModules = new Set(["characters", "chronicles", "glossary", "campaigns", "options"]);
   state.ui.currentModule = validModules.has(state.ui.currentModule) ? state.ui.currentModule : "characters";
   state.ui.showChronicleLanding = typeof state.ui.showChronicleLanding === "boolean" ? state.ui.showChronicleLanding : true;
   state.ui.sidebarPinned = typeof state.ui.sidebarPinned === "boolean" ? state.ui.sidebarPinned : false;

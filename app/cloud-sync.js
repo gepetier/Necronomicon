@@ -1,5 +1,5 @@
 export const CLOUD_CONFIG = {
-  clientId: "240706458880-tlj1amstdpjfccgbtj29lpe0jc06dj2u.apps.googleusercontent.com",
+  clientId: "386167885974-voguggv8fbvmqioec1p38vu3qf1fj33f.apps.googleusercontent.com",
   apiUrl: "https://script.google.com/macros/s/AKfycbwPm3QcltPGib-vwLWiElMZuELd-tq5aS2qohR_oNZt96IiPNOwumMYoIw7KZKJmBfXKQ/exec",
 };
 
@@ -41,7 +41,13 @@ export function decodeCredential(credential) {
 
 export function isCredentialUsable(credential) {
   const decoded = decodeCredential(credential);
-  return Boolean(decoded && decoded.email && decoded.expiresAt > Date.now() + 60000);
+  const payload = decodeJwtPayload(credential);
+  return Boolean(
+    decoded
+      && decoded.email
+      && decoded.expiresAt > Date.now() + 60000
+      && payload?.aud === CLOUD_CONFIG.clientId,
+  );
 }
 
 export async function loadGoogleIdentity() {

@@ -17,8 +17,11 @@ bootstrap().catch((error) => {
 async function bootstrap() {
   resetStorage(window.localStorage);
   await resetAssetStore(window.indexedDB);
-  if (scenario === "sidebar-campaign-switch") {
+  if (scenario === "sidebar-campaign-switch" || scenario === "campaigns-dashboard") {
     seedCampaignSwitchCatalog(window.localStorage);
+  }
+  if (scenario.startsWith("baskins-character")) {
+    seedBaskinsCampaignCatalog(window.localStorage);
   }
   const frameLoaded = onceLoaded(frame);
   const appParams = new URLSearchParams({ captureRun: String(Date.now()) });
@@ -141,6 +144,39 @@ async function runScenario(context, scenarioName) {
     },
     "options-player-access": async () => {
       await context.click('[data-module-link="options"]');
+    },
+    "campaigns-dashboard": async () => {
+      await context.click('[data-module-link="campaigns"]');
+    },
+    "baskins-character-sheet": async () => {
+      await scrollCharacterSheetIntoView(context);
+    },
+    "baskins-character-tooltip": async () => {
+      await scrollCharacterSheetIntoView(context);
+      const concept = context.query(".savage-concept");
+      if (concept instanceof context.win.HTMLElement) {
+        concept.click();
+      }
+      await delay(180);
+    },
+    "baskins-character-loadout": async () => {
+      await scrollCharacterSheetIntoView(context);
+      const panel = context.query(".savage-loadout-panel");
+      if (panel instanceof context.win.HTMLElement) {
+        const rect = panel.getBoundingClientRect();
+        const nextY = context.win.scrollY + rect.top - 160;
+        context.win.scrollTo(0, nextY);
+        if (context.doc.scrollingElement) {
+          context.doc.scrollingElement.scrollTop = nextY;
+        }
+      }
+      await delay(180);
+    },
+    "baskins-character-penalty": async () => {
+      await scrollCharacterSheetIntoView(context);
+      await context.click('[data-savage-state="wounds"][data-savage-delta="1"]');
+      await context.click('[data-savage-state="fatigue"][data-savage-delta="1"]');
+      await delay(220);
     },
     "characters-grid-lightbox": async () => {
       await context.click(".portrait-media");
@@ -389,6 +425,42 @@ function seedCampaignSwitchCatalog(storage) {
     glossary: savageState.glossary,
     access: savageState.access,
     ui: savageState.ui,
+  }));
+}
+
+function seedBaskinsCampaignCatalog(storage) {
+  const now = "2026-06-04T00:00:00.000Z";
+  const baskinsState = createCampaignStateForCapture({
+    id: "baskins",
+    name: "Baskins",
+    system: "Savage Worlds",
+    createdAt: now,
+  });
+  baskinsState.ui.selectedCharacterId = "ruth-baskin";
+  baskinsState.ui.selectedCharacterTab = "sheet";
+  baskinsState.ui.showCharacterGrid = false;
+
+  storage.setItem(STORAGE_KEY, JSON.stringify({
+    kind: "necronomicon-campaign-library",
+    version: DATA_VERSION,
+    activeCampaignId: "baskins",
+    campaigns: [
+      {
+        id: "baskins",
+        name: "Baskins",
+        system: "Savage Worlds",
+        createdAt: now,
+        updatedAt: now,
+        version: DATA_VERSION,
+        state: baskinsState,
+      },
+    ],
+    meta: baskinsState.meta,
+    characters: baskinsState.characters,
+    chronicles: baskinsState.chronicles,
+    glossary: baskinsState.glossary,
+    access: baskinsState.access,
+    ui: baskinsState.ui,
   }));
 }
 

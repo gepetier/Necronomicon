@@ -79,6 +79,13 @@
 - Persistence now supports a local/Drive campaign catalog; the app still renders one active campaign at a time, while `Opcions` can switch campaigns or create a new starter campaign such as `Savage Worlds`.
 - Campaign access now has three canonical roles (`superadmin`, `gm`, `player`), login opens a campaign picker for active accessible campaigns, and the sidebar exposes an accessible-campaign dropdown when more than one campaign is available to the current user.
 - Permission decisions live in `app/permissions.js` with unit coverage for the role matrix; full JSON import is restricted to campaign managers, while full JSON export/publish remains limited to users with campaign publish authority.
+- Campaign creation, editing, deletion, and active-focus switching now live in the dedicated `Campanyes` sidebar module; `Opcions` only links back to that module instead of hosting campaign management.
+- Meledar seed character portraits are repaired during storage sanitization when persisted data contains empty or stale packaged Vite asset paths for `ilu`, `nelthan`, `damakos`, or `elatoris`.
+- Savage Worlds campaigns render the character `Fitxa` tab with Savage-specific traits, skills, Parada, Duresa, Bennies, wounds/fatigue markers, and Savage editor labels instead of the D&D 5e sheet.
+- Savage Worlds character sheets now support live table state (`bennies`, `shaken`, `wounds`, `fatigue`) inside `character.sheet.savageState`, and weapon rows can be entered in inventory as `Name | Trait | Damage | Notes`.
+- Savage Worlds concept help uses a local curated tooltip dictionary rather than an external rules API, avoiding licensing/API availability risk while keeping the interface explainable at the table.
+- Savage Worlds sheets are moving toward an assisted-sheet model: wounds/fatigue calculate a visible penalty, armor/equipment lines can be equipped, and equipped armor recalculates derived combat stats.
+- The Baskins Savage Worlds campaign auto-seeds Ruth Baskin (`ruth-baskin`) when missing.
 
 ## Pending
 - Before committing/deploying, seed the new Drive `campaign.json` with the desired canonical campaign data; local `data.js` now contains sessions 1-4, but Drive may still need to be updated from the local canonical data.
@@ -155,6 +162,12 @@
 - 2026-06-02: added multi-campaign storage with a campaign catalog, `Opcions` campaign switcher/creator defaulting to `Savage Worlds`, Drive payload support for the full catalog, Apps Script character-save synchronization for the active catalog entry, refreshed options captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
 - 2026-06-03: added role-aware campaign selection after login plus a sidebar campaign dropdown for switching between accessible campaigns without requiring campaign-management permission; refreshed auth/sidebar captures and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
 - 2026-06-03: extracted role permission decisions into `app/permissions.js`, added unit tests for superadmin/GM/player/unassigned/local access, simplified `Opcions` for non-manager users, hid restricted JSON tools, refreshed options/sidebar/auth captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, and full `npm.cmd run qa` pass.
+- 2026-06-04: moved campaign management into a new `Campanyes` module with create/edit/delete/focus actions, removed the duplicate sidebar switcher, refreshed campaign desktop/mobile captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
+- 2026-06-04: repaired Meledar character portraits when persisted campaign data contains stale packaged asset URLs, added unit coverage, refreshed character desktop/mobile captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, and `npm.cmd run qa:functional` pass.
+- 2026-06-04: added Ruth Baskin to Baskins Savage Worlds campaigns, adapted the character sheet/editor for Savage Worlds systems, refreshed Baskins desktop/mobile captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
+- 2026-06-04: improved Savage Worlds table usability with live Bennies/Shaken/Wounds/Fatigue controls, Pace, parsed weapon/action cards, separated Edges/Hindrances, compact no-portrait character plates, refreshed Baskins captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
+- 2026-06-04: added local Savage Worlds concept tooltips with click/tap/keyboard support, fixed mobile tooltip opacity/stacking and sheet contrast/overlap issues, refreshed Baskins captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
+- 2026-06-04: added Savage Worlds assisted calculations for wound/fatigue penalties, effective trait/action labels, equipped armor bonuses, intelligent equipment/loadout cards, richer inventory format hints, dedicated Baskins loadout/penalty captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

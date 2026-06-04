@@ -667,6 +667,49 @@ body.sidebar-pinned .app-shell {
   gap: var(--space-md);
 }
 
+.campaigns-shell {
+  gap: var(--space-lg);
+}
+
+.campaigns-header {
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.32fr);
+  align-items: stretch;
+}
+
+.campaign-focus-card {
+  display: grid;
+  gap: 0.25rem;
+  align-content: center;
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  color: #f7e4b5;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(214, 149, 67, 0.28), transparent 42%),
+    linear-gradient(135deg, rgba(69, 37, 21, 0.96), rgba(24, 14, 10, 0.94));
+  border: 1px solid rgba(220, 164, 88, 0.32);
+  box-shadow: inset 0 0 26px rgba(0, 0, 0, 0.22);
+}
+
+.campaign-focus-card strong {
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 2vw, 2rem);
+  line-height: 1;
+}
+
+.campaigns-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  gap: var(--space-md);
+  align-items: start;
+}
+
+.campaigns-main-list,
+.campaigns-side-panel {
+  display: grid;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
 .campaign-switch-list {
   display: grid;
   gap: 0.75rem;
@@ -696,6 +739,11 @@ body.sidebar-pinned .app-shell {
     0 10px 26px rgba(52, 31, 18, 0.12);
 }
 
+.campaign-admin-card {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.52fr);
+  align-items: start;
+}
+
 .campaign-switch-copy {
   display: grid;
   gap: 0.35rem;
@@ -712,6 +760,26 @@ body.sidebar-pinned .app-shell {
   gap: var(--space-sm);
   padding-top: var(--space-sm);
   border-top: 1px solid rgba(92, 58, 34, 0.18);
+}
+
+.campaign-card-actions,
+.campaign-edit-form {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.campaign-card-actions > button {
+  justify-self: start;
+}
+
+.campaign-edit-form .options-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.campaign-edit-form .options-actions > * {
+  min-width: 0;
 }
 
 .campaign-access-card {
@@ -2506,6 +2574,365 @@ history-list,
   color: #62432f;
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.savage-sheet {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(166, 96, 44, 0.2), transparent 34%),
+    linear-gradient(135deg, rgba(248, 232, 196, 0.94), rgba(211, 172, 112, 0.76));
+}
+
+.savage-sheet-header {
+  border-color: rgba(120, 61, 30, 0.26);
+}
+
+.savage-play-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.75rem 0;
+}
+
+.savage-live-control {
+  position: relative;
+  display: grid;
+  gap: 0.24rem;
+  align-content: center;
+  min-height: 118px;
+  padding: 0.72rem;
+  border-radius: 16px;
+  color: #3b2419;
+  background: rgba(255, 248, 231, 0.82);
+  border: 1px solid rgba(105, 61, 35, 0.18);
+  box-shadow: inset 0 0 16px rgba(100, 59, 28, 0.06);
+}
+
+.savage-live-control:hover,
+.savage-live-control:focus-within,
+.dnd-combat-stat:hover,
+.dnd-combat-stat:focus-within,
+.savage-concept-host-open,
+.savage-skills-panel:focus-within {
+  z-index: 2500;
+}
+
+.savage-live-control.active {
+  background: linear-gradient(180deg, rgba(129, 49, 34, 0.92), rgba(78, 30, 24, 0.95));
+  color: #fff0d1;
+}
+
+.savage-live-control span,
+.savage-live-control small {
+  position: relative;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.savage-live-control strong {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 2.6vw, 2.4rem);
+  line-height: 1;
+}
+
+.savage-live-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.savage-live-control button {
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+}
+
+.savage-concept {
+  position: relative;
+  display: inline-grid;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-left: 0.25rem;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff4d7;
+  background: #7b3c27;
+  border: 1px solid rgba(255, 227, 172, 0.38);
+  font-size: 0.66rem;
+  line-height: 1;
+  cursor: help;
+  vertical-align: text-top;
+  z-index: 5;
+  overflow: hidden;
+}
+
+.savage-concept:hover,
+.savage-concept:focus,
+.savage-concept:focus-visible {
+  z-index: 3000;
+  overflow: visible;
+}
+
+.savage-concept.open {
+  overflow: visible;
+}
+
+.savage-concept::before {
+  content: "?";
+  color: #fff4d7;
+}
+
+.savage-concept-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.55rem);
+  display: grid;
+  gap: 0.28rem;
+  width: min(280px, calc(100vw - 2rem));
+  padding: 0.72rem 0.82rem;
+  border-radius: 14px;
+  color: #2e1b12;
+  background:
+    linear-gradient(180deg, rgba(255, 249, 235, 0.98), rgba(231, 209, 169, 0.96));
+  border: 1px solid rgba(102, 55, 30, 0.24);
+  box-shadow: 0 16px 34px rgba(31, 18, 12, 0.22);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  transform: translate(-50%, 0.3rem);
+  transition: opacity 150ms ease, transform 150ms ease;
+  z-index: 40;
+}
+
+.savage-concept-tooltip strong {
+  color: #2d190f;
+  font-family: var(--font-display);
+  font-size: 1rem;
+}
+
+.savage-concept-tooltip span,
+.savage-concept-tooltip em {
+  color: #4f3523;
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.savage-concept-tooltip em {
+  color: #7a4126;
+}
+
+.savage-concept:hover .savage-concept-tooltip,
+.savage-concept.open .savage-concept-tooltip,
+.savage-concept:focus .savage-concept-tooltip,
+.savage-concept:focus-visible .savage-concept-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.savage-sheet-grid {
+  grid-template-columns: minmax(150px, 0.42fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "abilities combat skills"
+    "abilities attacks skills"
+    "abilities loadout skills"
+    "abilities features skills"
+    "abilities equipment skills";
+}
+
+.savage-attribute-column {
+  grid-template-columns: 1fr;
+}
+
+.savage-trait-box {
+  border-color: rgba(117, 54, 34, 0.28);
+  background:
+    linear-gradient(180deg, rgba(72, 37, 24, 0.95), rgba(128, 67, 34, 0.9));
+}
+
+.savage-trait-box span,
+.savage-trait-box em {
+  color: rgba(255, 237, 202, 0.82);
+}
+
+.savage-trait-box em {
+  color: #5b321f;
+  background: #fff2d4;
+}
+
+.savage-trait-box strong {
+  color: #ffe2a6;
+}
+
+.savage-core-panel {
+  grid-area: combat;
+  border-color: rgba(128, 62, 36, 0.24);
+}
+
+.savage-skills-panel {
+  grid-area: skills;
+}
+
+.savage-attacks-panel {
+  grid-area: attacks;
+}
+
+.savage-features-panel {
+  grid-area: features;
+}
+
+.savage-loadout-panel {
+  grid-area: loadout;
+}
+
+.savage-core-panel .dnd-hit-points strong {
+  font-size: clamp(1.35rem, 3vw, 2.1rem);
+  line-height: 1.05;
+  text-align: center;
+}
+
+.savage-trait-list {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.savage-trait-line strong {
+  color: #7b3525;
+}
+
+.dnd-death-saves i.active {
+  background: #7b3525;
+  border-color: rgba(80, 35, 24, 0.62);
+}
+
+.savage-attack-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.savage-attack-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.78fr) minmax(0, 0.78fr);
+  gap: 0.45rem;
+  align-items: center;
+  padding: 0.58rem 0.7rem;
+  border-radius: 14px;
+  color: #3f281d;
+  background: rgba(255, 250, 237, 0.72);
+  border: 1px solid rgba(93, 53, 31, 0.14);
+}
+
+.savage-attack-card.equipped,
+.savage-loadout-item.equipped {
+  border-color: rgba(123, 53, 37, 0.36);
+  background:
+    linear-gradient(135deg, rgba(255, 247, 228, 0.9), rgba(221, 178, 112, 0.42));
+  box-shadow: inset 0 0 0 1px rgba(123, 53, 37, 0.08);
+}
+
+.savage-attack-card small {
+  grid-column: 1 / -1;
+  color: #7a5d49;
+}
+
+.savage-derived-breakdown {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.62rem 0.72rem;
+  border-radius: 14px;
+  color: #432819;
+  background: rgba(255, 248, 231, 0.68);
+  border: 1px solid rgba(94, 53, 31, 0.16);
+}
+
+.savage-derived-breakdown span,
+.savage-derived-breakdown small {
+  color: #76513a;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.savage-loadout-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.savage-loadout-grid h5 {
+  margin: 0 0 0.35rem;
+  color: #56341f;
+  font-size: 0.78rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.savage-loadout-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.62rem 0.7rem;
+  border-radius: 14px;
+  color: #3f281d;
+  background: rgba(255, 250, 237, 0.72);
+  border: 1px solid rgba(93, 53, 31, 0.14);
+}
+
+.savage-loadout-item + .savage-loadout-item {
+  margin-top: 0.45rem;
+}
+
+.savage-loadout-item div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.savage-loadout-item span,
+.savage-loadout-item small,
+.savage-gear-list {
+  color: #76513a;
+  font-size: 0.82rem;
+}
+
+.savage-loadout-item button {
+  padding: 0.45rem 0.65rem;
+  white-space: nowrap;
+}
+
+.savage-gear-list {
+  margin: 0;
+  padding-left: 1.05rem;
+}
+
+.savage-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.savage-feature-grid h5 {
+  margin: 0 0 0.35rem;
+  color: #56341f;
+  font-size: 0.78rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.savage-feature-grid ul {
+  margin: 0;
+  padding-left: 1.05rem;
+}
+
+.savage-feature-notes {
+  grid-column: 1 / -1;
 }
 
 .book-layout {
@@ -4394,6 +4821,44 @@ button.secondary,
   border: 1px solid rgba(224, 192, 142, 0.2);
 }
 
+button.danger,
+.button.danger,
+button.secondary.danger,
+.button.secondary.danger {
+  color: #ffe4d7;
+  background: linear-gradient(180deg, rgba(123, 36, 30, 0.9), rgba(65, 21, 18, 0.96));
+  border-color: rgba(245, 154, 124, 0.36);
+}
+
+.campaigns-shell .campaign-switch-card {
+  color: #302018;
+  background:
+    linear-gradient(135deg, rgba(255, 248, 231, 0.9), rgba(222, 193, 143, 0.38)),
+    var(--surface-parchment);
+}
+
+.campaigns-shell .campaign-switch-card.active {
+  background:
+    linear-gradient(135deg, rgba(255, 250, 236, 0.94), rgba(207, 163, 98, 0.42)),
+    var(--surface-parchment);
+}
+
+.campaigns-shell .campaign-switch-copy h4,
+.campaigns-shell .campaign-switch-copy p {
+  color: #302018;
+}
+
+.campaigns-shell .campaign-switch-copy .eyebrow,
+.campaigns-shell .campaign-focus-card .eyebrow {
+  color: #c89555;
+}
+
+.campaigns-shell .campaign-switch-card .badge {
+  color: #4a2d1d;
+  background: rgba(255, 246, 221, 0.76);
+  border-color: rgba(128, 78, 36, 0.18);
+}
+
 input,
 textarea,
 select {
@@ -4711,6 +5176,23 @@ select {
 .detail-portrait-inner p,
 .detail-portrait-inner h3 {
   color: #fff4e2;
+}
+
+.detail-portrait.no-image {
+  min-height: 280px;
+  position: relative;
+  top: auto;
+  align-items: end;
+}
+
+.detail-portrait.no-image::before {
+  opacity: 0.28;
+}
+
+.detail-portrait.no-image::after {
+  background:
+    radial-gradient(circle at 18% 16%, rgba(255, 220, 155, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(12, 8, 6, 0.04), rgba(12, 8, 6, 0.36));
 }
 
 .detail-summary {
@@ -5249,7 +5731,9 @@ select {
   .hero-stat-grid,
   .item-grid,
   .glossary-grid,
-  .options-grid {
+  .options-grid,
+  .campaigns-layout,
+  .campaigns-header {
     grid-template-columns: 1fr;
   }
 
@@ -5350,6 +5834,14 @@ select {
   }
 
   .campaign-switch-card {
+    grid-template-columns: 1fr;
+  }
+
+  .campaign-admin-card {
+    grid-template-columns: 1fr;
+  }
+
+  .campaign-edit-form .options-actions {
     grid-template-columns: 1fr;
   }
 
@@ -5589,6 +6081,54 @@ select {
       "spells";
   }
 
+  .savage-sheet-grid {
+    grid-template-areas:
+      "abilities"
+      "combat"
+      "attacks"
+      "loadout"
+      "skills"
+      "features"
+      "equipment";
+  }
+
+  .savage-play-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .savage-live-control {
+    min-height: 98px;
+  }
+
+  .savage-live-control.static {
+    grid-column: 1 / -1;
+  }
+
+  .savage-concept-tooltip {
+    position: fixed;
+    top: 7rem;
+    right: auto;
+    bottom: auto;
+    left: 50%;
+    width: min(320px, calc(100vw - 2rem));
+    color: #2a160d;
+    background: #fff4dc;
+    border-color: rgba(60, 32, 18, 0.52);
+    box-shadow: 0 18px 46px rgba(18, 10, 6, 0.34);
+    transform: translate(-50%, -0.25rem);
+    transition: none;
+    z-index: 2000;
+  }
+
+  .savage-concept:hover .savage-concept-tooltip,
+  .savage-concept.open .savage-concept-tooltip,
+  .savage-concept:focus .savage-concept-tooltip,
+  .savage-concept:focus-visible .savage-concept-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+  }
+
   .dnd-ability-column {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -5610,6 +6150,15 @@ select {
   .dnd-attack-table > div {
     grid-template-columns: minmax(0, 1fr) 3.7rem minmax(0, 0.9fr);
     font-size: 0.72rem;
+  }
+
+  .savage-attack-card,
+  .savage-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .savage-feature-notes {
+    grid-column: auto;
   }
 
   .hero-stat-grid {
@@ -5729,8 +6278,9 @@ select {
     left: auto;
     width: auto;
     min-width: 132px;
-    padding-inline: 1rem;
-    bottom: max(1rem, env(safe-area-inset-bottom));
+    padding: 0.78rem 1rem;
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    opacity: 0.9;
   }
 
   .notes-fab-inline {

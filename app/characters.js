@@ -25,6 +25,91 @@ const ABILITY_DEFINITIONS = [
   { key: "car", source: "Car", label: "Carisma", shortLabel: "CAR", skills: ["Engany", "Intimidació", "Interpretació", "Persuasió"] },
 ];
 
+const SAVAGE_ATTRIBUTE_DEFINITIONS = [
+  { key: "agilitat", label: "Agilitat" },
+  { key: "astucia", label: "Astucia" },
+  { key: "esperit", label: "Esperit" },
+  { key: "forca", label: "Forca" },
+  { key: "vigor", label: "Vigor" },
+];
+
+const SAVAGE_CONCEPTS = {
+  bennies: {
+    title: "Bennies",
+    summary: "Fitxes de sort. Normalment serveixen per repetir tirades, resistir dany o activar opcions concretes.",
+    tip: "A taula han de pujar i baixar ràpid; per això són clicables.",
+  },
+  shaken: {
+    title: "Atordit / Shaken",
+    summary: "Estat de pressió o impacte. El personatge ha de recuperar-se abans d'actuar amb normalitat.",
+    tip: "Marca'l quan algú queda sacsejat però no necessàriament ferit.",
+  },
+  wounds: {
+    title: "Ferides",
+    summary: "Dany persistent. Cada ferida penalitza les tirades de tret i fa el personatge més vulnerable.",
+    tip: "Tres ferides és el límit habitual abans que la situació sigui crítica.",
+  },
+  fatigue: {
+    title: "Fatiga",
+    summary: "Esgotament, fred, set, verí o pressió continuada. Penalitza com les ferides però té una pista pròpia.",
+    tip: "Dues fatigues deixen el personatge en molt mal estat.",
+  },
+  pace: {
+    title: "Pas / Pace",
+    summary: "Moviment base en combat tàctic. Serveix per saber quantes polzades o caselles pot moure el personatge.",
+    tip: "Les ferides poden reduir-lo segons situació i regles aplicades.",
+  },
+  parry: {
+    title: "Parada",
+    summary: "Número objectiu per impactar el personatge en combat cos a cos.",
+    tip: "Pensa-hi com la defensa melee, no com una armadura.",
+  },
+  toughness: {
+    title: "Duresa",
+    summary: "Llindar que el dany ha de superar per sacsejar o ferir el personatge.",
+    tip: "La xifra entre parèntesi sol representar armadura o protecció.",
+  },
+  trait: {
+    title: "Trait",
+    summary: "Atribut o habilitat expressat com a dau: d4, d6, d8, d10 o d12.",
+    tip: "En una tirada de jugador normalment també hi entra el Wild Die.",
+  },
+  wildDie: {
+    title: "Wild Die",
+    summary: "Dau extra dels protagonistes. Es tira junt amb el dau de tret i es conserva el millor resultat.",
+    tip: "És una de les coses que separa Wild Cards d'extres.",
+  },
+  raise: {
+    title: "Raise",
+    summary: "Resultat que supera l'objectiu per 4 o més. Normalment millora l'efecte.",
+    tip: "És el motiu pel qual veure el número objectiu importa.",
+  },
+  penalty: {
+    title: "Penalitzacio",
+    summary: "Modificador negatiu que surt de ferides i fatiga. La fitxa el calcula i l'aplica a habilitats i accions.",
+    tip: "Si el marcador canvia, els valors efectius canvien sols.",
+  },
+  armor: {
+    title: "Armadura",
+    summary: "Proteccio equipada que suma a la duresa o a altres defenses si la linia ho indica.",
+    tip: "Marca quina armadura portes i la fitxa recalcula el nucli.",
+  },
+  equipped: {
+    title: "Equip actiu",
+    summary: "Objectes preparats ara mateix. Les armadures actives sumen estadistiques i les armes actives pugen a accions.",
+    tip: "Serveix per canviar de configuracio sense reescriure la fitxa.",
+  },
+  damage: {
+    title: "Dany",
+    summary: "Expressio de dany o efecte de l'arma. La fitxa la conserva i la destaca al bloc d'accions.",
+    tip: "No tira daus: nomes deixa la dada clara i connectada amb l'arma.",
+  },
+  range: {
+    title: "Rang",
+    summary: "Distancia operativa de l'arma o accio quan esta escrita a les notes.",
+    tip: "Es detecta automaticament si la linia conte 'Rang 12/24/48'.",
+  },
+};
 export function renderCharactersModule({
   state,
   rootEl,
@@ -98,7 +183,7 @@ export function renderCharactersModule({
         </button>` : ""}
       </div>
       <div class="detail-grid">
-        <div class="detail-portrait" style="${paletteStyle(character.palette)}">
+        <div class="detail-portrait ${character.portrait ? "has-image" : "no-image"}" style="${paletteStyle(character.palette)}">
           ${character.portrait
             ? `<img class="detail-portrait-media" src="${escapeAttribute(character.portrait)}" alt="${escapeAttribute(`Retrat de ${character.name}`)}" loading="lazy" />`
             : ""}
@@ -149,13 +234,13 @@ export function renderCharactersModule({
             role="tabpanel"
             aria-labelledby="character-tab-${state.ui.selectedCharacterTab}"
           >
-            ${renderCharacterTabContent(character, state.ui.selectedCharacterTab)}
+            ${renderCharacterTabContent(character, state.ui.selectedCharacterTab, state)}
           </div>
           ${state.ui.editModes.characters && canEditCurrentCharacter ? renderCharacterEditor(character, state.ui.selectedCharacterTab, state) : ""}
         </div>
       </div>
       ${renderPlayerNotesPanel()}
-      ${renderPlayerNotesFab()}
+      ${isSavageWorldsCampaign(state) ? renderPlayerNotesFab({ inline: true }) : renderPlayerNotesFab()}
       ${state.ui.editModes.characters && canEditCurrentCharacter ? `<div class="editor-actions">
         <button type="button" data-save-character>Desa personatge</button>
       </div>` : ""}
@@ -180,6 +265,10 @@ function renderCharacterReturnChip(targetLabel) {
       <span>Torna a la cronica</span>
     </button>
   `;
+}
+
+function isSavageWorldsCampaign(state) {
+  return String(state?.meta?.system || "").toLowerCase().includes("savage");
 }
 
 export function saveCharacterOverview(formData, { getSelectedCharacter, showSaveNotice }) {
@@ -279,7 +368,7 @@ function renderCharacterCard(character, state) {
   `;
 }
 
-function renderCharacterTabContent(character, tab) {
+function renderCharacterTabContent(character, tab, state) {
   if (tab === "lore") {
     return `
       ${renderTextCard("Origen", character.lore.origin, { rich: true })}
@@ -291,7 +380,7 @@ function renderCharacterTabContent(character, tab) {
   }
 
   if (tab === "sheet") {
-    return renderDndSheetTab(character);
+    return isSavageWorldsCampaign(state) ? renderSavageWorldsSheetTab(character) : renderDndSheetTab(character);
   }
 
   if (tab === "inventory") {
@@ -417,6 +506,614 @@ function renderDndSheetTab(character) {
       </div>
     </article>
   `;
+}
+
+function renderSavageWorldsSheetTab(character) {
+  const sheetData = parseSavageSheetData(character.sheet.abilities);
+  const savageState = normalizeSavageState(character.sheet.savageState, character.sheet.proficiency);
+  const equipment = parseSavageEquipment(character.inventory.items, sheetData.skills, character.sheet.savageLoadout);
+  const derived = calculateSavageDerivedStats(character, sheetData, savageState, equipment);
+  const attacks = equipment.weapons.some((weapon) => weapon.equipped)
+    ? equipment.weapons.filter((weapon) => weapon.equipped)
+    : equipment.weapons;
+  return `
+    <article class="dnd-sheet savage-sheet" aria-label="${escapeAttribute(`Fitxa Savage Worlds de ${character.name}`)}">
+      <header class="dnd-sheet-header savage-sheet-header">
+        <div>
+          <p class="eyebrow">Fitxa Savage Worlds</p>
+          <h3>${escapeHtml(character.name)}</h3>
+        </div>
+        <div class="dnd-sheet-identity">
+          <span>${escapeHtml(character.className)}</span>
+          <span>Avenc ${escapeHtml(String(character.level))}</span>
+          <span>${escapeHtml(character.lineage)}</span>
+        </div>
+      </header>
+
+      <section class="savage-play-strip" aria-label="Estat viu de taula">
+        ${renderSavageCounter("Bennies", "bennies", savageState.bennies, 0, 9, "Fitxes disponibles")}
+        ${renderSavageToggle("Atordit", "shaken", savageState.shaken, "Shaken")}
+        ${renderSavageCounter("Ferides", "wounds", savageState.wounds, 0, 3, "-1 per ferida")}
+        ${renderSavageCounter("Fatiga", "fatigue", savageState.fatigue, 0, 2, "-1 per fatiga")}
+        ${renderSavageStaticStat("Penal.", "penalty", derived.penaltyLabel, "Ferides + fatiga")}
+        ${renderSavageStaticStat("Pas", "pace", derived.pace, "Moviment")}
+      </section>
+
+      <div class="dnd-sheet-grid savage-sheet-grid">
+        <section class="dnd-ability-column savage-attribute-column" aria-label="Atributs Savage Worlds">
+          ${SAVAGE_ATTRIBUTE_DEFINITIONS.map((attribute) => renderSavageTraitBox(attribute.label, sheetData.attributes[attribute.key] || "d4", derived.penalty)).join("")}
+        </section>
+
+        <section class="dnd-panel savage-core-panel">
+          <h4>Nucli de combat ${renderSavageConceptHint("armor")}</h4>
+          <div class="dnd-combat-stats">
+            ${renderSavageCombatStat("Parada", "parry", derived.parry.total, derived.parry.helper)}
+            ${renderSavageCombatStat("Duresa", "toughness", derived.toughness.total, derived.toughness.helper)}
+            ${renderSavageCombatStat("Pas", "pace", derived.pace, "Moviment")}
+          </div>
+          <div class="dnd-hit-points">
+            <span>Estat ${renderSavageConceptHint("penalty")}</span>
+            <strong>${escapeHtml(formatSavageStatus(savageState))}</strong>
+          </div>
+          <div class="savage-derived-breakdown">
+            <span>Base</span>
+            <strong>Parada ${escapeHtml(String(derived.parry.base))} · Duresa ${escapeHtml(String(derived.toughness.base))}</strong>
+            <small>${escapeHtml(derived.toughness.armorBonus ? `Armadura +${derived.toughness.armorBonus}` : "Sense armadura activa")}</small>
+          </div>
+          <div class="dnd-death-saves" aria-label="Ferides i fatiga">
+            <span>Marcadors</span>
+            <div><strong>Ferides</strong>${renderSavageDots(savageState.wounds, 3)}</div>
+            <div><strong>Fatiga</strong>${renderSavageDots(savageState.fatigue, 2)}</div>
+          </div>
+        </section>
+
+        <section class="dnd-panel savage-skills-panel">
+          <h4>Habilitats ${renderSavageConceptHint("trait")} ${renderSavageConceptHint("penalty")}</h4>
+          <div class="savage-trait-list">
+            ${sheetData.skills.length
+              ? sheetData.skills.map((skill) => renderSavageTraitLine(skill.name, skill.die, derived.penalty)).join("")
+              : `<p class="empty-state">Afegeix habilitats a Atributs amb format "Disparar d8, Notar d6".</p>`}
+          </div>
+        </section>
+
+        <section class="dnd-panel savage-attacks-panel">
+          <h4>Armes i accions ${renderSavageConceptHint("damage")} ${renderSavageConceptHint("range")}</h4>
+          <div class="savage-attack-list">
+            ${attacks.length
+              ? attacks.map((attack) => renderSavageAttackCard(attack, derived.penalty)).join("")
+              : `<p class="empty-state">Afegeix armes a Equipament amb format "Rifle | Disparar d8 | 2d6 | Rang 12/24/48".</p>`}
+          </div>
+        </section>
+
+        <section class="dnd-panel savage-loadout-panel">
+          <h4>Equip intel·ligent ${renderSavageConceptHint("equipped")}</h4>
+          ${renderSavageLoadout(equipment)}
+        </section>
+
+        <section class="dnd-panel savage-features-panel">
+          <h4>Avantatges i complicacions</h4>
+          ${renderSavageFeatures(character.sheet.features)}
+        </section>
+
+        <section class="dnd-panel dnd-equipment-panel">
+          <h4>Equipament</h4>
+          <div class="rich-text dnd-lined-text">${renderRichText(character.inventory.items)}</div>
+          <div class="dnd-currency">${escapeHtml(character.inventory.currency || "Sense recursos registrats")}</div>
+        </section>
+      </div>
+    </article>
+  `;
+}
+
+function renderSavageTraitBox(label, die, penalty = 0) {
+  return `
+    <div class="dnd-ability-score savage-trait-box">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(die)}</strong>
+      <em>${escapeHtml(formatSavageEffectiveTrait(die, penalty))}</em>
+    </div>
+  `;
+}
+
+function renderSavageTraitLine(label, die, penalty = 0) {
+  return `
+    <div class="dnd-check-line savage-trait-line">
+      <i aria-hidden="true"></i>
+      <strong>${escapeHtml(die)}</strong>
+      <span>${escapeHtml(label)}</span>
+      <small>${escapeHtml(formatSavageEffectiveTrait(die, penalty))}</small>
+    </div>
+  `;
+}
+
+function renderSavageCounter(label, key, value, min, max, helper) {
+  return `
+    <div class="savage-live-control" data-savage-control="${escapeAttribute(key)}">
+      <span>${escapeHtml(label)} ${renderSavageConceptHint(key)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+      <small>${escapeHtml(helper)}</small>
+      <div class="savage-live-buttons">
+        <button type="button" class="secondary" data-savage-state="${escapeAttribute(key)}" data-savage-delta="-1" ${value <= min ? "disabled" : ""}>-</button>
+        <button type="button" class="secondary" data-savage-state="${escapeAttribute(key)}" data-savage-delta="1" ${value >= max ? "disabled" : ""}>+</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSavageToggle(label, key, active, helper) {
+  return `
+    <div class="savage-live-control ${active ? "active" : ""}" data-savage-control="${escapeAttribute(key)}">
+      <span>${escapeHtml(label)} ${renderSavageConceptHint(key)}</span>
+      <strong>${active ? "Si" : "No"}</strong>
+      <small>${escapeHtml(helper)}</small>
+      <button type="button" class="secondary" data-savage-state="${escapeAttribute(key)}" data-savage-toggle="true">
+        ${active ? "Neteja" : "Marca"}
+      </button>
+    </div>
+  `;
+}
+
+function renderSavageStaticStat(label, key, value, helper) {
+  return `
+    <div class="savage-live-control static">
+      <span>${escapeHtml(label)} ${renderSavageConceptHint(key)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+      <small>${escapeHtml(helper)}</small>
+    </div>
+  `;
+}
+
+function renderSavageCombatStat(label, conceptKey, value, helper) {
+  return `
+    <div class="dnd-combat-stat">
+      <strong>${escapeHtml(String(value || "-"))}</strong>
+      <span>${escapeHtml(label)} ${renderSavageConceptHint(conceptKey)}</span>
+      <small>${escapeHtml(helper)}</small>
+    </div>
+  `;
+}
+
+function renderSavageConceptHint(key) {
+  const concept = SAVAGE_CONCEPTS[key];
+  if (!concept) {
+    return "";
+  }
+
+  return `
+    <span class="savage-concept" tabindex="0" role="button" aria-expanded="false" aria-label="${escapeAttribute(`${concept.title}: ${concept.summary}`)}">
+      <span class="savage-concept-tooltip" role="tooltip">
+        <strong>${escapeHtml(concept.title)}</strong>
+        <span>${escapeHtml(concept.summary)}</span>
+        <em>${escapeHtml(concept.tip)}</em>
+      </span>
+    </span>
+  `;
+}
+
+function renderSavageDots(activeCount, maxCount) {
+  return Array.from({ length: maxCount }, (_, index) => `<i class="${index < activeCount ? "active" : ""}"></i>`).join("");
+}
+
+function formatSavageStatus(savageState) {
+  const parts = [];
+  if (savageState.shaken) {
+    parts.push("Atordit");
+  }
+  if (savageState.wounds > 0) {
+    parts.push(`${savageState.wounds} ferida${savageState.wounds === 1 ? "" : "es"}`);
+  }
+  if (savageState.fatigue > 0) {
+    parts.push(`${savageState.fatigue} fatiga`);
+  }
+  return parts.length ? parts.join(" / ") : "Sa";
+}
+
+function renderSavageAttackCard(attack, penalty = 0) {
+  return `
+    <article class="savage-attack-card ${attack.equipped ? "equipped" : ""}">
+      <strong>${escapeHtml(attack.name)}</strong>
+      <span>${escapeHtml(formatSavageAttackTrait(attack.trait, penalty))}</span>
+      <span>${escapeHtml(attack.damage || "Dany pendent")}</span>
+      <small>${escapeHtml([attack.range, attack.notes].filter(Boolean).join(" · ") || "Sense notes")}</small>
+    </article>
+  `;
+}
+
+function renderSavageLoadout(equipment) {
+  const armorMarkup = equipment.armors.length
+    ? equipment.armors.map((item) => renderSavageLoadoutItem(item, "armor")).join("")
+    : `<p class="empty-state">Afegeix armadures amb format "Abric reforcat | Armadura +2 | equipada | notes".</p>`;
+  const weaponMarkup = equipment.weapons.length
+    ? equipment.weapons.map((item) => renderSavageLoadoutItem(item, "weapon")).join("")
+    : `<p class="empty-state">Afegeix armes amb format "Rifle | Disparar d8 | 2d6 | Rang 12/24/48".</p>`;
+  const gearMarkup = equipment.gear.length
+    ? `<ul class="savage-gear-list">${equipment.gear.map((item) => `<li>${escapeHtml(item.name)}</li>`).join("")}</ul>`
+    : `<p class="empty-state">Sense equip menor detectat.</p>`;
+
+  return `
+    <div class="savage-loadout-grid">
+      <section>
+        <h5>Armadures</h5>
+        ${armorMarkup}
+      </section>
+      <section>
+        <h5>Armes preparades</h5>
+        ${weaponMarkup}
+      </section>
+      <section class="savage-gear-column">
+        <h5>Altres objectes</h5>
+        ${gearMarkup}
+      </section>
+    </div>
+  `;
+}
+
+function renderSavageLoadoutItem(item, slot) {
+  const stats = slot === "armor"
+    ? [
+        item.armorBonus ? `Duresa +${item.armorBonus}` : "",
+        item.parryBonus ? `Parada +${item.parryBonus}` : "",
+        item.pacePenalty ? `Pas ${item.pacePenalty}` : "",
+      ].filter(Boolean).join(" · ") || "Sense bonus detectat"
+    : [item.trait, item.damage, item.range].filter(Boolean).join(" · ") || "Stats pendents";
+
+  return `
+    <article class="savage-loadout-item ${item.equipped ? "equipped" : ""}">
+      <div>
+        <strong>${escapeHtml(item.name)}</strong>
+        <span>${escapeHtml(stats)}</span>
+        <small>${escapeHtml(item.notes || "Sense notes")}</small>
+      </div>
+      <button
+        type="button"
+        class="secondary"
+        data-savage-equip="${escapeAttribute(item.id)}"
+        data-savage-equip-slot="${escapeAttribute(slot)}"
+        data-savage-equipped="${item.equipped ? "true" : "false"}"
+      >
+        ${item.equipped ? "Equipat" : "Equipa"}
+      </button>
+    </article>
+  `;
+}
+
+function renderSavageFeatures(value) {
+  const groups = parseSavageFeatures(value);
+  return `
+    <div class="savage-feature-grid">
+      <section>
+        <h5>Avantatges</h5>
+        ${renderSavageFeatureList(groups.edges)}
+      </section>
+      <section>
+        <h5>Complicacions</h5>
+        ${renderSavageFeatureList(groups.hindrances)}
+      </section>
+      <section class="savage-feature-notes">
+        <h5>Notes</h5>
+        <div class="rich-text dnd-lined-text">${renderRichText(groups.notes || "Sense notes addicionals.")}</div>
+      </section>
+    </div>
+  `;
+}
+
+function renderSavageFeatureList(items) {
+  return items.length
+    ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+    : `<p class="empty-state">Sense dades.</p>`;
+}
+
+function parseSavageSheetData(value) {
+  const attributes = {};
+  const skills = [];
+  const attributeKeysByName = new Map(
+    SAVAGE_ATTRIBUTE_DEFINITIONS.flatMap((attribute) => [
+      [normalizeTraitName(attribute.label), attribute.key],
+      [attribute.key, attribute.key],
+    ]),
+  );
+
+  String(value || "")
+    .split(/[,\n;]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .forEach((item) => {
+      const match = item.match(/^(.+?)\s+(d(?:4|6|8|10|12)(?:\+\d+)?)$/i);
+      if (!match) {
+        return;
+      }
+      const name = match[1].trim();
+      const die = match[2].toLowerCase();
+      const attributeKey = attributeKeysByName.get(normalizeTraitName(name));
+      if (attributeKey) {
+        attributes[attributeKey] = die;
+      } else {
+        skills.push({ name, die });
+      }
+    });
+
+  return { attributes, skills };
+}
+
+function normalizeSavageState(candidate, fallbackBennies) {
+  const source = candidate && typeof candidate === "object" ? candidate : {};
+  const defaultBennies = parseSignedNumber(fallbackBennies) || 3;
+  return {
+    bennies: clampNumber(source.bennies, 0, 9, defaultBennies),
+    wounds: clampNumber(source.wounds, 0, 3, 0),
+    fatigue: clampNumber(source.fatigue, 0, 2, 0),
+    shaken: Boolean(source.shaken),
+  };
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return Math.min(max, Math.max(min, Math.trunc(number)));
+}
+
+function parseSavagePace(value) {
+  const match = String(value || "").match(/\b(?:pas|pace)\s+(\d+)/i);
+  return match ? match[1] : "6";
+}
+
+function calculateSavageDerivedStats(character, sheetData, savageState, equipment) {
+  const rawParry = parseSavageNumberWithArmor(character.sheet.ac);
+  const rawToughness = parseSavageNumberWithArmor(character.sheet.hp);
+  const armorBonus = equipment.armors
+    .filter((armor) => armor.equipped)
+    .reduce((total, armor) => total + armor.armorBonus, 0);
+  const parryBonus = equipment.armors
+    .filter((armor) => armor.equipped)
+    .reduce((total, armor) => total + armor.parryBonus, 0);
+  const pacePenalty = equipment.armors
+    .filter((armor) => armor.equipped)
+    .reduce((total, armor) => total + armor.pacePenalty, 0);
+  const penalty = Math.max(0, savageState.wounds + savageState.fatigue);
+  const paceBase = Number(parseSavagePace(character.sheet.abilities)) || 6;
+
+  return {
+    penalty,
+    penaltyLabel: penalty ? `-${penalty}` : "0",
+    pace: Math.max(0, paceBase + pacePenalty),
+    parry: {
+      base: rawParry.base,
+      total: rawParry.base + parryBonus,
+      helper: parryBonus ? `Base ${rawParry.base} + equip ${parryBonus}` : "Base sense bonus actiu",
+    },
+    toughness: {
+      base: rawToughness.base,
+      armorBonus: armorBonus || rawToughness.inlineArmor,
+      total: rawToughness.base + armorBonus + (!equipment.armors.length ? rawToughness.inlineArmor : 0),
+      helper: armorBonus
+        ? `Base ${rawToughness.base} + armadura ${armorBonus}`
+        : rawToughness.inlineArmor
+          ? `Base ${rawToughness.base} + armadura manual ${rawToughness.inlineArmor}`
+          : "Base sense armadura activa",
+    },
+  };
+}
+
+function parseSavageNumberWithArmor(value) {
+  const text = String(value || "");
+  const main = Number((text.match(/\d+/) || ["0"])[0]);
+  const inlineArmor = Number((text.match(/\((\d+)\)/) || [null, "0"])[1]);
+  return {
+    base: Math.max(0, main - inlineArmor),
+    inlineArmor,
+  };
+}
+
+function formatSavageEffectiveTrait(die, penalty) {
+  return penalty > 0 ? `${die}-${penalty}` : "Dau";
+}
+
+function formatSavageAttackTrait(trait, penalty) {
+  if (!trait) {
+    return penalty > 0 ? `Trait pendent -${penalty}` : "Trait pendent";
+  }
+  return penalty > 0 ? `${trait}-${penalty}` : trait;
+}
+
+function parseSavageEquipment(value, skills, loadout) {
+  const explicitLoadout = loadout && typeof loadout === "object";
+  const equippedWeaponIds = new Set(Array.isArray(loadout?.equippedWeaponIds) ? loadout.equippedWeaponIds : []);
+  const equippedArmorIds = new Set(Array.isArray(loadout?.equippedArmorIds) ? loadout.equippedArmorIds : []);
+  const skillByName = new Map(skills.map((skill) => [normalizeTraitName(skill.name), skill.die]));
+  const result = { weapons: [], armors: [], gear: [] };
+
+  String(value || "")
+    .split("\n")
+    .flatMap((line) => splitSavageInventoryLine(line))
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line, index) => {
+      const parts = line.split("|").map((part) => part.trim()).filter(Boolean);
+      const normalized = normalizeTraitName(line);
+      const id = buildSavageEquipmentId(line, index);
+      const isEquippedByText = /\b(equipada|equipat|equipped|activa|actiu|preparada|preparat)\b/i.test(line);
+
+      if (isSavageArmorLine(line, parts)) {
+        const armor = parseSavageArmorLine(line, parts, id);
+        armor.equipped = explicitLoadout ? equippedArmorIds.has(id) : isEquippedByText;
+        result.armors.push(armor);
+        return;
+      }
+
+      if (isSavageWeaponLine(line, parts)) {
+        const weapon = parseSavageWeaponLine(line, parts, id, skillByName);
+        weapon.equipped = explicitLoadout ? equippedWeaponIds.has(id) : (isEquippedByText || result.weapons.length < 2);
+        result.weapons.push(weapon);
+        return;
+      }
+
+      result.gear.push({
+        id,
+        name: line.replace(/,$/, ""),
+        notes: normalized.includes("municio") || normalized.includes("bala") ? "Consumible" : "",
+      });
+    });
+
+  return result;
+}
+
+function splitSavageInventoryLine(line) {
+  if (String(line || "").includes("|")) {
+    return [line];
+  }
+  return String(line || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function buildSavageEquipmentId(line, index) {
+  const slug = normalizeTraitName(line)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 42) || "item";
+  return `${slug}-${index}`;
+}
+
+function isSavageWeaponLine(line, parts) {
+  return parts.length >= 3 || /\b(rifle|revolver|revolv|pistola|escopeta|ganivet|arma|arc|espasa|destral|llanca|fusell)\b/i.test(line);
+}
+
+function isSavageArmorLine(line, parts) {
+  const text = normalizeTraitName(line);
+  return text.includes("armadura")
+    || text.includes("armor")
+    || text.includes("proteccio")
+    || text.includes("abric reforcat")
+    || text.includes("jaqueta reforcada")
+    || text.includes("escut")
+    || parts.some((part) => /parada\s*[+-]\d+|duresa\s*[+-]\d+|armadura\s*[+-]\d+/i.test(part));
+}
+
+function parseSavageWeaponLine(line, parts, id, skillByName) {
+  if (parts.length >= 2) {
+    const notes = parts.slice(3).join(" | ");
+    return {
+      id,
+      name: parts[0],
+      trait: parts[1],
+      damage: parts[2] || "",
+      range: extractSavageRange(notes),
+      notes: notes.replace(/\bRang\s+[\d/]+\b/i, "").trim(),
+      equipped: false,
+    };
+  }
+
+  const normalizedLine = normalizeTraitName(line);
+  const trait = normalizedLine.includes("ganivet") || normalizedLine.includes("espasa") || normalizedLine.includes("destral")
+    ? `Atletisme ${skillByName.get("atletisme") || ""}`.trim()
+    : `Disparar ${skillByName.get("disparar") || ""}`.trim();
+  return {
+    id,
+    name: line.replace(/,$/, ""),
+    trait,
+    damage: "",
+    range: "",
+    notes: "Completa dany/rang a Equipament.",
+    equipped: false,
+  };
+}
+
+function parseSavageArmorLine(line, parts, id) {
+  const bonusText = parts.slice(1).join(" | ") || line;
+  return {
+    id,
+    name: parts[0] || line,
+    armorBonus: Math.max(0, parseSavageNamedBonus(bonusText, ["armadura", "armor", "duresa", "toughness"], { allowFallback: true })),
+    parryBonus: Math.max(0, parseSavageNamedBonus(bonusText, ["parada", "parry"])),
+    pacePenalty: Math.min(0, parseSavageNamedBonus(bonusText, ["pas", "pace", "moviment"])),
+    notes: parts.slice(2).filter((part) => !/\b(equipada|equipat|equipped|activa|actiu)\b/i.test(part)).join(" | "),
+    equipped: false,
+  };
+}
+
+function parseSavageNamedBonus(text, names, options = {}) {
+  const source = String(text || "");
+  for (const name of names) {
+    const match = source.match(new RegExp(`${name}\\s*([+-]?\\d+)`, "i"));
+    if (match) {
+      return Number(match[1]) || 0;
+    }
+  }
+  if (!options.allowFallback) {
+    return 0;
+  }
+  const fallback = source.match(/[+-]\d+/);
+  return fallback ? Number(fallback[0]) : 0;
+}
+
+function extractSavageRange(value) {
+  const match = String(value || "").match(/\bRang\s+([\d/]+)\b/i);
+  return match ? `Rang ${match[1]}` : "";
+}
+
+function parseSavageAttacks(value, skills) {
+  const skillByName = new Map(skills.map((skill) => [normalizeTraitName(skill.name), skill.die]));
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => /rifle|revolver|rev[oò]lver|pistola|escopeta|ganivet|arma|arc|espasa/i.test(line))
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        return {
+          name: parts[0],
+          trait: parts[1],
+          damage: parts[2] || "",
+          notes: parts.slice(3).join(" | "),
+        };
+      }
+
+      const normalizedLine = normalizeTraitName(line);
+      const trait = normalizedLine.includes("ganivet") || normalizedLine.includes("espasa")
+        ? `Atletisme ${skillByName.get("atletisme") || ""}`.trim()
+        : `Disparar ${skillByName.get("disparar") || ""}`.trim();
+      return {
+        name: line.replace(/,$/, ""),
+        trait,
+        damage: "",
+        notes: "Completa dany/rang a Equipament.",
+      };
+    });
+}
+
+function parseSavageFeatures(value) {
+  const result = { edges: [], hindrances: [], notes: "" };
+  String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const [label, content] = line.split(/:\s+/, 2);
+      const normalized = normalizeTraitName(label);
+      const values = String(content || "").split(",").map((item) => item.trim()).filter(Boolean);
+      if (normalized.includes("avantatge")) {
+        result.edges.push(...values);
+      } else if (normalized.includes("complicacion") || normalized.includes("complicacio")) {
+        result.hindrances.push(...values);
+      } else {
+        result.notes = result.notes ? `${result.notes}\n${line}` : line;
+      }
+    });
+  return result;
+}
+
+function normalizeTraitName(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function stripSavageLabel(value, label) {
+  return String(value || "")
+    .replace(new RegExp(`^\\s*${label}\\s*`, "i"), "")
+    .trim() || "-";
 }
 
 function renderAbilityScoreBox(ability, score) {
@@ -595,7 +1292,7 @@ function renderCharacterEditor(character, tab, state) {
               <input type="hidden" name="id" value="${character.id}" />
               <input type="hidden" name="tab" value="${tab}" />
               <div class="editor-grid">
-                ${renderCharacterTabEditor(character, tab, tabDraft)}
+                ${renderCharacterTabEditor(character, tab, tabDraft, state)}
               </div>
             </form>
           `,
@@ -605,7 +1302,7 @@ function renderCharacterEditor(character, tab, state) {
   `;
 }
 
-function renderCharacterTabEditor(character, tab, draft) {
+function renderCharacterTabEditor(character, tab, draft, state) {
   if (tab === "lore") {
     return `
       ${renderRichTextareaField("origin", "Origen", readDraftValue(draft.origin, character.lore.origin), 4)}
@@ -617,6 +1314,16 @@ function renderCharacterTabEditor(character, tab, draft) {
   }
 
   if (tab === "sheet") {
+    if (isSavageWorldsCampaign(state)) {
+      return `
+        ${renderInputField("ac", "Parada", readDraftValue(draft.ac, character.sheet.ac))}
+        ${renderInputField("hp", "Duresa", readDraftValue(draft.hp, character.sheet.hp))}
+        ${renderInputField("proficiency", "Bennies", readDraftValue(draft.proficiency, character.sheet.proficiency))}
+        ${renderRichTextareaField("abilities", "Atributs i habilitats", readDraftValue(draft.abilities, character.sheet.abilities), 5)}
+        ${renderRichTextareaField("features", "Avantatges, complicacions i trets", readDraftValue(draft.features, character.sheet.features), 5)}
+      `;
+    }
+
     return `
       ${renderInputField("ac", "CA", readDraftValue(draft.ac, character.sheet.ac))}
       ${renderInputField("hp", "HP", readDraftValue(draft.hp, character.sheet.hp))}
@@ -627,6 +1334,18 @@ function renderCharacterTabEditor(character, tab, draft) {
   }
 
   if (tab === "inventory") {
+    if (isSavageWorldsCampaign(state)) {
+      return `
+        <p class="field-help savage-editor-help">
+          Formats intel·ligents: arma com "Rifle | Disparar d8 | 2d6 | Rang 12/24/48"; armadura com "Abric reforcat | Armadura +2 | equipada | impermeable"; escut com "Escut | Parada +1 | equipada".
+        </p>
+        ${renderRichTextareaField("items", "Equip, armes i armadures", readDraftValue(draft.items, character.inventory.items), 7)}
+        ${renderInputField("currency", "Moneda", readDraftValue(draft.currency, character.inventory.currency))}
+        ${renderRichTextareaField("artifacts", "Artefactes", readDraftValue(draft.artifacts, character.inventory.artifacts), 4)}
+        ${renderRichTextareaField("notes", "Notes", readDraftValue(draft.notes, character.inventory.notes), 4)}
+      `;
+    }
+
     return `
       ${renderRichTextareaField("items", "Objectes", readDraftValue(draft.items, character.inventory.items), 4)}
       ${renderInputField("currency", "Moneda", readDraftValue(draft.currency, character.inventory.currency))}
