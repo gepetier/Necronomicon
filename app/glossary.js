@@ -579,7 +579,10 @@ function renderGlossaryEditor(entry, state) {
             `,
           )}
         </div>
-        ${renderEditorActions("Desa entrada")}
+        ${renderEditorActions(
+          "Desa entrada",
+          '<button type="button" class="secondary" data-discard-glossary-edit>Descarta canvis</button>',
+        )}
       </form>
     </section>
   `;

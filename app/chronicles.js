@@ -60,9 +60,13 @@ export function saveChronicle(formData, { getSelectedChronicle, showSaveNotice }
   chronicle.chapter = readString(formData, "chapter");
   chronicle.title = readString(formData, "title");
   chronicle.date = readString(formData, "date");
-  chronicle.summary = readString(formData, "summary");
+  if (formData.has("summary")) {
+    chronicle.summary = readString(formData, "summary");
+  }
   chronicle.content = readString(formData, "content");
-  chronicle.highlights = readString(formData, "highlights");
+  if (formData.has("highlights")) {
+    chronicle.highlights = readString(formData, "highlights");
+  }
 
   if (formData.has("imageNote")) {
     chronicle.imageNote = readString(formData, "imageNote");
@@ -165,7 +169,7 @@ function renderChronicleIndexEntry(chronicle, state, canEditChronicle = () => tr
 function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel, renderPlayerNotesFab, state, permissions = {}) {
   const canEditChronicle = permissions.canEditChronicle || (() => true);
   const linkedContent = autoLinkChronicleReferences(current?.content || "", state);
-  const bodyParts = splitChronicleBody(linkedContent);
+  const bodyParts = splitChronicleBodyBalanced(linkedContent, { hasPrimaryImage: Boolean(primaryImage) });
   const openingBody = bodyParts.opening || "Encara no hi ha cos de capitol.";
   const continuationBody = bodyParts.continuation;
 
@@ -216,6 +220,28 @@ function renderChronicleReadSpread(current, primaryImage, renderPlayerNotesPanel
   `;
 }
 
+function splitChronicleBodyBalanced(content, options = {}) {
+  const normalizedContent = String(content || "").trim();
+  if (!normalizedContent) {
+    return { opening: "", continuation: "" };
+  }
+
+  if (normalizedContent.length < 1200) {
+    return { opening: shortChronicleText(normalizedContent, 420), continuation: normalizedContent };
+  }
+
+  const openingRatio = options.hasPrimaryImage ? 0.38 : 0.46;
+  const targetIndex = Math.round(normalizedContent.length * openingRatio);
+  const preferredMin = Math.max(900, targetIndex - 650);
+  const preferredMax = Math.min(normalizedContent.length - 650, targetIndex + 650);
+  const splitIndex = findChronicleSplitIndex(normalizedContent, preferredMin, targetIndex, preferredMax);
+
+  return {
+    opening: normalizedContent.slice(0, splitIndex).trim(),
+    continuation: normalizedContent.slice(splitIndex).trim(),
+  };
+}
+
 function splitChronicleBody(content) {
   const normalizedContent = String(content || "").trim();
   if (!normalizedContent) {
@@ -246,6 +272,41 @@ function splitChronicleBody(content) {
     opening: normalizedContent.slice(0, splitIndex).trim(),
     continuation: normalizedContent.slice(splitIndex).trim(),
   };
+}
+
+function findChronicleSplitIndex(content, preferredMin, targetIndex, preferredMax) {
+  if (preferredMax <= preferredMin) {
+    return Math.max(1, Math.min(content.length - 1, targetIndex));
+  }
+
+  const paragraphBreak = findClosestBreak(content, /\n+/g, preferredMin, targetIndex, preferredMax, (match) => match.index + match[0].length);
+  if (paragraphBreak !== null) {
+    return paragraphBreak;
+  }
+
+  const sentenceBreak = findClosestBreak(content, /[.!?…](\s+|$)/g, preferredMin, targetIndex, preferredMax, (match) => match.index + 1);
+  if (sentenceBreak !== null) {
+    return sentenceBreak;
+  }
+
+  const whitespaceBreak = findClosestBreak(content, /\s+/g, preferredMin, targetIndex, preferredMax, (match) => match.index + match[0].length);
+  return whitespaceBreak ?? Math.max(1, Math.min(content.length - 1, targetIndex));
+}
+
+function findClosestBreak(content, pattern, preferredMin, targetIndex, preferredMax, resolveIndex) {
+  const candidates = [];
+  for (const match of content.matchAll(pattern)) {
+    const breakIndex = resolveIndex(match);
+    if (breakIndex >= preferredMin && breakIndex <= preferredMax) {
+      candidates.push(breakIndex);
+    }
+  }
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  return candidates.sort((left, right) => Math.abs(left - targetIndex) - Math.abs(right - targetIndex))[0];
 }
 
 function autoLinkChronicleReferences(content, state) {
@@ -560,9 +621,7 @@ function renderChronicleEditor(chronicle, state, permissions = {}) {
                 ${renderInputField("chapter", "Capitol", readDraftValue(draft.chapter, chronicle?.chapter || ""))}
                 ${renderInputField("title", "Titol", readDraftValue(draft.title, chronicle?.title || ""))}
                 ${renderInputField("date", "Data", readDraftValue(draft.date, chronicle?.date || ""))}
-                ${renderRichTextareaField("summary", "Resum principal", readDraftValue(draft.summary, chronicle?.summary || ""), 5)}
                 ${renderRichTextareaField("content", "Cos del capitol", readDraftValue(draft.content, chronicle?.content || ""), 10)}
-                ${renderRichTextareaField("highlights", "Fites clau", readDraftValue(draft.highlights, chronicle?.highlights || ""), 6)}
                 <label class="field span-2">
                   <span>Editors jugadors</span>
                   <textarea name="editableByUserEmails" rows="3" placeholder="correu@exemple.com">${escapeHtml(readDraftValue(draft.editableByUserEmails, (chronicle?.editableByUserEmails || []).join("\n")))}</textarea>
@@ -642,7 +701,7 @@ function chronicleMatchesSearch(chronicle, search) {
     return true;
   }
 
-  return [chronicle.chapter, chronicle.title, chronicle.date, chronicle.summary, chronicle.highlights]
+  return [chronicle.chapter, chronicle.title, chronicle.date, chronicle.content]
     .filter(Boolean)
     .some((value) => value.toLowerCase().includes(search));
 }

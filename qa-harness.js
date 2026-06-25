@@ -66,6 +66,14 @@ function createContext(currentFrame) {
       }
       target.click();
     },
+    pointerDown(selector) {
+      const target = doc.querySelector(selector);
+      if (!(target instanceof win.HTMLElement)) {
+        throw new Error(`Element no trobat per pointerdown: ${selector}`);
+      }
+      const EventConstructor = typeof win.PointerEvent === "function" ? win.PointerEvent : win.MouseEvent;
+      target.dispatchEvent(new EventConstructor("pointerdown", { bubbles: true, cancelable: true }));
+    },
     pressKey(key) {
       doc.dispatchEvent(new win.KeyboardEvent("keydown", { key, bubbles: true }));
     },
@@ -567,9 +575,40 @@ async function runEditSuite(context) {
     context.doc.querySelector(".chronicle-edit-sidebar") === null,
     "L'editor de croniques no mostra la sidebar lateral antiga",
   );
+  record(
+    steps,
+    context.doc.querySelector('form[data-form="chronicle"] textarea[name="summary"]') === null
+      && context.doc.querySelector('form[data-form="chronicle"] textarea[name="highlights"]') === null
+      && context.doc.querySelector('form[data-form="chronicle"] textarea[name="content"]') !== null,
+    "L'editor de croniques nomes mostra el cos narratiu editable",
+  );
 
   context.type('form[data-form="chronicle"] input[name="title"]', "Cronica QA");
   await delay(60);
+  const longChronicleContent = Array.from({ length: 40 }, (_, index) => `Linia antiga ${index + 1}`).join("\n")
+    + "\nCatedral\n"
+    + Array.from({ length: 40 }, (_, index) => `Linia posterior ${index + 1}`).join("\n");
+  context.type('form[data-form="chronicle"] textarea[name="content"]', longChronicleContent);
+  await delay(80);
+  context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
+  await delay(80);
+  const longContentTextarea = context.doc.querySelector('form[data-form="chronicle"] textarea[name="content"]');
+  const expectedReferenceScroll = 180;
+  if (longContentTextarea instanceof context.win.HTMLTextAreaElement) {
+    longContentTextarea.scrollTop = expectedReferenceScroll;
+  }
+  context.pointerDown('[data-insert-reference="catedral-del-silencio"]');
+  await delay(120);
+  const pointerInsertedContent = longContentTextarea?.value || "";
+  const preservedReferenceScroll = longContentTextarea?.scrollTop ?? 0;
+  record(
+    steps,
+    pointerInsertedContent.includes("[[catedral-del-silencio|Catedral]]")
+      && Math.abs(preservedReferenceScroll - expectedReferenceScroll) <= 1,
+    "La suggerencia de referencia no desplaca el cos de la cronica quan s'activa amb ratoli",
+    { preservedReferenceScroll, expectedReferenceScroll },
+  );
+
   context.type('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
   await delay(80);
   context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
@@ -660,8 +699,6 @@ async function runEditSuite(context) {
   await delay(60);
   context.type('form[data-form="chronicle"] textarea[name="content"]', "[[ilu|Ilu]]");
   await delay(60);
-  context.type('form[data-form="chronicle"] textarea[name="highlights"]', "- Fita QA");
-  await delay(60);
   context.submit('form[data-form="chronicle"]');
   await delay(80);
   const savedChronicleTitle = context.doc.querySelector(".page-header h3")?.textContent?.trim() || "";
@@ -709,6 +746,20 @@ async function runEditSuite(context) {
     "Glossari mostra una accio visible per crear entrades",
   );
 
+  const glossaryCountBeforeCreate = context.qsa("[data-glossary-id]").length;
+  context.click("[data-create-glossary]");
+  await delay(80);
+  context.click("[data-discard-glossary-edit]");
+  await delay(80);
+  const glossaryCountAfterDiscardNew = context.qsa("[data-glossary-id]").length;
+  record(
+    steps,
+    context.doc.querySelector(".editor-workspace-glossary") === null
+      && glossaryCountAfterDiscardNew === glossaryCountBeforeCreate,
+    "Descartar una entrada nova del glossari elimina la fitxa provisional",
+    { glossaryCountBeforeCreate, glossaryCountAfterDiscardNew },
+  );
+
   context.click("[data-edit-glossary-card]");
   await delay(80);
   record(
@@ -731,6 +782,22 @@ async function runEditSuite(context) {
     { glossaryEditorSuggestions },
   );
 
+  const originalGlossaryName = context.doc.querySelector('form[data-form="glossary"] input[name="name"]')?.value || "";
+  context.type('form[data-form="glossary"] input[name="name"]', "Entrada descartada QA");
+  await delay(60);
+  context.click("[data-discard-glossary-edit]");
+  await delay(80);
+  const discardedGlossaryTitle = context.doc.querySelector(".glossary-detail h3")?.textContent?.trim() || "";
+  record(
+    steps,
+    context.doc.querySelector(".editor-workspace-glossary") === null
+      && discardedGlossaryTitle === originalGlossaryName,
+    "Descartar canvis del glossari tanca l'editor i conserva la fitxa original",
+    { originalGlossaryName, discardedGlossaryTitle },
+  );
+
+  context.click("[data-edit-glossary-card]");
+  await delay(80);
   context.type('form[data-form="glossary"] input[name="name"]', "Entrada QA");
   context.type(
     'form[data-form="glossary"] textarea[name="imageAssets"]',

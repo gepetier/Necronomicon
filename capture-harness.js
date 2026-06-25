@@ -295,7 +295,17 @@ async function runScenario(context, scenarioName) {
       showcase.style.left = isMobile ? "42px" : "255px";
       showcase.style.top = isMobile ? "610px" : "560px";
       showcase.style.zIndex = "500";
-      showcase.append(clone);
+      clone.style.display = "none";
+      showcase.style.display = "grid";
+      showcase.style.gridTemplateColumns = isMobile ? "1fr" : "repeat(2, max-content)";
+      showcase.style.gap = "16rem";
+      const tooltipExamples = isMobile
+        ? [await cloneOpenReferenceTooltip(context, "reina-elisabeth", "Reina Elisabeth")]
+        : [
+          await cloneOpenReferenceTooltip(context, "reina-elisabeth", "Reina Elisabeth"),
+          await cloneOpenReferenceTooltip(context, "kaelor", "Kaelor"),
+        ];
+      showcase.append(clone, ...tooltipExamples);
       context.doc.body.append(showcase);
       await delay(220);
     },
@@ -529,6 +539,49 @@ async function scrollCharacterSheetIntoView(context) {
   if (sheet instanceof context.win.HTMLElement) {
     sheet.scrollIntoView({ block: "start", inline: "nearest" });
     await delay(180);
+  }
+}
+
+async function cloneOpenReferenceTooltip(context, referenceId, fallbackLabel) {
+  const escapedId = context.win.CSS.escape(referenceId);
+  const source = context.query(`[data-reference-jump="${escapedId}"]`);
+  if (!(source instanceof context.win.HTMLElement)) {
+    throw new Error(`No s'ha trobat la referencia ${referenceId}.`);
+  }
+
+  await waitForTooltipImageLayout(source);
+
+  const clone = source.cloneNode(true);
+  clone.classList.add("tooltip-capture-open");
+  clone.style.position = "relative";
+  clone.style.zIndex = "1";
+  if (clone.firstChild) {
+    clone.firstChild.textContent = fallbackLabel;
+  }
+  return clone;
+}
+
+async function waitForTooltipImageLayout(referenceElement) {
+  const image = referenceElement.querySelector(".glossary-reference-tooltip img");
+  if (!(image instanceof HTMLImageElement)) {
+    return;
+  }
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 1200) {
+    const tooltip = referenceElement.querySelector(".glossary-reference-tooltip");
+    if (
+      image.complete
+      && image.naturalWidth
+      && tooltip instanceof HTMLElement
+      && (
+        tooltip.classList.contains("glossary-reference-tooltip-portrait")
+        || tooltip.classList.contains("glossary-reference-tooltip-stacked")
+      )
+    ) {
+      return;
+    }
+    await delay(80);
   }
 }
 

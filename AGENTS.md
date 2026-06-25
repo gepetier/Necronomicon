@@ -24,6 +24,7 @@
 ## Working conventions
 - Prefer minimal, targeted edits. Preserve the existing visual language unless a redesign is requested.
 - Keep the app dependency-light and compatible with the current plain-JS structure.
+- Prefer token-light execution: scope searches to likely files first, keep progress updates and final summaries short, avoid repeating long context, and run only the smallest relevant validation unless the change is broad or risky.
 - When changing behavior, verify with the relevant QA command if feasible.
 - If a Vite dev server is already running, reuse it instead of launching duplicates.
 - Any interface or visual change must be validated visually, not only by code review or build success.
@@ -63,6 +64,7 @@
 - QA suites share the local harness port `4173`, so they should be run sequentially rather than in parallel when validating the app.
 - Capture tooling is part of the permanent UI workflow; use filtered captures or `qa:smoke` for fast iteration before full QA.
 - QA and capture runners should enforce Chrome timeouts so failed headless runs do not leave long-lived runner processes behind.
+- Default workflow should stay token-light: ask/answer with concise summaries, avoid broad repo scans when likely files are known, and prefer focused build/QA/capture aliases over full suites unless the risk warrants it.
 - Backup export/import now routes through shared helper functions in `main.js`, so the UI buttons and any QA hooks exercise the same serialization and restore path.
 - `qa-runner.mjs` now forces process exit after writing artifacts because the edit suite can otherwise leave Node handles alive after a successful run.
 - Rich-text editor previews need their own ink color and contrast treatment instead of inheriting the softer field-label tone, or long prose becomes hard to read.
@@ -98,6 +100,7 @@
 - After any substantial change, update `Decisions`, `Pending`, and `Last session`.
 - For UI tasks, plan time for screenshot capture and review after each visual edit pass.
 - For small UI loops, start with `npm.cmd run qa:smoke` or a filtered `npm.cmd run capture -- <alias>` before full `npm.cmd run qa`.
+- Keep future task reports compact: changed files, validation run, and only the most relevant caveats or next steps.
 
 ## Last session
 - 2026-04-18: created this project memory file and added persistent restart context.
@@ -168,6 +171,7 @@
 - 2026-06-04: improved Savage Worlds table usability with live Bennies/Shaken/Wounds/Fatigue controls, Pace, parsed weapon/action cards, separated Edges/Hindrances, compact no-portrait character plates, refreshed Baskins captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
 - 2026-06-04: added local Savage Worlds concept tooltips with click/tap/keyboard support, fixed mobile tooltip opacity/stacking and sheet contrast/overlap issues, refreshed Baskins captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
 - 2026-06-04: added Savage Worlds assisted calculations for wound/fatigue penalties, effective trait/action labels, equipped armor bonuses, intelligent equipment/loadout cards, richer inventory format hints, dedicated Baskins loadout/penalty captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
+- 2026-06-25: added a persistent token-light workflow preference: concise responses, scoped searches, and focused validation by default.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

@@ -123,6 +123,7 @@ const authCampaignSelect = document.querySelector("[data-auth-campaign-select]")
 
 let lastLightboxTrigger = null;
 let pendingRichMediaInsert = null;
+let ignoredSuggestionClickTarget = null;
 
 const IMAGE_OPTIMIZATION_OPTIONS = {
   maxWidth: 1800,
@@ -216,6 +217,7 @@ function initialize() {
   applyCaptureUserOverride();
 
   document.addEventListener("click", handleClick);
+  document.addEventListener("pointerdown", handleReferenceSuggestionPointerDown, true);
   document.addEventListener("keydown", handleKeydown);
   document.addEventListener("keyup", handleKeyup);
   document.addEventListener("submit", handleSubmit);
@@ -584,26 +586,11 @@ function handleClick(event) {
   }
 
   if (suggestionButton) {
-    const textarea = document.querySelector(`#${suggestionButton.dataset.inputId}`);
-    if (textarea instanceof HTMLTextAreaElement) {
-      if (suggestionButton.dataset.insertMedia === "true") {
-        openRichMediaPicker({
-          textareaId: textarea.id,
-          referenceLabel: suggestionButton.dataset.referenceLabel || "",
-          referenceStart: suggestionButton.dataset.referenceStart || "",
-          referenceEnd: suggestionButton.dataset.referenceEnd || "",
-        });
-        return;
-      }
-
-      insertReference(
-        textarea,
-        suggestionButton.dataset.insertReference || suggestionButton.dataset.insertGlossaryRef || "",
-        suggestionButton.dataset.referenceLabel || "",
-        suggestionButton.dataset.referenceStart || "",
-        suggestionButton.dataset.referenceEnd || "",
-      );
+    if (suggestionButton === ignoredSuggestionClickTarget) {
+      ignoredSuggestionClickTarget = null;
+      return;
     }
+    handleReferenceSuggestionAction(suggestionButton);
     return;
   }
 
@@ -641,6 +628,11 @@ function handleClick(event) {
     return;
   }
 
+  if (event.target.closest("[data-discard-glossary-edit]")) {
+    discardGlossaryChanges();
+    return;
+  }
+
   if (event.target.closest("[data-save-character]")) {
     saveCharacterEdits();
     return;
@@ -674,6 +666,43 @@ function handleClick(event) {
   if (deleteNoteButton) {
     deletePlayerNote(deleteNoteButton.dataset.deletePlayerNote || "");
   }
+}
+
+function handleReferenceSuggestionPointerDown(event) {
+  const suggestionButton = event.target.closest("[data-insert-reference], [data-insert-glossary-ref], [data-insert-media]");
+  if (!(suggestionButton instanceof HTMLElement)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  ignoredSuggestionClickTarget = suggestionButton;
+  handleReferenceSuggestionAction(suggestionButton);
+}
+
+function handleReferenceSuggestionAction(suggestionButton) {
+  const textarea = document.querySelector(`#${suggestionButton.dataset.inputId}`);
+  if (!(textarea instanceof HTMLTextAreaElement)) {
+    return;
+  }
+
+  if (suggestionButton.dataset.insertMedia === "true") {
+    openRichMediaPicker({
+      textareaId: textarea.id,
+      referenceLabel: suggestionButton.dataset.referenceLabel || "",
+      referenceStart: suggestionButton.dataset.referenceStart || "",
+      referenceEnd: suggestionButton.dataset.referenceEnd || "",
+    });
+    return;
+  }
+
+  insertReference(
+    textarea,
+    suggestionButton.dataset.insertReference || suggestionButton.dataset.insertGlossaryRef || "",
+    suggestionButton.dataset.referenceLabel || "",
+    suggestionButton.dataset.referenceStart || "",
+    suggestionButton.dataset.referenceEnd || "",
+  );
 }
 
 function handleKeydown(event) {
@@ -983,6 +1012,9 @@ function handleSubmit(event) {
       return;
     }
     clearGlossaryDraft(readString(formData, "id"));
+    if (state.ui.newGlossaryId === readString(formData, "id")) {
+      state.ui.newGlossaryId = "";
+    }
     saveGlossary(formData);
     return;
   }
@@ -2449,9 +2481,7 @@ function saveChronicleDraft(chronicleId) {
   formData.set("chapter", draft.chapter !== undefined ? String(draft.chapter) : chronicle.chapter || "");
   formData.set("title", draft.title !== undefined ? String(draft.title) : chronicle.title || "");
   formData.set("date", draft.date !== undefined ? String(draft.date) : chronicle.date || "");
-  formData.set("summary", draft.summary !== undefined ? String(draft.summary) : chronicle.summary || "");
   formData.set("content", draft.content !== undefined ? String(draft.content) : chronicle.content || "");
-  formData.set("highlights", draft.highlights !== undefined ? String(draft.highlights) : chronicle.highlights || "");
   formData.set(
     "editableByUserEmails",
     draft.editableByUserEmails !== undefined
@@ -3118,6 +3148,7 @@ function createGlossaryEntry() {
     return;
   }
   createGlossaryItem(state);
+  state.ui.newGlossaryId = state.ui.selectedGlossaryId;
   clearGlossaryDraft(state.ui.selectedGlossaryId);
   state.ui.editModes.glossary = true;
   persistAndRender(FULL_RENDER_PARTS, { cloud: true });
@@ -3135,7 +3166,28 @@ function deleteGlossaryEntry() {
   const deletedId = state.ui.selectedGlossaryId;
   deleteGlossaryItem(state);
   clearGlossaryDraft(deletedId);
+  if (state.ui.newGlossaryId === deletedId) {
+    state.ui.newGlossaryId = "";
+  }
   persistAndRender(FULL_RENDER_PARTS, { cloud: true });
+}
+
+function discardGlossaryChanges(options = {}) {
+  const glossaryId = state.ui.selectedGlossaryId;
+  const isUnsavedNewGlossaryEntry = glossaryId && state.ui.newGlossaryId === glossaryId;
+  const shouldPersist = options.persist !== false;
+
+  clearGlossaryDraft(glossaryId);
+  state.ui.editModes.glossary = false;
+
+  if (isUnsavedNewGlossaryEntry) {
+    deleteGlossaryItem(state);
+    state.ui.newGlossaryId = "";
+  }
+
+  if (shouldPersist) {
+    persistAndRender(FULL_RENDER_PARTS, { cloud: isUnsavedNewGlossaryEntry });
+  }
 }
 
 function openGlossaryEditor(glossaryId) {
@@ -3234,6 +3286,7 @@ function ensureUiStateShape() {
     : [];
   state.ui.glossarySearch = typeof state.ui.glossarySearch === "string" ? state.ui.glossarySearch : "";
   state.ui.newChronicleId = typeof state.ui.newChronicleId === "string" ? state.ui.newChronicleId : "";
+  state.ui.newGlossaryId = typeof state.ui.newGlossaryId === "string" ? state.ui.newGlossaryId : "";
   state.ui.chronicleIndexSearch = typeof state.ui.chronicleIndexSearch === "string" ? state.ui.chronicleIndexSearch : "";
 }
 
@@ -3482,11 +3535,8 @@ function insertMediaReference(textarea, mediaKind, mediaSource, referenceLabel, 
   const suffix = referenceContext.end < textarea.value.length && textarea.value[referenceContext.end] !== "\n" ? "\n" : "";
   const mediaReplacement = `${prefix}${mediaToken}${suffix}`;
   const nextValue = `${textarea.value.slice(0, referenceContext.start)}${mediaReplacement}${textarea.value.slice(referenceContext.end)}`;
-  textarea.value = nextValue;
   const nextCursor = referenceContext.start + mediaReplacement.length;
-  textarea.focus();
-  textarea.selectionStart = nextCursor;
-  textarea.selectionEnd = nextCursor;
+  setTextareaValuePreservingView(textarea, nextValue, nextCursor, nextCursor);
   clearAllReferenceSuggestions();
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
@@ -4266,13 +4316,27 @@ function insertReference(textarea, referenceId, referenceLabel, referenceStart, 
 
   const referenceReplacement = `[[${referenceId}|${referenceContext.label}]]`;
   const nextReferenceValue = `${textarea.value.slice(0, referenceContext.start)}${referenceReplacement}${textarea.value.slice(referenceContext.end)}`;
-  textarea.value = nextReferenceValue;
   const nextReferenceCursor = referenceContext.start + referenceReplacement.length;
-  textarea.focus();
-  textarea.selectionStart = nextReferenceCursor;
-  textarea.selectionEnd = nextReferenceCursor;
+  setTextareaValuePreservingView(textarea, nextReferenceValue, nextReferenceCursor, nextReferenceCursor);
   clearAllReferenceSuggestions();
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function setTextareaValuePreservingView(textarea, nextValue, selectionStart, selectionEnd = selectionStart) {
+  const scrollTop = textarea.scrollTop;
+  const scrollLeft = textarea.scrollLeft;
+
+  textarea.value = nextValue;
+  textarea.focus({ preventScroll: true });
+  textarea.selectionStart = selectionStart;
+  textarea.selectionEnd = selectionEnd;
+  textarea.scrollTop = scrollTop;
+  textarea.scrollLeft = scrollLeft;
+
+  requestAnimationFrame(() => {
+    textarea.scrollTop = scrollTop;
+    textarea.scrollLeft = scrollLeft;
+  });
 }
 
 function resolveReferenceInsertContext(textarea, referenceLabel, referenceStart, referenceEnd) {
@@ -4359,7 +4423,7 @@ function applyChronicleReferenceTooltip(referenceButton, referenceId) {
 
 function createGlossaryReferenceTooltip(entry) {
   const tooltip = document.createElement("span");
-  tooltip.className = "glossary-reference-tooltip";
+  tooltip.className = "glossary-reference-tooltip glossary-reference-tooltip-stacked";
   tooltip.setAttribute("aria-hidden", "true");
 
   const media = document.createElement("span");
@@ -4374,7 +4438,9 @@ function createGlossaryReferenceTooltip(entry) {
     }
     image.alt = "";
     image.loading = "lazy";
+    image.addEventListener("load", () => updateGlossaryReferenceTooltipLayout(tooltip, image), { once: true });
     media.append(image);
+    requestAnimationFrame(() => updateGlossaryReferenceTooltipLayout(tooltip, image));
   } else {
     const placeholder = document.createElement("span");
     placeholder.className = "glossary-reference-tooltip-placeholder";
@@ -4392,6 +4458,21 @@ function createGlossaryReferenceTooltip(entry) {
 
   tooltip.append(media, copy);
   return tooltip;
+}
+
+function updateGlossaryReferenceTooltipLayout(tooltip, image) {
+  if (!(tooltip instanceof HTMLElement) || !(image instanceof HTMLImageElement)) {
+    return;
+  }
+
+  if (!image.naturalWidth || !image.naturalHeight) {
+    return;
+  }
+
+  const aspectRatio = image.naturalWidth / image.naturalHeight;
+  tooltip.style.setProperty("--tooltip-image-aspect", String(Number(aspectRatio.toFixed(3))));
+  tooltip.classList.toggle("glossary-reference-tooltip-portrait", aspectRatio < 0.92);
+  tooltip.classList.toggle("glossary-reference-tooltip-stacked", aspectRatio >= 0.92);
 }
 
 function getGlossaryTooltipDescription(entry) {
