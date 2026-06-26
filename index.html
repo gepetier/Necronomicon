@@ -26,6 +26,14 @@
             <p class="sidebar-copy">
               Pergamins, cròniques i memòria viva dels personatges.
             </p>
+            <button
+              type="button"
+              class="sidebar-office-toggle"
+              data-toggle-office-mode
+              aria-pressed="false"
+            >
+              Mode oficina
+            </button>
             <div class="sidebar-campaign-slot" data-sidebar-campaign-switcher hidden></div>
           </div>
 
@@ -118,6 +126,51 @@
     </div>
     <input id="richMediaPicker" type="file" data-rich-media-picker hidden />
     <input id="backupImportPicker" type="file" accept=".json,application/json" hidden />
+    <div id="quickGlossaryModal" class="quick-glossary-modal" hidden>
+      <div class="quick-glossary-backdrop" data-close-quick-glossary></div>
+      <div class="quick-glossary-dialog" role="dialog" aria-modal="true" aria-labelledby="quickGlossaryTitle">
+        <form data-form="quick-glossary" class="quick-glossary-form">
+          <div class="quick-glossary-head">
+            <div>
+              <p class="eyebrow">Nova referencia</p>
+              <h3 id="quickGlossaryTitle">Nova entrada de glossari</h3>
+            </div>
+            <button type="button" class="secondary" data-close-quick-glossary>Tanca</button>
+          </div>
+          <label class="field">
+            <span>Nom</span>
+            <input name="quickGlossaryName" maxlength="120" required />
+          </label>
+          <label class="field">
+            <span>Foto</span>
+            <input name="quickGlossaryImage" type="file" accept="image/*" />
+            <small class="field-help">La imatge es comprimeix abans de guardar-se.</small>
+          </label>
+          <label class="field">
+            <span>Categoria</span>
+            <select name="quickGlossaryCategory">
+              <option value="Llocs">Llocs</option>
+              <option value="Religió">Religió</option>
+              <option value="Antagonistes">Antagonistes</option>
+              <option value="Entitats">Entitats</option>
+              <option value="Faccions">Faccions</option>
+              <option value="Objectes">Objectes</option>
+              <option value="Monstres">Monstres</option>
+              <option value="Races">Races</option>
+              <option value="Altres">Altres</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Descripció breu</span>
+            <textarea name="quickGlossaryDescription" rows="4"></textarea>
+          </label>
+          <div class="quick-glossary-actions">
+            <button type="button" class="secondary" data-close-quick-glossary>Cancel·la</button>
+            <button type="submit">Crea i enllaça</button>
+          </div>
+        </form>
+      </div>
+    </div>
     <div id="imageLightbox" class="image-lightbox" hidden>
       <div class="image-lightbox-backdrop" data-close-image-lightbox></div>
       <div

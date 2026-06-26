@@ -397,6 +397,44 @@ async function runFunctionalSuite(context) {
     { chronicleHasRemovedSections },
   );
 
+  context.click('[data-module-link="options"]');
+  await delay(80);
+  context.click("[data-toggle-office-mode]");
+  await delay(120);
+  const officeNavLabel = context.doc.querySelector('[data-module-link="characters"]')?.textContent?.trim() || "";
+  const officeToggleLabel = context.doc.querySelector(".office-mode-card [data-toggle-office-mode]")?.textContent?.trim() || "";
+  record(
+    steps,
+    context.doc.body.classList.contains("office-mode")
+      && officeNavLabel === "Contactes"
+      && officeToggleLabel.includes("Desactiva"),
+    "El mode oficina es pot activar i relabela la navegacio amb noms neutres",
+    { officeNavLabel, officeToggleLabel },
+  );
+
+  context.click('[data-module-link="chronicles"]');
+  await delay(120);
+  const officeChronicleCards = context.qsa(".chronicle-atlas-card");
+  officeChronicleCards[0]?.click();
+  await delay(120);
+  record(
+    steps,
+    context.doc.body.classList.contains("office-mode")
+      && context.doc.querySelector("#chroniclesModule.active") !== null
+      && officeChronicleCards.length > 0
+      && context.doc.querySelector(".book-spread") !== null,
+    "El mode oficina permet entrar a Documents i obrir una cronica",
+    { officeChronicleCards: officeChronicleCards.length },
+  );
+
+  context.click("[data-toggle-office-mode]");
+  await delay(120);
+  record(
+    steps,
+    !context.doc.body.classList.contains("office-mode"),
+    "El mode oficina es pot desactivar",
+  );
+
   return {
     ok: steps.every((step) => step.ok),
     suite: context.suite,
@@ -622,13 +660,63 @@ async function runEditSuite(context) {
     steps,
     glossaryReferenceSuggestions.some((label) => label.includes("Catedral del Silencio"))
       && glossaryReferenceSuggestions.some((label) => label.includes("Multimedia"))
+      && glossaryReferenceSuggestions.some((label) => label.includes("Nova entrada"))
       && referencedChronicleContent === "[[catedral-del-silencio|Catedral]]",
     "La referència de glossari conserva el text seleccionat i només canvia el destí de la referència",
     { glossaryReferenceSuggestions, referencedChronicleContent },
   );
-  context.type('form[data-form="chronicle"] textarea[name="content"]', "Ilu");
+  context.type('form[data-form="chronicle"] textarea[name="content"]', "Arxiu QA");
   await delay(80);
-  context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Ilu");
+  context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Arxiu QA");
+  await delay(80);
+  context.click('#chroniclesModule [data-create-reference-entry]');
+  await delay(120);
+  context.type('form[data-form="quick-glossary"] input[name="quickGlossaryName"]', "Arxiu QA");
+  context.type('form[data-form="quick-glossary"] textarea[name="quickGlossaryDescription"]', "Entrada creada des de croniques.");
+  await context.setFiles('form[data-form="quick-glossary"] input[name="quickGlossaryImage"]', [{
+    name: "arxiu-qa.svg",
+    type: "image/svg+xml",
+    content: "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><rect width='32' height='32' fill='red'/></svg>",
+  }]);
+  context.submit('form[data-form="quick-glossary"]');
+  await delay(220);
+  const quickCreatedContent = context.doc.querySelector('form[data-form="chronicle"] textarea[name="content"]')?.value || "";
+  const quickCreatedEntry = context.win.__NECRONOMICON_QA__?.state?.glossary?.find?.((entry) => entry.name === "Arxiu QA");
+  record(
+    steps,
+    quickCreatedContent === "[[arxiu-qa|Arxiu QA]]"
+      && quickCreatedEntry?.description === "Entrada creada des de croniques."
+      && quickCreatedEntry?.imageAssets?.length === 1,
+    "La suggerencia Nova entrada crea glossari amb imatge i insereix la referencia a la cronica",
+    {
+      quickCreatedContent,
+      quickCreatedCategory: quickCreatedEntry?.category || "",
+      quickCreatedImages: quickCreatedEntry?.imageAssets?.length || 0,
+    },
+  );
+
+  context.type('form[data-form="chronicle"] textarea[name="content"]', "Gat negre");
+  await delay(80);
+  context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Gat negre");
+  await delay(80);
+  context.type('#chroniclesModule [data-reference-search]', "avatar de Nis'haar");
+  await delay(100);
+  const referenceSearchSuggestions = context.qsa(".reference-suggestions .suggestion-chip")
+    .map((element) => element.textContent?.trim() || "");
+  context.click('#chroniclesModule [data-insert-reference="avatar-de-nishaar"]');
+  await delay(80);
+  const searchedReferenceContent = context.doc.querySelector('form[data-form="chronicle"] textarea[name="content"]')?.value || "";
+  record(
+    steps,
+    referenceSearchSuggestions.some((label) => label.includes("Avatar de Nisha'ar"))
+      && searchedReferenceContent === "[[avatar-de-nishaar|Gat negre]]",
+    "El cercador de suggerencies permet vincular un sinonim seleccionat amb una entrada diferent",
+    { referenceSearchSuggestions, searchedReferenceContent },
+  );
+
+  context.type('form[data-form="chronicle"] textarea[name="content"]', "l'Ilu");
+  await delay(80);
+  context.selectText('form[data-form="chronicle"] textarea[name="content"]', "l'Ilu");
   await delay(80);
   const characterReferenceSuggestions = context.qsa(".reference-suggestions .suggestion-chip")
     .map((element) => element.textContent?.trim() || "");
@@ -638,7 +726,7 @@ async function runEditSuite(context) {
   record(
     steps,
     characterReferenceSuggestions.some((label) => label.includes("Ilu") && label.includes("Personatge"))
-      && referencedCharacterContent === "[[ilu|Ilu]]",
+      && referencedCharacterContent === "[[ilu|l'Ilu]]",
     "La referÃ¨ncia de personatge conserva el text seleccionat i apunta a la fitxa principal",
     { characterReferenceSuggestions, referencedCharacterContent },
   );

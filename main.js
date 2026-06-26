@@ -12,6 +12,7 @@ import {
 } from "./app/storage.js";
 import {
   createChronicle as createChronicleEntry,
+  autoLinkChronicleReferences,
   deleteChronicle as deleteChronicleEntry,
   renderChroniclesModule as renderChroniclesView,
   renderChronicleSidebarPanel as renderChronicleSidebarView,
@@ -116,6 +117,7 @@ const imageLightbox = document.querySelector("#imageLightbox");
 const imageLightboxMedia = document.querySelector("#imageLightboxMedia");
 const richMediaPicker = document.querySelector("#richMediaPicker");
 const backupImportPicker = document.querySelector("#backupImportPicker");
+const quickGlossaryModal = document.querySelector("#quickGlossaryModal");
 const authGate = document.querySelector("#authGate");
 const googleSignInButton = document.querySelector("#googleSignInButton");
 const authStatus = document.querySelector("[data-auth-status]");
@@ -123,6 +125,7 @@ const authCampaignSelect = document.querySelector("[data-auth-campaign-select]")
 
 let lastLightboxTrigger = null;
 let pendingRichMediaInsert = null;
+let pendingQuickGlossaryInsert = null;
 let ignoredSuggestionClickTarget = null;
 
 const IMAGE_OPTIMIZATION_OPTIONS = {
@@ -197,6 +200,20 @@ const RENDER_PARTS = {
   options: "options",
   themes: "themes",
   assets: "assets",
+};
+const OFFICE_NAV_LABELS = {
+  characters: "Contactes",
+  chronicles: "Documents",
+  glossary: "Referencies",
+  campaigns: "Arxius",
+  options: "Configuracio",
+};
+const DEFAULT_NAV_LABELS = {
+  characters: "Personatges",
+  chronicles: "Croniques",
+  glossary: "Glossari",
+  campaigns: "Campanyes",
+  options: "Opcions",
 };
 const FULL_RENDER_PARTS = [
   RENDER_PARTS.sidebar,
@@ -296,9 +313,10 @@ function handleClick(event) {
     return;
   }
 
-  const suggestionButton = event.target.closest("[data-insert-reference], [data-insert-glossary-ref], [data-insert-media]");
+  const suggestionButton = event.target.closest("[data-insert-reference], [data-insert-glossary-ref], [data-insert-media], [data-create-reference-entry]");
   const referenceTextarea = event.target.closest("textarea[data-ref-input='glossary']");
-  if (!suggestionButton && !referenceTextarea) {
+  const referenceSuggestionPanel = event.target.closest(".reference-suggestions");
+  if (!suggestionButton && !referenceTextarea && !referenceSuggestionPanel) {
     clearAllReferenceSuggestions();
   }
 
@@ -343,6 +361,16 @@ function handleClick(event) {
     cloudSession.selectingCampaign = false;
     updateCloudStatus("Sessio tancada. Torna a iniciar sessio per sincronitzar.", { renderOptions: false });
     void initializeCloudSession();
+    return;
+  }
+
+  if (event.target.closest("[data-close-quick-glossary]")) {
+    closeQuickGlossaryModal();
+    return;
+  }
+
+  if (event.target.closest("[data-toggle-office-mode]")) {
+    toggleOfficeMode();
     return;
   }
 
@@ -669,7 +697,7 @@ function handleClick(event) {
 }
 
 function handleReferenceSuggestionPointerDown(event) {
-  const suggestionButton = event.target.closest("[data-insert-reference], [data-insert-glossary-ref], [data-insert-media]");
+  const suggestionButton = event.target.closest("[data-insert-reference], [data-insert-glossary-ref], [data-insert-media], [data-create-reference-entry]");
   if (!(suggestionButton instanceof HTMLElement)) {
     return;
   }
@@ -683,6 +711,16 @@ function handleReferenceSuggestionPointerDown(event) {
 function handleReferenceSuggestionAction(suggestionButton) {
   const textarea = document.querySelector(`#${suggestionButton.dataset.inputId}`);
   if (!(textarea instanceof HTMLTextAreaElement)) {
+    return;
+  }
+
+  if (suggestionButton.dataset.createReferenceEntry === "true") {
+    openQuickGlossaryModal({
+      textareaId: textarea.id,
+      referenceLabel: suggestionButton.dataset.referenceLabel || "",
+      referenceStart: suggestionButton.dataset.referenceStart || "",
+      referenceEnd: suggestionButton.dataset.referenceEnd || "",
+    });
     return;
   }
 
@@ -711,6 +749,10 @@ function handleKeydown(event) {
   }
 
   if (event.key === "Escape") {
+    if (quickGlossaryModal && !quickGlossaryModal.hidden) {
+      closeQuickGlossaryModal();
+      return;
+    }
     closeSavageConceptTooltips();
   }
 
@@ -905,6 +947,11 @@ function handleInput(event) {
     return;
   }
 
+  if (event.target instanceof HTMLInputElement && event.target.dataset.referenceSearch !== undefined) {
+    updateReferenceSuggestionSearch(event.target);
+    return;
+  }
+
   if (event.target?.name === "chronicleIndexSearch") {
     state.ui.chronicleIndexSearch = event.target.value.trim();
     scheduleChronicleIndexSearchRender();
@@ -958,7 +1005,7 @@ function handleInput(event) {
   }
 
   const form = event.target instanceof HTMLElement ? event.target.closest("form[data-form]") : null;
-  if (form instanceof HTMLFormElement) {
+  if (form instanceof HTMLFormElement && form.dataset.form !== "quick-glossary") {
     updateDraftFromForm(form);
   }
 }
@@ -1029,6 +1076,11 @@ function handleSubmit(event) {
     return;
   }
 
+  if (form.dataset.form === "quick-glossary") {
+    void saveQuickGlossaryEntry(form, formData);
+    return;
+  }
+
   if (form.dataset.form === "campaign-create") {
     createCampaign(formData);
     return;
@@ -1041,6 +1093,7 @@ function handleSubmit(event) {
 
 function render(parts = FULL_RENDER_PARTS) {
   const renderSet = new Set(parts);
+  applyOfficeMode();
   updateAuthGate();
 
   if (renderSet.has(RENDER_PARTS.sidebar)) {
@@ -1070,6 +1123,87 @@ function render(parts = FULL_RENDER_PARTS) {
   if (renderSet.has(RENDER_PARTS.assets)) {
     void hydrateAssetReferences(document);
   }
+  refreshRichPreviews();
+  applyOfficeVocabulary();
+}
+
+function applyOfficeMode() {
+  document.body.classList.toggle("office-mode", Boolean(state.ui.officeMode));
+}
+
+function applyOfficeVocabulary() {
+  if (!state.ui.officeMode) {
+    return;
+  }
+
+  const replacements = [
+    [/Campanyes/g, "Projectes"],
+    [/campanyes/g, "projectes"],
+    [/Campanya/g, "Projecte"],
+    [/campanya/g, "projecte"],
+    [/Personatges/g, "Contactes"],
+    [/personatges/g, "contactes"],
+    [/Cròniques|Croniques/g, "Documents"],
+    [/cròniques|croniques/g, "documents"],
+    [/Crònica|Cronica/g, "Document"],
+    [/crònica|cronica/g, "document"],
+    [/Glossari/g, "Referencies"],
+    [/glossari/g, "referencies"],
+    [/Compendi/g, "Espai de treball"],
+    [/compendi/g, "espai de treball"],
+    [/D&D 5e|D&D/g, "Documents"],
+    [/la projecte activa/g, "el projecte actiu"],
+    [/la projecte oberta/g, "el projecte obert"],
+    [/la projecte/g, "el projecte"],
+    [/Fitxes/g, "Registres"],
+    [/fitxes/g, "registres"],
+    [/Fitxa/g, "Registre"],
+    [/fitxa/g, "registre"],
+    [/llibre de lectura/g, "document de lectura"],
+  ];
+  const excludedSelector = [
+    "script",
+    "style",
+    "input",
+    "textarea",
+    "select",
+    "option",
+    "[contenteditable='true']",
+    ".chapter-body",
+    ".rich-preview",
+    ".detail-lore",
+    ".glossary-description",
+    ".player-note-card",
+  ].join(",");
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const parent = node.parentElement;
+    if (!parent || parent.closest(excludedSelector)) {
+      continue;
+    }
+    nodes.push(node);
+  }
+
+  nodes.forEach((node) => {
+    const nextValue = replacements.reduce(
+      (value, [pattern, replacement]) => value.replace(pattern, replacement),
+      node.nodeValue || "",
+    );
+    if (nextValue !== node.nodeValue) {
+      node.nodeValue = nextValue;
+    }
+  });
+}
+
+function toggleOfficeMode() {
+  state.ui.officeMode = !state.ui.officeMode;
+  showSaveNotice(
+    state.ui.officeMode ? "Mode oficina activat" : "Mode campanya activat",
+    { renderParts: FULL_RENDER_PARTS },
+  );
 }
 
 async function initializeCloudSession() {
@@ -1481,6 +1615,7 @@ function currentModuleRenderParts() {
 }
 
 function updateSidebar() {
+  applyOfficeMode();
   document.body.classList.toggle("sidebar-pinned", Boolean(state.ui.sidebarPinned));
   if (state.ui.sidebarPinned) {
     document.body.classList.remove("sidebar-preview");
@@ -1489,15 +1624,44 @@ function updateSidebar() {
     button.setAttribute("aria-expanded", state.ui.sidebarPinned ? "true" : "false");
     button.classList.toggle("active", Boolean(state.ui.sidebarPinned));
   });
+  document.querySelectorAll("[data-toggle-office-mode]").forEach((button) => {
+    const enabled = Boolean(state.ui.officeMode);
+    button.setAttribute("aria-pressed", enabled ? "true" : "false");
+    if (button.classList.contains("sidebar-office-toggle")) {
+      button.textContent = enabled ? "Vista campanya" : "Mode oficina";
+    }
+  });
 
   document.querySelectorAll("[data-module-link]").forEach((button) => {
     const module = button.dataset.moduleLink || "";
     const isActive = module === state.ui.currentModule;
+    const labels = state.ui.officeMode ? OFFICE_NAV_LABELS : DEFAULT_NAV_LABELS;
     button.classList.toggle("active", isActive);
     button.dataset.draftPending = hasModuleDrafts(module) ? "true" : "false";
+    if (labels[module]) {
+      button.textContent = labels[module];
+    }
     button.setAttribute("aria-selected", isActive ? "true" : "false");
     button.setAttribute("tabindex", isActive ? "0" : "-1");
   });
+
+  const sidebarTop = document.querySelector(".sidebar-top");
+  if (sidebarTop) {
+    const eyebrow = sidebarTop.querySelector(".eyebrow");
+    const title = sidebarTop.querySelector("h1");
+    const copy = sidebarTop.querySelector(".sidebar-copy");
+    if (eyebrow) {
+      eyebrow.textContent = state.ui.officeMode ? "Projecte intern" : "Campanya D&D";
+    }
+    if (title) {
+      title.textContent = state.ui.officeMode ? "Espai de treball" : "Compendi de Campanya";
+    }
+    if (copy) {
+      copy.textContent = state.ui.officeMode
+        ? "Documents, contactes i referencies compartides."
+        : "Pergamins, croniques i memoria viva dels personatges.";
+    }
+  }
 
   document.querySelectorAll(".module-view").forEach((view) => {
     const isActive = view.id === `${state.ui.currentModule}Module`;
@@ -1837,6 +2001,7 @@ function renderOptionsModule() {
   const campaignsEditable = canManageCampaigns();
   const publishEnabled = canPublishCampaign();
   const campaignMeta = storageGetActiveCampaignMeta();
+  const officeModeEnabled = Boolean(state.ui.officeMode);
 
   optionsModule.innerHTML = `
     <section class="module-surface options-shell">
@@ -1902,6 +2067,28 @@ function renderOptionsModule() {
             </div>
           </article>
         ` : ""}
+
+        <article class="section-card options-card office-mode-card">
+          <div class="options-card-copy">
+            <p class="eyebrow">Visualitzacio</p>
+            <h3>Mode oficina</h3>
+            <p>Canvia la presentacio a una vista neutra de documents, llistes i taules. S'amaguen imatges i ornaments visibles.</p>
+          </div>
+          <div class="options-stat-list">
+            <span class="badge">${officeModeEnabled ? "Actiu" : "Inactiu"}</span>
+            <span class="badge">Preferencia local</span>
+          </div>
+          <div class="options-actions">
+            <button
+              type="button"
+              class="secondary"
+              data-toggle-office-mode
+              aria-pressed="${officeModeEnabled ? "true" : "false"}"
+            >
+              <span>${officeModeEnabled ? "Desactiva mode oficina" : "Activa mode oficina"}</span>
+            </button>
+          </div>
+        </article>
 
         <article class="section-card options-card options-status-card">
           <div>
@@ -3048,7 +3235,7 @@ function showSaveNotice(message, options = {}) {
     message,
   };
   window.clearTimeout(saveNoticeTimer);
-  persistAndRender(currentModuleRenderParts(), { cloud: options.cloud === true });
+  persistAndRender(options.renderParts || currentModuleRenderParts(), { cloud: options.cloud === true });
   saveNoticeTimer = window.setTimeout(() => {
     state.ui.saveNotice = "";
     render([RENDER_PARTS.notice]);
@@ -3154,6 +3341,145 @@ function createGlossaryEntry() {
   persistAndRender(FULL_RENDER_PARTS, { cloud: true });
 }
 
+function openQuickGlossaryModal(insertContext) {
+  if (!quickGlossaryModal) {
+    return;
+  }
+  if (!canCreateGlossaryEntry()) {
+    denyPermission("No tens permisos per crear entrades del glossari.");
+    return;
+  }
+
+  pendingQuickGlossaryInsert = insertContext;
+  quickGlossaryModal.dataset.inputId = insertContext.textareaId || "";
+  quickGlossaryModal.dataset.referenceLabel = insertContext.referenceLabel || "";
+  quickGlossaryModal.dataset.referenceStart = insertContext.referenceStart || "";
+  quickGlossaryModal.dataset.referenceEnd = insertContext.referenceEnd || "";
+  const form = quickGlossaryModal.querySelector('form[data-form="quick-glossary"]');
+  if (form instanceof HTMLFormElement) {
+    form.reset();
+    const nameInput = form.elements.namedItem("quickGlossaryName");
+    if (nameInput instanceof HTMLInputElement) {
+      nameInput.value = String(insertContext.referenceLabel || "").trim();
+    }
+  }
+  quickGlossaryModal.hidden = false;
+  document.body.classList.add("quick-glossary-open");
+  requestAnimationFrame(() => {
+    const nameInput = quickGlossaryModal.querySelector('input[name="quickGlossaryName"]');
+    if (nameInput instanceof HTMLInputElement) {
+      nameInput.focus();
+      nameInput.select();
+    }
+  });
+}
+
+function closeQuickGlossaryModal() {
+  if (!quickGlossaryModal) {
+    return;
+  }
+  quickGlossaryModal.hidden = true;
+  document.body.classList.remove("quick-glossary-open");
+  pendingQuickGlossaryInsert = null;
+  delete quickGlossaryModal.dataset.inputId;
+  delete quickGlossaryModal.dataset.referenceLabel;
+  delete quickGlossaryModal.dataset.referenceStart;
+  delete quickGlossaryModal.dataset.referenceEnd;
+}
+
+async function saveQuickGlossaryEntry(form, formData) {
+  if (!canCreateGlossaryEntry()) {
+    denyPermission("No tens permisos per crear entrades del glossari.");
+    return;
+  }
+
+  const name = readString(formData, "quickGlossaryName").trim();
+  if (!name) {
+    return;
+  }
+
+  const pendingInsert = pendingQuickGlossaryInsert || {
+    textareaId: quickGlossaryModal?.dataset.inputId || "",
+    referenceLabel: quickGlossaryModal?.dataset.referenceLabel || "",
+    referenceStart: quickGlossaryModal?.dataset.referenceStart || "",
+    referenceEnd: quickGlossaryModal?.dataset.referenceEnd || "",
+  };
+  const textarea = pendingInsert?.textareaId
+    ? document.querySelector(`#${pendingInsert.textareaId}`)
+    : document.querySelector('#chroniclesModule form[data-form="chronicle"] textarea[name="content"], #charactersModule textarea[data-ref-input="glossary"], #glossaryModule textarea[data-ref-input="glossary"]');
+  if (!(textarea instanceof HTMLTextAreaElement)) {
+    closeQuickGlossaryModal();
+    return;
+  }
+
+  const imageInput = form.elements.namedItem("quickGlossaryImage");
+  const imageFile = imageInput instanceof HTMLInputElement
+    ? Array.from(imageInput.files || []).find((file) => file instanceof File)
+    : null;
+  const currentChronicle = getSelectedChronicle();
+  const entry = {
+    id: createGlossaryEntryId(name),
+    name,
+    category: readString(formData, "quickGlossaryCategory") || "Altres",
+    description: readString(formData, "quickGlossaryDescription"),
+    tags: [],
+    notes: "",
+    latestStatus: "",
+    lastSeenChronicleId: currentChronicle?.id || "",
+    imageAssets: [],
+    playerNotes: [],
+    characterIds: [],
+    chronicleIds: currentChronicle?.id ? [currentChronicle.id] : [],
+    editableByUserEmails: [],
+    palette: ["#54616a", "#c6a26a"],
+  };
+  state.glossary.unshift(entry);
+  state.ui.selectedGlossaryId = entry.id;
+
+  insertReference(
+    textarea,
+    entry.id,
+    pendingInsert.referenceLabel || name,
+    pendingInsert.referenceStart || "",
+    pendingInsert.referenceEnd || "",
+  );
+
+  if (imageFile) {
+    const assetToken = await storeQuickGlossaryImage(imageFile);
+    if (assetToken) {
+      entry.imageAssets = [...(entry.imageAssets || []), assetToken];
+    }
+  }
+
+  closeQuickGlossaryModal();
+  showSaveNotice("Entrada creada i enllacada", { cloud: true });
+}
+
+async function storeQuickGlossaryImage(imageFile) {
+  try {
+    const optimizedFile = await optimizeImageFile(imageFile);
+    return readFileAsDataUrl(optimizedFile);
+  } catch (error) {
+    console.warn("No s'ha pogut guardar la imatge de l'entrada rapida.", error);
+    return readFileAsDataUrl(imageFile);
+  }
+}
+
+function createGlossaryEntryId(name) {
+  const baseId = normalizeReferenceToken(name)
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
+    .slice(0, 64) || "entrada";
+  let nextId = baseId;
+  let suffix = 2;
+  const existingIds = new Set(state.glossary.map((entry) => entry.id));
+  while (existingIds.has(nextId)) {
+    nextId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+  return nextId;
+}
+
 function deleteGlossaryEntry() {
   if (!canDeleteGlossaryEntry()) {
     denyPermission("No tens permisos per esborrar aquesta entrada del glossari.");
@@ -3249,6 +3575,7 @@ function ensureUiStateShape() {
   state.ui.currentModule = validModules.has(state.ui.currentModule) ? state.ui.currentModule : "characters";
   state.ui.showChronicleLanding = typeof state.ui.showChronicleLanding === "boolean" ? state.ui.showChronicleLanding : true;
   state.ui.sidebarPinned = typeof state.ui.sidebarPinned === "boolean" ? state.ui.sidebarPinned : false;
+  state.ui.officeMode = typeof state.ui.officeMode === "boolean" ? state.ui.officeMode : false;
 
   state.ui.editModes = {
     characters: false,
@@ -3834,6 +4161,9 @@ function installQaHooks() {
   }
 
   window.__NECRONOMICON_QA__ = {
+    get state() {
+      return state;
+    },
     exportBackupPayload: () => createCurrentBackupPayload(),
     importBackupPayload: (payload) => restoreBackupPayload(payload),
     storeAssetDataUrl: (dataUrl, options = {}) => storeAssetDataUrl(dataUrl, options),
@@ -4094,22 +4424,37 @@ function revealGlossaryEntry(glossaryId) {
   });
 }
 
-function renderReferenceSuggestions(textarea) {
+function renderReferenceSuggestions(textarea, options = {}) {
   const targetId = textarea.dataset.suggestionTarget;
   const container = targetId ? document.querySelector(`#${targetId}`) : null;
   if (!(container instanceof HTMLElement)) {
     return;
   }
+  clearReferenceSuggestionsExcept(container);
 
   const selectedReference = getSelectedReferenceContext(textarea);
   const referenceContext = getReferenceContext(textarea);
   if (!referenceContext || (referenceContext.token.length < 2 && !selectedReference)) {
     container.innerHTML = "";
+    delete container.dataset.referenceSearchKey;
+    delete container.dataset.referenceSearchQuery;
     return;
+  }
+
+  const referenceKey = selectedReference
+    ? `${textarea.id}:${selectedReference.start}:${selectedReference.end}:${selectedReference.label}`
+    : "";
+  if (container.dataset.referenceSearchKey !== referenceKey) {
+    container.dataset.referenceSearchKey = referenceKey;
+    container.dataset.referenceSearchQuery = "";
   }
 
   const matches = referenceContext.token.length >= 2
     ? getReferenceMatches(referenceContext.token)
+    : [];
+  const searchQuery = selectedReference ? container.dataset.referenceSearchQuery || "" : "";
+  const searchMatches = searchQuery.trim().length >= 2
+    ? getReferenceMatches(searchQuery, { includeMetadata: true, limit: 8 })
     : [];
 
   if (!matches.length && !selectedReference) {
@@ -4117,25 +4462,72 @@ function renderReferenceSuggestions(textarea) {
     return;
   }
 
-  const matchButtons = matches.map(
-    (entry) => `
+  const matchButtons = [];
+  const directIds = new Set(matches.map((entry) => entry.id));
+  const renderSuggestionButton = (entry, extraClass = "") => `
+    <button
+      type="button"
+      class="suggestion-chip ${extraClass}"
+      data-insert-reference="${entry.id}"
+      data-reference-theme="${getGlossaryCategoryTheme(entry.category)}"
+      data-reference-label="${escapeAttribute(referenceContext.label)}"
+      data-reference-start="${referenceContext.start}"
+      data-reference-end="${referenceContext.end}"
+      data-input-id="${escapeAttribute(textarea.id)}"
+    >
+      <span class="suggestion-chip-title">${escapeHtml(entry.name)}</span>
+      <span class="suggestion-chip-meta">${escapeHtml(entry.category)}</span>
+    </button>
+  `;
+
+  if (matches.length) {
+    matchButtons.push(...matches.map((entry) => renderSuggestionButton(entry)));
+  }
+
+  if (selectedReference) {
+    matchButtons.push(`
+      <div class="suggestion-search">
+        <label for="${escapeAttribute(textarea.id)}ReferenceSearch">Cerca una entrada</label>
+        <input
+          id="${escapeAttribute(textarea.id)}ReferenceSearch"
+          type="search"
+          value="${escapeAttribute(searchQuery)}"
+          placeholder="Ex. avatar de Nis'haar"
+          autocomplete="off"
+          data-reference-search
+          data-input-id="${escapeAttribute(textarea.id)}"
+        >
+      </div>
+    `);
+
+    if (searchQuery.trim().length >= 2) {
+      const filteredSearchMatches = searchMatches.filter((entry) => !directIds.has(entry.id));
+      matchButtons.push(`
+        <div class="suggestion-search-results" aria-label="Resultats de cerca">
+          ${filteredSearchMatches.length
+            ? filteredSearchMatches.map((entry) => renderSuggestionButton(entry, "suggestion-chip-search")).join("")
+            : '<p class="suggestion-empty">Cap entrada trobada</p>'}
+        </div>
+      `);
+    }
+
+    if (canCreateGlossaryEntry()) {
+      matchButtons.push(`
         <button
           type="button"
-          class="suggestion-chip"
-          data-insert-reference="${entry.id}"
-          data-reference-theme="${getGlossaryCategoryTheme(entry.category)}"
+          class="suggestion-chip suggestion-chip-create"
+          data-create-reference-entry="true"
+          data-reference-theme="all"
           data-reference-label="${escapeAttribute(referenceContext.label)}"
           data-reference-start="${referenceContext.start}"
           data-reference-end="${referenceContext.end}"
           data-input-id="${escapeAttribute(textarea.id)}"
         >
-          <span class="suggestion-chip-title">${escapeHtml(entry.name)}</span>
-          <span class="suggestion-chip-meta">${escapeHtml(entry.category)}</span>
+          <span class="suggestion-chip-title">Nova entrada</span>
+          <span class="suggestion-chip-meta">Crea una entrada del glossari i enllaca el text seleccionat</span>
         </button>
-      `,
-  );
-
-  if (selectedReference) {
+      `);
+    }
     matchButtons.push(`
       <button
         type="button"
@@ -4162,18 +4554,54 @@ function renderReferenceSuggestions(textarea) {
   }
 
   container.innerHTML = matchButtons.join("");
+  if (options.restoreSearchFocus) {
+    requestAnimationFrame(() => {
+      const searchInput = container.querySelector("[data-reference-search]");
+      if (searchInput instanceof HTMLInputElement) {
+        searchInput.focus({ preventScroll: true });
+        const start = options.searchSelectionStart ?? searchInput.value.length;
+        const end = options.searchSelectionEnd ?? start;
+        searchInput.setSelectionRange(start, end);
+      }
+    });
+  }
+}
+
+function updateReferenceSuggestionSearch(input) {
+  const textareaId = input.dataset.inputId || "";
+  const textarea = textareaId ? document.querySelector(`#${CSS.escape(textareaId)}`) : null;
+  const container = input.closest(".reference-suggestions");
+  if (!(textarea instanceof HTMLTextAreaElement) || !(container instanceof HTMLElement)) {
+    return;
+  }
+
+  container.dataset.referenceSearchQuery = input.value;
+  renderReferenceSuggestions(textarea, {
+    restoreSearchFocus: true,
+    searchSelectionStart: input.selectionStart,
+    searchSelectionEnd: input.selectionEnd,
+  });
+}
+
+function clearReferenceSuggestionsExcept(activeContainer) {
+  document.querySelectorAll(".reference-suggestions").forEach((container) => {
+    if (container instanceof HTMLElement && container !== activeContainer) {
+      container.innerHTML = "";
+    }
+  });
 }
 
 function scheduleReferenceSuggestions(textarea, delay = 90) {
   scheduleTextareaTask(textarea, referenceSuggestionTimers, renderReferenceSuggestions, delay);
 }
 
-function getReferenceMatches(token) {
-  const normalizedToken = normalizeReferenceToken(token);
+function getReferenceMatches(token, options = {}) {
+  const limit = options.limit || 6;
+  const includeMetadata = options.includeMetadata === true;
   return getReferenceEntries()
     .map((entry) => ({
       ...entry,
-      score: getReferenceMatchScore(entry.name, normalizedToken),
+      score: getReferenceMatchScore(entry, token, { includeMetadata }),
     }))
     .filter((item) => item.score !== null)
     .sort(
@@ -4182,7 +4610,7 @@ function getReferenceMatches(token) {
         || getReferenceTargetPriority(left.targetType) - getReferenceTargetPriority(right.targetType)
         || left.name.localeCompare(right.name, "ca"),
     )
-    .slice(0, 6)
+    .slice(0, limit)
     .map(({ score, ...entry }) => entry);
 }
 
@@ -4193,12 +4621,26 @@ function getReferenceEntries() {
       name: character.name,
       category: "Personatge",
       targetType: "character",
+      searchValues: [
+        character.name,
+        character.summary,
+        character.race,
+        character.className,
+      ],
     })),
     ...state.glossary.map((entry) => ({
       id: entry.id,
       name: entry.name,
       category: entry.category,
       targetType: "glossary",
+      searchValues: [
+        entry.name,
+        entry.category,
+        entry.description,
+        entry.latestStatus,
+        entry.lastSeenNote,
+        ...(entry.tags || []),
+      ],
     })),
   ];
 }
@@ -4207,28 +4649,83 @@ function getReferenceTargetPriority(targetType) {
   return targetType === "character" ? 0 : 1;
 }
 
-function getReferenceMatchScore(name, token) {
-  const normalizedName = normalizeReferenceToken(name);
-  if (!normalizedName.includes(token)) {
+function getReferenceMatchScore(entry, token, options = {}) {
+  const tokenVariants = getReferenceTokenVariants(token);
+  if (!tokenVariants.length) {
     return null;
   }
 
-  if (normalizedName.startsWith(token)) {
+  const searchVariants = getReferenceSearchValues(entry, options).flatMap((value) => getReferenceTokenVariants(value));
+  let bestScore = null;
+  tokenVariants.forEach((tokenVariant) => {
+    searchVariants.forEach((searchVariant) => {
+      const score = scoreReferenceVariant(searchVariant, tokenVariant);
+      if (score !== null && (bestScore === null || score < bestScore)) {
+        bestScore = score;
+      }
+    });
+  });
+
+  return bestScore;
+}
+
+function getReferenceSearchValues(entry, options = {}) {
+  const values = options.includeMetadata
+    ? [entry.name, ...(entry.searchValues || [])]
+    : [entry.name];
+  return values
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+}
+
+function scoreReferenceVariant(searchVariant, tokenVariant) {
+  if (!searchVariant || !tokenVariant || !searchVariant.includes(tokenVariant)) {
+    return null;
+  }
+
+  if (searchVariant === tokenVariant) {
     return 0;
   }
 
-  if (normalizedName.split(/\s+/).some((part) => part.startsWith(token))) {
+  if (searchVariant.startsWith(tokenVariant)) {
     return 1;
   }
 
-  return 2;
+  if (searchVariant.split(/\s+/).some((part) => part.startsWith(tokenVariant))) {
+    return 2;
+  }
+
+  return 3;
+}
+
+function getReferenceTokenVariants(value) {
+  const normalized = normalizeReferenceToken(value);
+  if (!normalized) {
+    return [];
+  }
+
+  const withoutArticle = stripReferenceLeadingArticle(normalized);
+  return [...new Set([
+    normalized,
+    withoutArticle,
+    normalized.replaceAll(/\s+/g, ""),
+    withoutArticle.replaceAll(/\s+/g, ""),
+  ].filter(Boolean))];
+}
+
+function stripReferenceLeadingArticle(value) {
+  return value.replace(/^(?:l|d|el|la|els|les|lo|los|en|na|un|una|uns|unes|del|dels|de la)\s+/u, "");
 }
 
 function normalizeReferenceToken(value) {
   return String(value || "")
     .normalize("NFD")
     .replaceAll(/\p{Diacritic}/gu, "")
-    .toLowerCase();
+    .replaceAll(/[\u2018\u2019\u201B\u2032`´]/g, "'")
+    .toLowerCase()
+    .replaceAll(/[^\p{L}0-9]+/gu, " ")
+    .trim()
+    .replaceAll(/\s+/g, " ");
 }
 
 function getActiveToken(textarea) {
@@ -4365,12 +4862,27 @@ function updateRichPreview(textarea) {
     return;
   }
 
-  preview.innerHTML = renderRichText(textarea.value);
+  const sourceValue = textarea.closest('form[data-form="chronicle"]') && textarea.name === "content"
+    ? autoLinkChronicleReferences(textarea.value, state)
+    : textarea.value;
+  preview.innerHTML = renderRichText(sourceValue);
   applyReferenceThemes(preview);
 }
 
 function scheduleRichPreview(textarea, delay = 120) {
   scheduleTextareaTask(textarea, richPreviewTimers, updateRichPreview, delay);
+}
+
+function refreshRichPreviews(scope = document) {
+  if (!scope || typeof scope.querySelectorAll !== "function") {
+    return;
+  }
+
+  scope.querySelectorAll("textarea[data-rich-input='true']").forEach((textarea) => {
+    if (textarea instanceof HTMLTextAreaElement) {
+      updateRichPreview(textarea);
+    }
+  });
 }
 
 function applyReferenceThemes(scope = document) {

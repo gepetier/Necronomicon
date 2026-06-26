@@ -309,7 +309,7 @@ function findClosestBreak(content, pattern, preferredMin, targetIndex, preferred
   return candidates.sort((left, right) => Math.abs(left - targetIndex) - Math.abs(right - targetIndex))[0];
 }
 
-function autoLinkChronicleReferences(content, state) {
+export function autoLinkChronicleReferences(content, state) {
   const text = String(content || "");
   if (!text.trim()) {
     return text;

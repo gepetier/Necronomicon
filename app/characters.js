@@ -123,13 +123,14 @@ export function renderCharactersModule({
 }) {
   if (state.ui.showCharacterGrid) {
     const editableCharacters = state.characters.filter((character) => canEditCharacter(character));
+    const officeMode = Boolean(state.ui.officeMode);
     rootEl.innerHTML = `
       <section class="module-surface module-surface-characters">
         <div class="module-section-header">
           <div class="module-section-copy">
-            <p class="eyebrow">Companyia activa</p>
-            <h3>Personatges de campanya</h3>
-            <p>Obre una carta o entra directament a l'editor de la fitxa seleccionada.</p>
+            <p class="eyebrow">${officeMode ? "Projecte actiu" : "Companyia activa"}</p>
+            <h3>${officeMode ? "Contactes del projecte" : "Personatges de campanya"}</h3>
+            <p>${officeMode ? "Obre un registre o entra directament a l'editor de la fitxa seleccionada." : "Obre una carta o entra directament a l'editor de la fitxa seleccionada."}</p>
           </div>
           ${editableCharacters.length ? `<div class="module-inline-actions">
             <button type="button" class="secondary module-edit-button" data-open-character-editor>

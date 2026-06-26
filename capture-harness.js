@@ -142,6 +142,17 @@ async function runScenario(context, scenarioName) {
     "options-tools": async () => {
       await context.click('[data-module-link="options"]');
     },
+    "office-characters": async () => {
+      await enableOfficeMode(context);
+    },
+    "office-options": async () => {
+      await enableOfficeMode(context);
+      await context.click('[data-module-link="options"]');
+    },
+    "office-chronicles": async () => {
+      await enableOfficeMode(context);
+      await context.click('[data-module-link="chronicles"]');
+    },
     "options-player-access": async () => {
       await context.click('[data-module-link="options"]');
     },
@@ -257,6 +268,23 @@ async function runScenario(context, scenarioName) {
       await context.type('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
       await context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
     },
+    "chronicles-reference-search": async () => {
+      await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
+      await context.click('[data-toggle-edit="chronicles"]');
+      await context.type('form[data-form="chronicle"] textarea[name="content"]', "Gat negre");
+      await context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Gat negre");
+      await context.type('#chroniclesModule [data-reference-search]', "avatar de Nis'haar");
+      await waitForReferenceSearchResult(context);
+    },
+    "chronicles-quick-glossary-modal": async () => {
+      await context.click('[data-module-link="chronicles"]');
+      await openChronicle(context);
+      await context.click('[data-toggle-edit="chronicles"]');
+      await context.type('form[data-form="chronicle"] textarea[name="content"]', "Arxiu nou");
+      await context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Arxiu nou");
+      await context.click('#chroniclesModule [data-create-reference-entry]');
+    },
     "chronicles-search-empty": async () => {
       await context.click('[data-module-link="chronicles"]');
       await openChronicle(context);
@@ -366,6 +394,13 @@ async function runScenario(context, scenarioName) {
 
   await handler();
   await delay(260);
+}
+
+async function enableOfficeMode(context) {
+  if (!context.doc.body.classList.contains("office-mode")) {
+    await context.click("[data-toggle-office-mode]");
+  }
+  await delay(220);
 }
 
 async function openCharacter(context) {
@@ -540,6 +575,24 @@ async function scrollCharacterSheetIntoView(context) {
     sheet.scrollIntoView({ block: "start", inline: "nearest" });
     await delay(180);
   }
+}
+
+async function waitForReferenceSearchResult(context) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 1200) {
+    const input = context.query('#chroniclesModule [data-reference-search]');
+    const result = context.query('#chroniclesModule [data-insert-reference="avatar-de-nishaar"]');
+    if (
+      input instanceof context.win.HTMLInputElement
+      && input.value.includes("avatar")
+      && result instanceof context.win.HTMLElement
+    ) {
+      return;
+    }
+    await delay(80);
+  }
+
+  throw new Error("No s'ha pogut preparar la captura del cercador de referencies.");
 }
 
 async function cloneOpenReferenceTooltip(context, referenceId, fallbackLabel) {

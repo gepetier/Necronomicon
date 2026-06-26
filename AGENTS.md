@@ -61,6 +61,7 @@
 - Glossary image uploads are optimized client-side before persistence: raster images are resized within 1800x1800 and converted to WebP when the result is smaller; GIF/SVG and failed conversions keep the original file.
 - Shared Drive sync status uses the wax-seal icon set in `resources/sync-status/`, with `synced`, `syncing`, and `unsynced` states rendered in the save toast and Options sync card.
 - Rich-text editor reference suggestions are now available in `Personatges`, `Cròniques`, and `Glossari`, and selecting text should also expose a `Multimedia` suggestion that preserves the selected label.
+- Rich-text editor reference suggestions include a selected-text search field for linking synonyms or alternate labels to glossary/character targets while preserving the selected label.
 - QA suites share the local harness port `4173`, so they should be run sequentially rather than in parallel when validating the app.
 - Capture tooling is part of the permanent UI workflow; use filtered captures or `qa:smoke` for fast iteration before full QA.
 - QA and capture runners should enforce Chrome timeouts so failed headless runs do not leave long-lived runner processes behind.
@@ -88,6 +89,9 @@
 - Savage Worlds concept help uses a local curated tooltip dictionary rather than an external rules API, avoiding licensing/API availability risk while keeping the interface explainable at the table.
 - Savage Worlds sheets are moving toward an assisted-sheet model: wounds/fatigue calculate a visible penalty, armor/equipment lines can be equipped, and equipped armor recalculates derived combat stats.
 - The Baskins Savage Worlds campaign auto-seeds Ruth Baskin (`ruth-baskin`) when missing.
+- Office mode is a local UI preference (`state.ui.officeMode`) that keeps the same app workflows but applies a neutral document/spreadsheet skin, hides visible media/ornaments, and relabels navigation/UI copy for workplace-safe use.
+- Chronicle editor previews should mirror read-mode auto-linking for known character/glossary names, while the textarea still preserves the source text unless the user explicitly inserts a `[[id|label]]` reference.
+- Chronicle reference suggestions include a quick `Nova entrada` glossary flow that creates a minimal glossary entry, optionally stores an optimized inline image, links it to the active chronicle, and inserts the reference into the selected text.
 
 ## Pending
 - Before committing/deploying, seed the new Drive `campaign.json` with the desired canonical campaign data; local `data.js` now contains sessions 1-4, but Drive may still need to be updated from the local canonical data.
@@ -172,6 +176,9 @@
 - 2026-06-04: added local Savage Worlds concept tooltips with click/tap/keyboard support, fixed mobile tooltip opacity/stacking and sheet contrast/overlap issues, refreshed Baskins captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
 - 2026-06-04: added Savage Worlds assisted calculations for wound/fatigue penalties, effective trait/action labels, equipped armor bonuses, intelligent equipment/loadout cards, richer inventory format hints, dedicated Baskins loadout/penalty captures, and confirmed `npm.cmd run build`, `npm.cmd run test:unit`, `npm.cmd run qa:functional`, and `npm.cmd run qa:ui` pass.
 - 2026-06-25: added a persistent token-light workflow preference: concise responses, scoped searches, and focused validation by default.
+- 2026-06-26: added selected-text reference search in rich editors, including synonym lookup such as `Gat negre` -> `Avatar de Nisha'ar` and article-tolerant character suggestions such as `l'Ilu` -> `Ilu`.
+- 2026-06-26: added toggleable office mode with neutral navigation labels, document/table styling, hidden visual media, focused functional/UI QA coverage, and dedicated desktop/mobile office captures.
+- 2026-06-26: made chronicle edit previews show the same auto-linked references as read mode and added a quick glossary-entry modal from selected-text suggestions, with edit/UI QA plus desktop/mobile modal captures passing.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

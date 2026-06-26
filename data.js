@@ -1013,6 +1013,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     selectedCharacterId: "ilu",
     selectedCharacterTab: "lore",
     showCharacterGrid: true,
+    officeMode: false,
     selectedChronicleId: "judici-acantilado",
     chronicleIndexSearch: "",
     glossaryCategory: "Totes",

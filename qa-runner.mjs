@@ -11,6 +11,7 @@ const chromeBinary = resolveChromeBinary();
 const requestedTarget = process.argv[2] || "all";
 const scenarios = getScenarios(requestedTarget);
 const chromeTimeoutMs = Number(process.env.QA_CHROME_TIMEOUT_MS || "20000");
+const chromeVirtualTimeBudgetMs = Number(process.env.QA_CHROME_VIRTUAL_TIME_BUDGET_MS || "8000");
 
 async function main() {
   if (!chromeBinary) {
@@ -135,7 +136,7 @@ async function runScenario({ suite, mode, width, height }) {
   const dom = await runChrome([
     "--headless=new",
     "--disable-gpu",
-    "--virtual-time-budget=5000",
+    `--virtual-time-budget=${chromeVirtualTimeBudgetMs}`,
     `--window-size=${width},${height}`,
     "--dump-dom",
     url,

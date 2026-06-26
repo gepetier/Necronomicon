@@ -1487,6 +1487,82 @@ body.lightbox-open {
   background: rgba(16, 10, 8, 0.82);
 }
 
+body.quick-glossary-open {
+  overflow: hidden;
+}
+
+.quick-glossary-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.quick-glossary-modal[hidden] {
+  display: none;
+}
+
+.quick-glossary-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 6, 5, 0.72);
+  backdrop-filter: blur(5px);
+}
+
+.quick-glossary-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  max-height: min(760px, calc(100vh - 2rem));
+  overflow: auto;
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 248, 234, 0.98), rgba(236, 217, 185, 0.98)),
+    var(--tex-parchment);
+  border: 1px solid rgba(116, 71, 38, 0.22);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.4);
+}
+
+.quick-glossary-form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+}
+
+.quick-glossary-head,
+.quick-glossary-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+}
+
+.quick-glossary-head h3 {
+  font-size: 1.35rem;
+  color: var(--ink);
+}
+
+.quick-glossary-actions {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.quick-glossary-dialog button.secondary {
+  color: var(--ink);
+  background: rgba(255, 251, 243, 0.82);
+  border: 1px solid rgba(116, 71, 38, 0.24);
+}
+
+.quick-glossary-dialog button.secondary:hover {
+  background: rgba(255, 251, 243, 0.96);
+}
+
+.suggestion-chip-create {
+  border-color: rgba(37, 99, 235, 0.36);
+}
+
 img {
   cursor: zoom-in;
 }
@@ -4344,6 +4420,49 @@ history-list,
   transform: none;
   filter: none;
   box-shadow: none;
+}
+
+.suggestion-search {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 12px;
+  background: rgba(255, 252, 245, 0.78);
+  border: 1px solid rgba(111, 45, 33, 0.12);
+}
+
+.suggestion-search label {
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+.suggestion-search input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0.42rem 0.55rem;
+  border-radius: 9px;
+  border: 1px solid rgba(111, 45, 33, 0.2);
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink);
+  font: inherit;
+}
+
+.suggestion-search-results {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.suggestion-chip-search {
+  border-style: dashed;
+}
+
+.suggestion-empty {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
 }
 
 .suggestion-chip-title {
@@ -7302,5 +7421,586 @@ select {
   .page-turn-sheet::before,
   .page-turn-sheet::after {
     animation: none !important;
+  }
+}
+
+body.office-mode {
+  --bg: #f3f5f8;
+  --bg-soft: #ffffff;
+  --panel: #ffffff;
+  --panel-strong: #f7f9fc;
+  --ink: #1f2937;
+  --ink-soft: #5b6574;
+  --accent: #2563eb;
+  --accent-bright: #dbeafe;
+  --wine: #334155;
+  --gold: #cbd5e1;
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+  --radius-xl: 8px;
+  --radius-lg: 8px;
+  --radius-md: 6px;
+  --radius-sm: 4px;
+  font-family: Arial, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: #eef2f7;
+  background-attachment: scroll;
+}
+
+body.office-mode button,
+body.office-mode .button {
+  border-radius: 4px;
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: none;
+  min-height: 36px;
+  padding: 0.58rem 0.82rem;
+}
+
+body.office-mode button.secondary,
+body.office-mode .button.secondary,
+body.office-mode .sidebar-office-toggle {
+  color: #1f2937;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+}
+
+body.office-mode button:hover,
+body.office-mode .button:hover {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+  background: #1d4ed8;
+}
+
+body.office-mode button.secondary:hover,
+body.office-mode .button.secondary:hover,
+body.office-mode .sidebar-office-toggle:hover {
+  background: #f8fafc;
+}
+
+body.office-mode input,
+body.office-mode textarea,
+body.office-mode select {
+  border-radius: 4px;
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #111827;
+  box-shadow: none;
+}
+
+body.office-mode .app-shell {
+  background: #eef2f7;
+}
+
+body.office-mode.sidebar-preview .app-shell,
+body.office-mode.sidebar-pinned .app-shell {
+  grid-template-columns: 250px minmax(0, 1fr);
+}
+
+body.office-mode .sidebar {
+  background: #f8fafc;
+  border-right: 1px solid #cbd5e1;
+  box-shadow: none;
+}
+
+body.office-mode .sidebar::before,
+body.office-mode .module-surface::before,
+body.office-mode .book-shell::before,
+body.office-mode .glossary-shell::before,
+body.office-mode .book-cover-plate::before,
+body.office-mode .book-cover-plate::after,
+body.office-mode .page-turn-sheet,
+body.office-mode .auth-book::before {
+  display: none;
+}
+
+body.office-mode .sidebar-top,
+body.office-mode .sidebar-panel,
+body.office-mode .hero-banner,
+body.office-mode .module-surface,
+body.office-mode .book-shell,
+body.office-mode .detail-card,
+body.office-mode .glossary-shell,
+body.office-mode .section-card,
+body.office-mode .options-card,
+body.office-mode .character-card,
+body.office-mode .book-page,
+body.office-mode .glossary-entry,
+body.office-mode .notes-panel,
+body.office-mode .campaign-switch-card,
+body.office-mode .campaign-admin-card,
+body.office-mode .editor-workspace-character,
+body.office-mode .editor-workspace-chronicle,
+body.office-mode .editor-workspace-glossary {
+  background: #ffffff;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  color: #1f2937;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+body.office-mode .sidebar-top {
+  padding: 0.85rem;
+}
+
+body.office-mode .sidebar h1,
+body.office-mode .module-surface h3,
+body.office-mode .book-page h3,
+body.office-mode .glossary-detail h3,
+body.office-mode .detail-summary h3,
+body.office-mode .auth-book h2 {
+  font-family: Arial, "Segoe UI", sans-serif;
+  color: #111827;
+  letter-spacing: 0;
+}
+
+body.office-mode .sidebar-copy,
+body.office-mode .sidebar-panel p,
+body.office-mode .module-section-copy p,
+body.office-mode .detail-summary p,
+body.office-mode .chapter-body,
+body.office-mode .glossary-detail p,
+body.office-mode .field span,
+body.office-mode .badge,
+body.office-mode .eyebrow {
+  color: #4b5563;
+}
+
+body.office-mode .eyebrow {
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+body.office-mode .sidebar-office-toggle {
+  width: 100%;
+  margin-top: 0.8rem;
+  justify-content: center;
+  color: #334155;
+}
+
+body.office-mode .module-nav {
+  gap: 0.2rem;
+}
+
+body.office-mode .module-link {
+  color: #334155;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-shadow: none;
+  justify-content: flex-start;
+}
+
+body.office-mode .module-link.active {
+  color: #0f172a;
+  background: #e8f0fe;
+  border-color: #bfdbfe;
+  box-shadow: none;
+}
+
+body.office-mode .main-content {
+  background: #eef2f7;
+}
+
+body.office-mode .module-view {
+  padding: 1rem;
+}
+
+body.office-mode .module-toolbar,
+body.office-mode .module-section-header,
+body.office-mode .glossary-top,
+body.office-mode .book-controls,
+body.office-mode .chapter-list-shell,
+body.office-mode .character-list,
+body.office-mode .options-grid {
+  background: transparent;
+  box-shadow: none;
+}
+
+body.office-mode .character-grid,
+body.office-mode .glossary-results,
+body.office-mode .campaigns-main-list,
+body.office-mode .chapter-list,
+body.office-mode .options-grid,
+body.office-mode .savage-sheet,
+body.office-mode .sheet-section,
+body.office-mode .loadout-grid,
+body.office-mode .equipment-list,
+body.office-mode .attacks-list {
+  gap: 0;
+  border: 1px solid #d7dee8;
+  background:
+    linear-gradient(#e5e7eb 1px, transparent 1px),
+    linear-gradient(90deg, #e5e7eb 1px, transparent 1px),
+    #ffffff;
+  background-size: 100% 48px, 120px 100%;
+}
+
+body.office-mode .character-card,
+body.office-mode .glossary-entry,
+body.office-mode .index-entry,
+body.office-mode .campaign-switch-card,
+body.office-mode .section-card {
+  border-radius: 0;
+  border-color: #d7dee8;
+  box-shadow: none;
+}
+
+body.office-mode .character-card:hover,
+body.office-mode .glossary-entry:hover,
+body.office-mode .index-entry:hover,
+body.office-mode .campaign-switch-card:hover {
+  transform: none;
+  filter: none;
+}
+
+body.office-mode .book-shell,
+body.office-mode .book-layout,
+body.office-mode .book-spread,
+body.office-mode .book-page {
+  background: #ffffff;
+  transform: none;
+  perspective: none;
+}
+
+body.office-mode .book-spread {
+  gap: 1rem;
+}
+
+body.office-mode .book-page {
+  min-height: auto;
+  background-image:
+    linear-gradient(#e5e7eb 1px, transparent 1px),
+    linear-gradient(90deg, #f1f5f9 1px, transparent 1px);
+  background-size: 100% 2rem, 12rem 100%;
+}
+
+body.office-mode .chapter-body,
+body.office-mode .rich-preview,
+body.office-mode .glossary-description,
+body.office-mode .detail-lore,
+body.office-mode textarea {
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: #111827;
+}
+
+body.office-mode .portrait-media,
+body.office-mode .portrait-placeholder,
+body.office-mode .detail-portrait,
+body.office-mode .detail-portrait-media,
+body.office-mode .book-image-frame,
+body.office-mode .book-image,
+body.office-mode .book-image-media,
+body.office-mode .book-cover-plate,
+body.office-mode .glossary-cover-media,
+body.office-mode .glossary-image-card,
+body.office-mode .glossary-detail-gallery,
+body.office-mode .image-lightbox,
+body.office-mode .sync-status-icon {
+  display: none !important;
+}
+
+body.office-mode .chronicle-landing-hero-media,
+body.office-mode .chronicle-landing-hero::before,
+body.office-mode .chronicle-landing-hero::after,
+body.office-mode .chronicle-atlas-card::before,
+body.office-mode .chronicle-atlas-card::after,
+body.office-mode .chronicle-atlas-card img,
+body.office-mode .chronicle-landing-sigil,
+body.office-mode .chronicle-atlas-card-media,
+body.office-mode .chronicle-atlas-card .chronicle-atlas-art,
+body.office-mode .chronicle-atlas-card .chronicle-atlas-media {
+  display: none !important;
+}
+
+body.office-mode .chronicle-landing {
+  display: grid;
+  gap: 1rem;
+}
+
+body.office-mode .chronicle-landing-hero,
+body.office-mode .chronicle-atlas {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  min-height: auto;
+  padding: 1.1rem;
+  background: #ffffff;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  color: #111827;
+  box-shadow: none;
+}
+
+body.office-mode .chronicle-landing-hero-copy {
+  display: grid;
+  align-self: stretch;
+  gap: 0.55rem;
+  padding: 0;
+  color: #1f2937;
+}
+
+body.office-mode .chronicle-landing-hero-copy h3 {
+  color: #111827;
+  font-size: 1.45rem;
+  line-height: 1.2;
+}
+
+body.office-mode .chronicle-landing-hero-copy p {
+  color: #4b5563;
+}
+
+body.office-mode .chronicle-landing-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+body.office-mode .chronicle-landing-stats span {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #334155;
+}
+
+body.office-mode .chronicle-landing-stats strong {
+  color: #111827;
+  font-size: 0.95rem;
+}
+
+body.office-mode .chronicle-atlas-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+body.office-mode .chronicle-atlas-head h3 {
+  color: #111827;
+  font-size: 1.15rem;
+}
+
+body.office-mode .chronicle-atlas-grid,
+body.office-mode .book-index .chapter-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  border: 1px solid #d7dee8;
+  background: #ffffff;
+}
+
+body.office-mode .chronicle-atlas-card,
+body.office-mode .index-entry {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.6fr) minmax(0, 1.4fr) auto;
+  grid-template-rows: auto;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 68px;
+  padding: 0.72rem 1rem;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #d7dee8;
+  border-radius: 0;
+  color: #111827;
+  box-shadow: none;
+}
+
+body.office-mode .chronicle-atlas-card-copy {
+  display: grid;
+  gap: 0.2rem;
+}
+
+body.office-mode .chronicle-atlas-card-foot {
+  display: grid;
+  justify-items: end;
+  gap: 0.2rem;
+  color: #64748b;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+body.office-mode .chronicle-atlas-card h4,
+body.office-mode .index-entry h4,
+body.office-mode .index-entry p {
+  color: #111827;
+}
+
+body.office-mode .chronicle-atlas-card p,
+body.office-mode .chronicle-atlas-card .eyebrow {
+  color: #475569;
+}
+
+body.office-mode .badge,
+body.office-mode .tag,
+body.office-mode .reference-chip,
+body.office-mode .glossary-reference,
+body.office-mode .savage-concept {
+  color: #1f2937;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+body.office-mode .save-notice {
+  background: #ffffff;
+  color: #1f2937;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+
+body.office-mode .quick-glossary-backdrop {
+  background: rgba(15, 23, 42, 0.22);
+  backdrop-filter: none;
+}
+
+body.office-mode .quick-glossary-dialog {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+}
+
+body.office-mode .quick-glossary-head h3 {
+  color: #111827;
+}
+
+body.office-mode .office-mode-card {
+  border-color: #93c5fd;
+}
+
+body.office-mode .module-action-icon {
+  display: none;
+}
+
+body.office-mode .module-surface-characters .module-section-copy h3 {
+  color: #111827;
+}
+
+body.office-mode .module-surface-characters .module-section-copy .eyebrow {
+  color: #475569;
+}
+
+body.office-mode .module-surface-characters .module-section-copy p:last-child {
+  color: #4b5563;
+}
+
+body.office-mode .character-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  perspective: none;
+  background: #ffffff;
+}
+
+body.office-mode .character-card {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.5fr) minmax(180px, 1fr);
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.72rem 1rem;
+  background: transparent;
+  color: #111827;
+  border-width: 0 0 1px;
+  border-color: #d7dee8;
+  border-radius: 0;
+}
+
+body.office-mode .character-card::before,
+body.office-mode .character-card::after,
+body.office-mode .card-portrait,
+body.office-mode .portrait-badge {
+  display: none;
+}
+
+body.office-mode .character-card-copy {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+body.office-mode .character-card-copy .eyebrow {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+body.office-mode .character-card h3 {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  font-size: 1rem;
+  line-height: 1.25;
+  color: #111827;
+}
+
+body.office-mode .character-card-title {
+  grid-column: 2;
+  grid-row: 1;
+  color: #334155;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+body.office-mode .character-card-summary {
+  grid-column: 2 / span 2;
+  grid-row: 2;
+  color: #475569;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  -webkit-line-clamp: 1;
+}
+
+body.office-mode .character-card .tag-list {
+  grid-column: 3;
+  grid-row: 2;
+  justify-content: flex-start;
+}
+
+body.office-mode .character-card .tag-list .tag:nth-child(n+2) {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  body.office-mode .app-shell,
+  body.office-mode.sidebar-preview .app-shell,
+  body.office-mode.sidebar-pinned .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  body.office-mode .module-view {
+    padding: 0.75rem;
+  }
+
+  body.office-mode .character-card,
+  body.office-mode .character-card-copy {
+    grid-template-columns: 1fr;
+  }
+
+  body.office-mode .character-card-copy .eyebrow,
+  body.office-mode .character-card h3,
+  body.office-mode .character-card-title,
+  body.office-mode .character-card-summary,
+  body.office-mode .character-card .tag-list {
+    grid-column: 1;
+    grid-row: auto;
   }
 }
