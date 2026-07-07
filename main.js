@@ -77,6 +77,7 @@ import {
   resolveCurrentUserAccess,
 } from "./app/permissions.js";
 import {
+  CLOUD_CONFIG,
   clearStoredCredential,
   decodeCredential,
   getStoredCredential,
@@ -92,6 +93,8 @@ import {
   storeCredential,
 } from "./app/cloud-sync.js";
 
+const SYNC_CLIENT_VERSION = "2026-07-07-character-sync-diagnostics";
+
 let state = loadStoredState();
 let bookTurnTimer = null;
 let saveNoticeTimer = null;
@@ -99,6 +102,7 @@ let persistStateTimer = null;
 let glossarySearchTimer = null;
 let chronicleIndexSearchTimer = null;
 let cloudSaveTimer = null;
+let pendingCloudSaveTarget = null;
 
 const referenceSuggestionTimers = new WeakMap();
 const richPreviewTimers = new WeakMap();
@@ -188,6 +192,8 @@ const cloudSession = {
   lastSyncAt: "",
   lastError: "",
   pendingInitialPublish: false,
+  capabilities: {},
+  driveFile: null,
 };
 
 const RENDER_PARTS = {
@@ -349,7 +355,7 @@ function handleClick(event) {
       denyPermission("No tens permisos per publicar tota la campanya.");
       return;
     }
-    void pushStateToCloud({ target: { type: "campaign" } });
+    void publishCampaignToCloud();
     return;
   }
 
@@ -1305,6 +1311,8 @@ async function handleGoogleCredential(credential, options = {}) {
       ...decoded,
       ...(response.user || {}),
     };
+    cloudSession.capabilities = response.capabilities || {};
+    cloudSession.driveFile = response.driveFile || null;
     cloudSession.ready = true;
     cloudSession.awaitingServer = false;
     cloudSession.selectingCampaign = true;
@@ -2002,6 +2010,7 @@ function renderOptionsModule() {
   const publishEnabled = canPublishCampaign();
   const campaignMeta = storageGetActiveCampaignMeta();
   const officeModeEnabled = Boolean(state.ui.officeMode);
+  const cloudDiagnostics = getCloudDiagnostics();
 
   optionsModule.innerHTML = `
     <section class="module-surface options-shell">
@@ -2042,6 +2051,19 @@ function renderOptionsModule() {
               <span>Tanca sessio</span>
             </button>
           </div>
+          <details class="options-diagnostics">
+            <summary>Diagnosi de connexio</summary>
+            <dl>
+              ${cloudDiagnostics.map((item) => `
+                <div>
+                  <dt>${escapeHtml(item.label)}</dt>
+                  <dd>${item.url
+                    ? `<a href="${escapeAttribute(item.value)}" target="_blank" rel="noreferrer">${escapeHtml(item.value)}</a>`
+                    : escapeHtml(item.value)}</dd>
+                </div>
+              `).join("")}
+            </dl>
+          </details>
         </article>
 
         ${publishEnabled || campaignsEditable ? `
@@ -2130,6 +2152,21 @@ function renderOptionsModule() {
       </div>
     </section>
   `;
+}
+
+function getCloudDiagnostics() {
+  const driveFile = cloudSession.driveFile || {};
+  const capabilities = cloudSession.capabilities || {};
+  return [
+    { label: "Frontend sync", value: SYNC_CLIENT_VERSION },
+    { label: "OAuth client", value: CLOUD_CONFIG.clientId || "-" },
+    { label: "Apps Script /exec", value: CLOUD_CONFIG.apiUrl || "-", url: Boolean(CLOUD_CONFIG.apiUrl) },
+    { label: "Backend sync", value: capabilities.backendVersion || "No confirmat" },
+    { label: "Drive folder", value: driveFile.folderId || capabilities.driveFolderId || "No confirmat" },
+    { label: "Drive file id", value: driveFile.id || "No confirmat" },
+    { label: "Drive file url", value: driveFile.url || "No confirmat", url: Boolean(driveFile.url) },
+    { label: "Drive file updated", value: formatShortDate(driveFile.updatedAt) || "No confirmat" },
+  ];
 }
 
 function renderCampaignManager(activeMeta) {
@@ -2428,11 +2465,20 @@ function saveCharacterEdits() {
     return;
   }
 
+  const previousPortrait = character.portrait || "";
   applyCharacterOverviewDraft(character);
   applyCharacterTabDrafts(character);
   clearCharacterDrafts(character.id);
   state.ui.editModes.characters = false;
-  showSaveNotice("Personatge desat", { cloud: true });
+  showSaveNotice("Personatge desat", {
+    cloud: true,
+    cloudTarget: {
+      type: "character",
+      characterId: character.id,
+      character,
+      preserveExistingPortrait: previousPortrait === (character.portrait || ""),
+    },
+  });
 }
 
 function applyCharacterOverviewDraft(character) {
@@ -2603,8 +2649,15 @@ function saveChronicle(formData) {
     state.ui.newChronicleId = "";
   }
   state.ui.editModes.chronicles = false;
-  showSaveNotice("Cronica desada", { cloud: true });
-  void migrateEmbeddedAssets({ announce: false, renderParts: currentModuleRenderParts(), cloud: true });
+  const chronicle = getSelectedChronicle();
+  const cloudTarget = chronicle ? { type: "chronicle", chronicle } : null;
+  showSaveNotice("Cronica desada", { cloud: true, cloudTarget });
+  void migrateEmbeddedAssets({
+    announce: false,
+    renderParts: currentModuleRenderParts(),
+    cloud: true,
+    cloudTarget,
+  });
 }
 
 function switchChronicleSelection(nextId, direction = "next") {
@@ -2738,14 +2791,33 @@ function deletePlayerNote(noteId) {
 }
 
 function saveGlossary(formData) {
-  if (!canEditGlossaryEntry(readString(formData, "id"))) {
+  const glossaryId = readString(formData, "id");
+  if (!canEditGlossaryEntry(glossaryId)) {
     denyPermission("No tens permisos per desar aquesta entrada del glossari.");
     return;
   }
+  const previousEntry = findGlossaryEntry(glossaryId);
+  const previousImageAssets = Array.isArray(previousEntry?.imageAssets)
+    ? [...previousEntry.imageAssets]
+    : [];
   saveGlossaryEntry(formData, { findGlossaryEntry });
   state.ui.editModes.glossary = false;
-  showSaveNotice("Entrada desada", { cloud: true });
-  void migrateEmbeddedAssets({ announce: false, renderParts: currentModuleRenderParts(), cloud: true });
+  const entry = findGlossaryEntry(glossaryId);
+  const cloudTarget = entry
+    ? {
+      type: "glossary",
+      entryId: entry.id,
+      entry,
+      preserveExistingImageAssets: areStringListsEqual(previousImageAssets, entry.imageAssets),
+    }
+    : null;
+  showSaveNotice("Entrada desada", { cloud: true, cloudTarget });
+  void migrateEmbeddedAssets({
+    announce: false,
+    renderParts: currentModuleRenderParts(),
+    cloud: true,
+    cloudTarget,
+  });
 }
 
 function savePermissions(formData) {
@@ -2811,9 +2883,9 @@ function switchCampaign(campaignId) {
   syncCloudUserWithActiveCampaignAccess();
   clearChronicleReturn();
   closeSidebarPreview();
-  persistStateImmediately({ cloud: true });
+  persistStateImmediately({ skipCloud: true });
   render();
-  showSaveNotice(`Campanya oberta: ${storageGetActiveCampaignMeta().name}`, { cloud: true });
+  showSaveNotice(`Campanya oberta: ${storageGetActiveCampaignMeta().name}`);
 }
 
 function focusCampaign(campaignId) {
@@ -3074,7 +3146,7 @@ function schedulePersistState(delay = 180, options = {}) {
     persistStateTimer = null;
     storagePersistState(state);
     if (!shouldSkipCloudSync(options)) {
-      scheduleCloudSave();
+      scheduleCloudSave(900, options);
     }
   }, delay);
 }
@@ -3088,7 +3160,7 @@ function flushPendingPersist(options = {}) {
   persistStateTimer = null;
   storagePersistState(state);
   if (!shouldSkipCloudSync(options)) {
-    scheduleCloudSave();
+    scheduleCloudSave(900, options);
   }
 }
 
@@ -3096,7 +3168,7 @@ function persistStateImmediately(options = {}) {
   flushPendingPersist(options);
   storagePersistState(state);
   if (!shouldSkipCloudSync(options)) {
-    scheduleCloudSave();
+    scheduleCloudSave(900, options);
   }
 }
 
@@ -3108,15 +3180,21 @@ function shouldSkipCloudSync(options = {}) {
   return options.cloud !== true;
 }
 
-function scheduleCloudSave(delay = 900) {
+function scheduleCloudSave(delay = 900, options = {}) {
   if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) {
     return;
   }
 
+  if (options.cloudTarget) {
+    pendingCloudSaveTarget = options.cloudTarget;
+  }
+
   window.clearTimeout(cloudSaveTimer);
   cloudSaveTimer = window.setTimeout(() => {
+    const target = pendingCloudSaveTarget;
+    pendingCloudSaveTarget = null;
     cloudSaveTimer = null;
-    void pushStateToCloud();
+    void pushStateToCloud(target ? { target } : {});
   }, delay);
 }
 
@@ -3125,7 +3203,7 @@ async function pushStateToCloud(options = {}) {
     return;
   }
 
-  const target = options.target || inferCloudSaveTarget();
+  const target = resolveCloudSaveTarget(options.target || inferCloudSaveTarget());
   if (!target) {
     return;
   }
@@ -3134,21 +3212,38 @@ async function pushStateToCloud(options = {}) {
   cloudSession.status = "Desant canvis a Drive...";
   render([RENDER_PARTS.notice, RENDER_PARTS.options]);
   try {
+    const campaignId = storageGetActiveCampaignMeta().id;
+    let response = null;
     if (target.type === "campaign") {
-      await saveCampaignToCloud(
+      response = await saveCampaignToCloud(
         cloudSession.idToken,
         storageCreateCloudCampaignPayload(stripTransientUiState(state)),
       );
     } else if (target.type === "character") {
-      await saveCharacterToCloud(cloudSession.idToken, target.character);
+      response = await saveCharacterToCloud(cloudSession.idToken, target.character, campaignId, {
+        preserveExistingPortrait:
+          target.preserveExistingPortrait === true
+          && cloudSession.capabilities?.preserveExistingCharacterPortrait === true,
+      });
     } else if (target.type === "chronicle") {
-      await saveChronicleToCloud(cloudSession.idToken, target.chronicle);
+      response = await saveChronicleToCloud(cloudSession.idToken, target.chronicle, campaignId);
     } else if (target.type === "glossary") {
-      await saveGlossaryEntryToCloud(cloudSession.idToken, target.entry);
+      response = await saveGlossaryEntryToCloud(cloudSession.idToken, target.entry, campaignId, {
+        preserveExistingImageAssets:
+          target.preserveExistingImageAssets === true
+          && cloudSession.capabilities?.preserveExistingImageAssets === true,
+      });
     }
     cloudSession.lastSyncAt = new Date().toISOString();
     cloudSession.lastError = "";
-    cloudSession.status = "Canvis enviats a Drive.";
+    cloudSession.capabilities = {
+      ...cloudSession.capabilities,
+      ...(response?.capabilities || {}),
+    };
+    cloudSession.driveFile = response?.driveFile || cloudSession.driveFile;
+    cloudSession.status = response?.unverified
+      ? "Canvis enviats a Drive; confirmacio no disponible per mida."
+      : getConfirmedCloudSaveStatus(response?.driveFile);
   } catch (error) {
     cloudSession.lastError = error instanceof Error ? error.message : String(error);
     cloudSession.status = cloudSession.lastError;
@@ -3158,34 +3253,91 @@ async function pushStateToCloud(options = {}) {
   }
 }
 
+async function publishCampaignToCloud() {
+  const pendingTarget = pendingCloudSaveTarget;
+  if (cloudSaveTimer !== null) {
+    window.clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
+  }
+  pendingCloudSaveTarget = null;
+
+  if (pendingTarget && pendingTarget.type !== "campaign") {
+    await pushStateToCloud({ target: pendingTarget });
+  }
+
+  await pushStateToCloud({ target: { type: "campaign" } });
+}
+
+function getConfirmedCloudSaveStatus(driveFile) {
+  const updatedAt = formatShortDate(driveFile?.updatedAt);
+  return updatedAt
+    ? `Canvis confirmats a Drive. JSON: ${updatedAt}.`
+    : "Canvis confirmats a Drive.";
+}
+
+function resolveCloudSaveTarget(target) {
+  if (!target) {
+    return null;
+  }
+
+  if (target.type === "character") {
+    const characterId = target.characterId || target.character?.id || "";
+    const character = characterId ? state.characters.find((item) => item.id === characterId) : target.character;
+    return character ? { ...target, characterId: character.id, character } : null;
+  }
+
+  if (target.type === "chronicle") {
+    const chronicleId = target.chronicleId || target.chronicle?.id || "";
+    const chronicle = chronicleId ? state.chronicles.find((item) => item.id === chronicleId) : target.chronicle;
+    return chronicle ? { ...target, chronicleId: chronicle.id, chronicle } : null;
+  }
+
+  if (target.type === "glossary") {
+    const entryId = target.entryId || target.entry?.id || "";
+    const entry = entryId ? findGlossaryEntry(entryId) : target.entry;
+    return entry ? { ...target, entryId: entry.id, entry } : null;
+  }
+
+  return target;
+}
+
 function inferCloudSaveTarget() {
   const user = getCurrentUserAccess();
   const permissions = user.permissions || {};
+
+  if (state.ui.currentModule === "characters") {
+    const character = getSelectedCharacter();
+    if (character && canEditCharacter(character)) {
+      return { type: "character", character };
+    }
+  }
+
+  if (state.ui.currentModule === "chronicles") {
+    const chronicle = getSelectedChronicle();
+    if (chronicle && canEditChronicle(chronicle)) {
+      return { type: "chronicle", chronicle };
+    }
+  }
+
+  if (state.ui.currentModule === "glossary") {
+    const entry = findGlossaryEntry(state.ui.selectedGlossaryId);
+    if (entry && canEditGlossaryEntry(entry)) {
+      return { type: "glossary", entry };
+    }
+  }
+
   if (permissions.publishCampaign || permissions.managePermissions) {
     return { type: "campaign" };
   }
 
-  const character = getSelectedCharacter();
-  if (
-    character
-    && permissions.editOwnCharacter
-    && Array.isArray(user.characterIds)
-    && user.characterIds.includes(character.id)
-  ) {
-    return { type: "character", character };
-  }
-
-  const chronicle = getSelectedChronicle();
-  if (chronicle && canEditChronicle(chronicle)) {
-    return { type: "chronicle", chronicle };
-  }
-
-  const entry = findGlossaryEntry(state.ui.selectedGlossaryId);
-  if (entry && canEditGlossaryEntry(entry)) {
-    return { type: "glossary", entry };
-  }
-
   return null;
+}
+
+function areStringListsEqual(left, right) {
+  const leftValues = Array.isArray(left) ? left.map(String) : [];
+  const rightValues = Array.isArray(right) ? right.map(String) : [];
+  return leftValues.length === rightValues.length
+    && leftValues.every((value, index) => value === rightValues[index]);
 }
 
 function stripTransientUiState(nextState) {
@@ -3235,7 +3387,10 @@ function showSaveNotice(message, options = {}) {
     message,
   };
   window.clearTimeout(saveNoticeTimer);
-  persistAndRender(options.renderParts || currentModuleRenderParts(), { cloud: options.cloud === true });
+  persistAndRender(options.renderParts || currentModuleRenderParts(), {
+    cloud: options.cloud === true,
+    cloudTarget: options.cloudTarget,
+  });
   saveNoticeTimer = window.setTimeout(() => {
     state.ui.saveNotice = "";
     render([RENDER_PARTS.notice]);
@@ -3290,7 +3445,11 @@ function createChronicle() {
   state.ui.showChronicleLanding = false;
   clearChronicleDraft(state.ui.selectedChronicleId);
   state.ui.editModes.chronicles = true;
-  persistAndRender(FULL_RENDER_PARTS, { cloud: true });
+  const chronicle = getSelectedChronicle();
+  persistAndRender(FULL_RENDER_PARTS, {
+    cloud: true,
+    cloudTarget: chronicle ? { type: "chronicle", chronicle } : null,
+  });
 }
 
 function deleteChronicle() {
@@ -3308,7 +3467,10 @@ function deleteChronicle() {
   if (state.ui.newChronicleId === deletedId) {
     state.ui.newChronicleId = "";
   }
-  persistAndRender(FULL_RENDER_PARTS, { cloud: true });
+  persistAndRender(FULL_RENDER_PARTS, {
+    cloud: true,
+    cloudTarget: { type: "campaign" },
+  });
 }
 
 function discardChronicleChanges(options = {}) {
@@ -3325,7 +3487,10 @@ function discardChronicleChanges(options = {}) {
   }
 
   if (shouldPersist) {
-    persistAndRender(FULL_RENDER_PARTS, { cloud: isUnsavedNewChronicle });
+    persistAndRender(FULL_RENDER_PARTS, {
+      cloud: isUnsavedNewChronicle,
+      cloudTarget: isUnsavedNewChronicle ? { type: "campaign" } : null,
+    });
   }
 }
 
@@ -3338,7 +3503,11 @@ function createGlossaryEntry() {
   state.ui.newGlossaryId = state.ui.selectedGlossaryId;
   clearGlossaryDraft(state.ui.selectedGlossaryId);
   state.ui.editModes.glossary = true;
-  persistAndRender(FULL_RENDER_PARTS, { cloud: true });
+  const entry = findGlossaryEntry(state.ui.selectedGlossaryId);
+  persistAndRender(FULL_RENDER_PARTS, {
+    cloud: true,
+    cloudTarget: entry ? { type: "glossary", entry } : null,
+  });
 }
 
 function openQuickGlossaryModal(insertContext) {
@@ -3452,7 +3621,10 @@ async function saveQuickGlossaryEntry(form, formData) {
   }
 
   closeQuickGlossaryModal();
-  showSaveNotice("Entrada creada i enllacada", { cloud: true });
+  showSaveNotice("Entrada creada i enllacada", {
+    cloud: true,
+    cloudTarget: { type: "glossary", entry },
+  });
 }
 
 async function storeQuickGlossaryImage(imageFile) {
@@ -3495,7 +3667,10 @@ function deleteGlossaryEntry() {
   if (state.ui.newGlossaryId === deletedId) {
     state.ui.newGlossaryId = "";
   }
-  persistAndRender(FULL_RENDER_PARTS, { cloud: true });
+  persistAndRender(FULL_RENDER_PARTS, {
+    cloud: true,
+    cloudTarget: { type: "campaign" },
+  });
 }
 
 function discardGlossaryChanges(options = {}) {
@@ -3512,7 +3687,10 @@ function discardGlossaryChanges(options = {}) {
   }
 
   if (shouldPersist) {
-    persistAndRender(FULL_RENDER_PARTS, { cloud: isUnsavedNewGlossaryEntry });
+    persistAndRender(FULL_RENDER_PARTS, {
+      cloud: isUnsavedNewGlossaryEntry,
+      cloudTarget: isUnsavedNewGlossaryEntry ? { type: "campaign" } : null,
+    });
   }
 }
 
@@ -4060,11 +4238,17 @@ async function migrateEmbeddedAssets(options = {}) {
 
   state = migrated.state;
   ensureUiStateShape();
-  persistStateImmediately({ cloud: options.cloud === true });
+  persistStateImmediately({
+    cloud: options.cloud === true,
+    cloudTarget: options.cloudTarget,
+  });
   render(options.renderParts || FULL_RENDER_PARTS);
 
   if (options.announce) {
-    showSaveNotice(options.message || "Assets localitzats fora del desat principal", { cloud: options.cloud === true });
+    showSaveNotice(options.message || "Assets localitzats fora del desat principal", {
+      cloud: options.cloud === true,
+      cloudTarget: options.cloudTarget,
+    });
   }
 
   return true;

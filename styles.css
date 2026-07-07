@@ -652,6 +652,51 @@ body.sidebar-pinned .app-shell {
   gap: 0.55rem;
 }
 
+.options-diagnostics {
+  border-top: 1px solid rgba(82, 55, 37, 0.16);
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+}
+
+.options-diagnostics summary {
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.options-diagnostics dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.7rem 0 0;
+}
+
+.options-diagnostics div {
+  min-width: 0;
+}
+
+.options-diagnostics dt {
+  color: var(--ink-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.options-diagnostics dd {
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  margin: 0.12rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.options-diagnostics a {
+  color: inherit;
+}
+
 .options-sync-heading {
   display: flex;
   align-items: center;

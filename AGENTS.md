@@ -179,6 +179,12 @@
 - 2026-06-26: added selected-text reference search in rich editors, including synonym lookup such as `Gat negre` -> `Avatar de Nisha'ar` and article-tolerant character suggestions such as `l'Ilu` -> `Ilu`.
 - 2026-06-26: added toggleable office mode with neutral navigation labels, document/table styling, hidden visual media, focused functional/UI QA coverage, and dedicated desktop/mobile office captures.
 - 2026-06-26: made chronicle edit previews show the same auto-linked references as read mode and added a quick glossary-entry modal from selected-text suggestions, with edit/UI QA plus desktop/mobile modal captures passing.
+- 2026-07-07: fixed Drive persistence routing for multi-campaign item saves by sending the active `campaignId`, updating Apps Script upserts against that campaign instead of the shared `activeCampaignId`, aligning the Apps Script OAuth client id with the frontend, preventing campaign focus changes from publishing Drive state, and surfacing unverified no-CORS saves distinctly.
+- 2026-07-07: hardened glossary Drive sync by sending compact confirmed JSONP updates when image assets are unchanged, preserving existing remote images in Apps Script, and resolving pending cloud targets from current state before upload.
+- 2026-07-07: gated compact glossary Drive saves behind an Apps Script capability flag so older deployed backends fall back to full-entry saves instead of using the new image-preserving merge path.
+- 2026-07-07: added Drive file diagnostics to Apps Script responses plus `serverSync.savedAt/savedBy` stamps inside `campaign.json` so real backend writes can be verified against the exact Drive file being updated.
+- 2026-07-07: changed manual Drive publish to flush any pending item-level save first, and added compact character saves that preserve existing remote portraits when only text/stat fields change.
+- 2026-07-07: surfaced cloud sync diagnostics in `Opcions` with frontend/backend sync versions, Apps Script `/exec`, Drive folder id, Drive file id/url, and remote file updated time.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

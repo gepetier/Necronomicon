@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { DATA_VERSION, seedData } from "../data.js";
 import { createBackupPayload, readBackupAssetBundle, readBackupStatePayload } from "../app/backup.js";
+import { createCharacterPayloadWithoutPortrait, createGlossaryEntryPayloadWithoutImages } from "../app/cloud-sync.js";
 import {
   collectAssetTokensFromState,
   collectEmbeddedDataUrlsFromState,
@@ -59,6 +60,42 @@ test("asset helpers collect and replace embedded asset sources", () => {
   assert.equal(replaced.changed, true);
   assert.deepEqual(replaced.state.glossary[0].imageAssets, [createAssetToken("img-1")]);
   assert.match(replaced.state.chronicles[0].content, /\{\{media:image\|Mapa\|asset:\/\/img-2\}\}/);
+});
+
+test("cloud glossary compact payload preserves existing remote images", () => {
+  const payload = createGlossaryEntryPayloadWithoutImages({
+    action: "saveGlossaryEntry",
+    idToken: "token",
+    campaignId: "meledar",
+    entry: {
+      id: "arrossegats",
+      name: "Arrosegats",
+      description: "Descripcio actualitzada",
+      imageAssets: ["data:image/webp;base64,AAAA"],
+    },
+  });
+
+  assert.equal(payload.preserveExistingImageAssets, true);
+  assert.equal(Object.hasOwn(payload.entry, "imageAssets"), false);
+  assert.equal(payload.entry.name, "Arrosegats");
+});
+
+test("cloud character compact payload preserves existing remote portrait", () => {
+  const payload = createCharacterPayloadWithoutPortrait({
+    action: "saveCharacter",
+    idToken: "token",
+    campaignId: "meledar",
+    character: {
+      id: "ilu",
+      name: "Ilu",
+      level: 4,
+      portrait: "data:image/webp;base64,AAAA",
+    },
+  });
+
+  assert.equal(payload.preserveExistingPortrait, true);
+  assert.equal(Object.hasOwn(payload.character, "portrait"), false);
+  assert.equal(payload.character.level, 4);
 });
 
 test("storage migration backfills glossary latest-session metadata", () => {

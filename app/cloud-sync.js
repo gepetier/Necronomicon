@@ -6,6 +6,7 @@ export const CLOUD_CONFIG = {
 const GOOGLE_IDENTITY_SCRIPT = "https://accounts.google.com/gsi/client";
 const CREDENTIAL_STORAGE_KEY = "necronomicon-google-credential";
 const JSONP_TIMEOUT_MS = 15000;
+const JSONP_MAX_PAYLOAD_LENGTH = 7000;
 
 let googleIdentityPromise = null;
 let jsonpCounter = 0;
@@ -111,34 +112,89 @@ export async function saveCampaignToCloud(idToken, campaign) {
     idToken,
     campaign,
   });
-  return { ok: true };
+  return { ok: true, unverified: true };
 }
 
-export async function saveCharacterToCloud(idToken, character) {
-  await postWithoutCors({
+export async function saveCharacterToCloud(idToken, character, campaignId = "", options = {}) {
+  const payload = {
     action: "saveCharacter",
     idToken,
+    campaignId,
     character,
-  });
-  return { ok: true };
+  };
+  const compactPayload = options.preserveExistingPortrait
+    ? createCharacterPayloadWithoutPortrait(payload)
+    : null;
+  return saveItemToCloud(payload, compactPayload);
 }
 
-export async function saveChronicleToCloud(idToken, chronicle) {
-  await postWithoutCors({
+export async function saveChronicleToCloud(idToken, chronicle, campaignId = "") {
+  return saveItemToCloud({
     action: "saveChronicle",
     idToken,
+    campaignId,
     chronicle,
   });
-  return { ok: true };
 }
 
-export async function saveGlossaryEntryToCloud(idToken, entry) {
-  await postWithoutCors({
+export async function saveGlossaryEntryToCloud(idToken, entry, campaignId = "", options = {}) {
+  const payload = {
     action: "saveGlossaryEntry",
     idToken,
+    campaignId,
     entry,
-  });
-  return { ok: true };
+  };
+  const compactPayload = options.preserveExistingImageAssets
+    ? createGlossaryEntryPayloadWithoutImages(payload)
+    : null;
+  return saveItemToCloud(payload, compactPayload);
+}
+
+export function createGlossaryEntryPayloadWithoutImages(payload) {
+  const entry = payload?.entry && typeof payload.entry === "object"
+    ? { ...payload.entry }
+    : payload?.entry;
+  if (entry && typeof entry === "object") {
+    delete entry.imageAssets;
+  }
+
+  return {
+    ...payload,
+    entry,
+    preserveExistingImageAssets: true,
+  };
+}
+
+export function createCharacterPayloadWithoutPortrait(payload) {
+  const character = payload?.character && typeof payload.character === "object"
+    ? { ...payload.character }
+    : payload?.character;
+  if (character && typeof character === "object") {
+    delete character.portrait;
+  }
+
+  return {
+    ...payload,
+    character,
+    preserveExistingPortrait: true,
+  };
+}
+
+async function saveItemToCloud(payload, compactPayload = null) {
+  const serialized = JSON.stringify(payload);
+  if (serialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
+    return jsonpRequest(payload);
+  }
+
+  if (compactPayload) {
+    const compactSerialized = JSON.stringify(compactPayload);
+    if (compactSerialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
+      return jsonpRequest(compactPayload);
+    }
+  }
+
+  await postWithoutCors(payload);
+  return { ok: true, unverified: true };
 }
 
 function jsonpRequest(payload) {
