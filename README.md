@@ -12,7 +12,7 @@ SPA estàtica per centralitzar la informació d'una campanya de D&D amb estètic
 
 - Navegació lateral fixa
 - Mode edició
-- Persistència amb `localStorage`
+- Persistència local amb `localStorage` i sincronització opcional amb Google Drive
 - Exportació i importació de JSON
 - Cròniques editables amb cos de capítol, imatges i notes de veu vinculades
 - Referències vinculables al Glossari amb suggerència automàtica en escriure
@@ -20,9 +20,9 @@ SPA estàtica per centralitzar la informació d'una campanya de D&D amb estètic
 
 ## Fitxers principals
 
-- [index.html](C:\Users\adriagardela\WebstormProjects\Necronomicon\index.html)
-- [styles.css](C:\Users\adriagardela\WebstormProjects\Necronomicon\styles.css)
-- [main.js](C:\Users\adriagardela\WebstormProjects\Necronomicon\main.js)
+- [index.html](./index.html)
+- [styles.css](./styles.css)
+- [main.js](./main.js)
 
 ## QA
 
@@ -33,7 +33,7 @@ SPA estàtica per centralitzar la informació d'una campanya de D&D amb estètic
 - `npm.cmd run capture:changed` regenera un subconjunt de captures útil per iterar canvis UI
 - `npm.cmd run capture -- chronicles` regenera captures focalitzades per filtre o àlies
 - Els artefactes es guarden a `qa-results/`, incloent els HTML de cada escenari i `summary.json`
-- Vegeu [WORKFLOW.md](C:\Users\adriagardela\WebstormProjects\Necronomicon\WORKFLOW.md) per al loop recomanat.
+- Vegeu [WORKFLOW.md](./WORKFLOW.md) per al loop recomanat.
 
 ## Directori de recursos
 

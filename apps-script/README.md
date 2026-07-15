@@ -4,7 +4,7 @@ Aquest backend fa de pont entre la pagina estatica i Google Drive. La UI no escr
 
 ## Configuracio actual
 
-- OAuth client id: `240706458880-tlj1amstdpjfccgbtj29lpe0jc06dj2u.apps.googleusercontent.com`
+- OAuth client id: `386167885974-voguggv8fbvmqioec1p38vu3qf1fj33f.apps.googleusercontent.com`
 - Carpeta Drive: `1zyOcMrfnJ88RJ7PKWesT16ciS3MrlQI6`
 - Fitxer de dades: `campaign.json`
 
@@ -43,7 +43,11 @@ Amb aquesta URL el client pot:
 
 ## Notes de funcionament
 
+- El `campaign.json` de Drive es sempre la font canonica; `data.js` i localStorage no l'han de substituir automaticament.
 - El primer usuari DM surt de `BOOTSTRAP_ADMIN_EMAILS`.
+- Les lectures només retornen les campanyes accessibles per a l'usuari autenticat.
+- Les escriptures mantenen el bloqueig durant tota la transacció i fan control de revisió per evitar sobreescriure canvis simultanis.
 - Cada desat complet crea una copia `campaign-backup-...json` a la mateixa carpeta Drive.
 - Els permisos viuen dins el mateix JSON, per tant es poden editar des de la UI quan la pestanya de permisos estigui connectada.
-- No posis tokens secrets dins el client. El client nomes ha de tenir el client id public de Google i la URL publica del Web App.
+- Després d'actualitzar `Code.gs`, crea una versió i un desplegament nous: editar el codi no actualitza automàticament la URL `/exec` desplegada.
+- No posis tokens secrets dins el client. El client nomes ha de tenir el client id public de Google i la URL publica del Web App; la credencial d'usuari es conserva només durant la sessió del navegador.

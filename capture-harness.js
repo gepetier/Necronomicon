@@ -149,6 +149,10 @@ async function runScenario(context, scenarioName) {
       await enableOfficeMode(context);
       await context.click('[data-module-link="options"]');
     },
+    "office-campaigns": async () => {
+      await enableOfficeMode(context);
+      await context.click('[data-module-link="campaigns"]');
+    },
     "office-chronicles": async () => {
       await enableOfficeMode(context);
       await context.click('[data-module-link="chronicles"]');
@@ -158,6 +162,15 @@ async function runScenario(context, scenarioName) {
     },
     "campaigns-dashboard": async () => {
       await context.click('[data-module-link="campaigns"]');
+    },
+    "campaigns-dashboard-edit": async () => {
+      await context.click('[data-module-link="campaigns"]');
+      const editor = context.query(".campaign-edit-disclosure");
+      if (!(editor instanceof context.win.HTMLDetailsElement)) {
+        throw new Error("No s'ha trobat l'editor de campanya.");
+      }
+      editor.open = true;
+      await delay(180);
     },
     "baskins-character-sheet": async () => {
       await scrollCharacterSheetIntoView(context);

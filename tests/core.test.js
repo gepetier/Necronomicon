@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 
 import { DATA_VERSION, seedData } from "../data.js";
 import { createBackupPayload, readBackupAssetBundle, readBackupStatePayload } from "../app/backup.js";
-import { createCharacterPayloadWithoutPortrait, createGlossaryEntryPayloadWithoutImages } from "../app/cloud-sync.js";
+import {
+  clearStoredCredential,
+  createCharacterPayloadWithoutPortrait,
+  createGlossaryEntryPayloadWithoutImages,
+  getStoredCredential,
+  storeCredential,
+} from "../app/cloud-sync.js";
 import {
   collectAssetTokensFromState,
   collectEmbeddedDataUrlsFromState,
@@ -96,6 +102,31 @@ test("cloud character compact payload preserves existing remote portrait", () =>
   assert.equal(payload.preserveExistingPortrait, true);
   assert.equal(Object.hasOwn(payload.character, "portrait"), false);
   assert.equal(payload.character.level, 4);
+});
+
+test("Google credential is session-scoped and legacy local storage is cleared", () => {
+  const sessionValues = new Map();
+  const localValues = new Map([["necronomicon-google-credential", "legacy-token"]]);
+  const createStorage = (values) => ({
+    getItem: (key) => values.get(key) || null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  });
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    sessionStorage: createStorage(sessionValues),
+    localStorage: createStorage(localValues),
+  };
+
+  try {
+    storeCredential("session-token");
+    assert.equal(getStoredCredential(), "session-token");
+    assert.equal(localValues.has("necronomicon-google-credential"), false);
+    clearStoredCredential();
+    assert.equal(getStoredCredential(), "");
+  } finally {
+    globalThis.window = previousWindow;
+  }
 });
 
 test("storage migration backfills glossary latest-session metadata", () => {
@@ -195,6 +226,30 @@ test("storage repairs stale packaged Meledar character portraits", () => {
 
   const ilu = migrated.characters.find((character) => character.id === "ilu");
   assert.equal(ilu.portrait, seedData.characters.find((character) => character.id === "ilu").portrait);
+});
+
+test("storage repairs stale packaged glossary illustration URLs", () => {
+  const migrated = migrateStoredState({
+    version: DATA_VERSION,
+    state: {
+      ...structuredClone(seedData),
+      glossary: seedData.glossary.map((entry) => (
+        entry.id === "nishaar"
+          ? {
+            ...structuredClone(entry),
+            imageAssets: [
+              "/assets/nishaar-oldhash.png",
+              "https://example.com/custom-reference.png",
+            ],
+          }
+          : structuredClone(entry)
+      )),
+    },
+  });
+
+  const nishaar = migrated.glossary.find((entry) => entry.id === "nishaar");
+  assert.equal(nishaar.imageAssets[0], seedData.glossary.find((entry) => entry.id === "nishaar").imageAssets[0]);
+  assert.equal(nishaar.imageAssets[1], "https://example.com/custom-reference.png");
 });
 
 test("storage seeds Ruth Baskin only for a Baskins Savage Worlds campaign", () => {

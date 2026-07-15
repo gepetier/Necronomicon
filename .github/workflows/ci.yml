@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      QA_CHROME_BIN: /usr/bin/google-chrome
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check Apps Script syntax
+        run: node --check < apps-script/Code.gs
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Run functional QA
+        run: npm run qa:functional
+
+      - name: Run UI QA
+        run: npm run qa:ui
+
+      - name: Run edit-flow QA
+        run: npm run qa:edit

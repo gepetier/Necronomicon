@@ -1187,17 +1187,45 @@ function sanitizeChronicle(chronicle, fallback) {
 }
 
 function sanitizeGlossary(entry, fallback) {
+  const entryFallback = seedData.glossary.find((seedEntry) => seedEntry.id === entry?.id) || fallback;
   return {
-    ...structuredClone(fallback),
+    ...structuredClone(entryFallback),
     ...entry,
-    tags: Array.isArray(entry?.tags) ? entry.tags : splitTags(entry?.tags || fallback.tags.join(", ")),
-    imageAssets: Array.isArray(entry?.imageAssets) ? entry.imageAssets : splitLines(entry?.imageAssets || fallback.imageAssets?.join("\n") || ""),
-    characterIds: Array.isArray(entry?.characterIds) ? entry.characterIds : fallback.characterIds,
-    chronicleIds: Array.isArray(entry?.chronicleIds) ? entry.chronicleIds : fallback.chronicleIds,
+    tags: Array.isArray(entry?.tags) ? entry.tags : splitTags(entry?.tags || entryFallback.tags.join(", ")),
+    imageAssets: sanitizeGlossaryImageAssets(entry, entryFallback),
+    characterIds: Array.isArray(entry?.characterIds) ? entry.characterIds : entryFallback.characterIds,
+    chronicleIds: Array.isArray(entry?.chronicleIds) ? entry.chronicleIds : entryFallback.chronicleIds,
     editableByUserEmails: Array.isArray(entry?.editableByUserEmails)
       ? entry.editableByUserEmails.map((email) => String(email || "").trim().toLowerCase()).filter(Boolean)
       : [],
     playerNotes: sanitizePlayerNotes(entry?.playerNotes),
-    palette: Array.isArray(entry?.palette) ? entry.palette : fallback.palette,
+    palette: Array.isArray(entry?.palette) ? entry.palette : entryFallback.palette,
   };
+}
+
+function sanitizeGlossaryImageAssets(entry, fallback) {
+  const assets = Array.isArray(entry?.imageAssets)
+    ? entry.imageAssets
+    : splitLines(entry?.imageAssets || fallback.imageAssets?.join("\n") || "");
+  const packagedFallback = fallback?.imageAssets?.[0] || "";
+
+  return assets.map((source) => (
+    packagedFallback && isPackagedGlossaryImage(entry?.id, source)
+      ? packagedFallback
+      : source
+  ));
+}
+
+function isPackagedGlossaryImage(entryId, source) {
+  const normalizedId = String(entryId || "").trim().toLowerCase();
+  const normalizedSource = String(source || "").replaceAll("\\", "/").toLowerCase();
+  if (!normalizedId || !normalizedSource) {
+    return false;
+  }
+
+  return (
+    normalizedSource.includes(`/assets/${normalizedId}-`)
+    || normalizedSource.includes(`/resources/glossary/${normalizedId}.png`)
+    || normalizedSource.includes(`/resources/glossary/${normalizedId}.jpg`)
+  );
 }

@@ -12,16 +12,20 @@ let googleIdentityPromise = null;
 let jsonpCounter = 0;
 
 export function getStoredCredential() {
-  return window.localStorage.getItem(CREDENTIAL_STORAGE_KEY) || "";
+  const credential = window.sessionStorage.getItem(CREDENTIAL_STORAGE_KEY) || "";
+  window.localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
+  return credential;
 }
 
 export function storeCredential(credential) {
   if (credential) {
-    window.localStorage.setItem(CREDENTIAL_STORAGE_KEY, credential);
+    window.sessionStorage.setItem(CREDENTIAL_STORAGE_KEY, credential);
+    window.localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
   }
 }
 
 export function clearStoredCredential() {
+  window.sessionStorage.removeItem(CREDENTIAL_STORAGE_KEY);
   window.localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
 }
 
@@ -106,13 +110,13 @@ export async function loadCampaignFromCloud(idToken) {
   });
 }
 
-export async function saveCampaignToCloud(idToken, campaign) {
-  await postWithoutCors({
+export async function saveCampaignToCloud(idToken, campaign, options = {}) {
+  return postAndConfirm({
     action: "saveCampaign",
     idToken,
     campaign,
+    expectedRevision: Math.max(0, Number(options.expectedRevision) || 0),
   });
-  return { ok: true, unverified: true };
 }
 
 export async function saveCharacterToCloud(idToken, character, campaignId = "", options = {}) {
@@ -181,20 +185,55 @@ export function createCharacterPayloadWithoutPortrait(payload) {
 }
 
 async function saveItemToCloud(payload, compactPayload = null) {
-  const serialized = JSON.stringify(payload);
+  const operationId = createOperationId();
+  const confirmedPayload = { ...payload, operationId };
+  const confirmedCompactPayload = compactPayload ? { ...compactPayload, operationId } : null;
+  const serialized = JSON.stringify(confirmedPayload);
   if (serialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
-    return jsonpRequest(payload);
+    const response = await jsonpRequest(confirmedPayload);
+    assertConfirmedOperation(response, operationId);
+    return response;
   }
 
-  if (compactPayload) {
-    const compactSerialized = JSON.stringify(compactPayload);
+  if (confirmedCompactPayload) {
+    const compactSerialized = JSON.stringify(confirmedCompactPayload);
     if (compactSerialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
-      return jsonpRequest(compactPayload);
+      const response = await jsonpRequest(confirmedCompactPayload);
+      assertConfirmedOperation(response, operationId);
+      return response;
     }
   }
 
-  await postWithoutCors(payload);
-  return { ok: true, unverified: true };
+  return postAndConfirm(confirmedPayload);
+}
+
+async function postAndConfirm(payload) {
+  const operationId = String(payload.operationId || createOperationId());
+  await postWithoutCors({ ...payload, operationId });
+  const response = await loadCampaignFromCloud(payload.idToken);
+  assertConfirmedOperation(response, operationId);
+  return response;
+}
+
+function assertConfirmedOperation(response, operationId) {
+  // Keep the client compatible with an older deployment during the rollout.
+  // Once the new backend is live it advertises revisions and every write must
+  // be confirmed with the exact operation id returned by Drive.
+  if (response?.capabilities?.campaignRevisions !== true) {
+    return;
+  }
+
+  const confirmedOperationId = String(response?.campaign?.serverSync?.operationId || "");
+  if (!confirmedOperationId || confirmedOperationId !== operationId) {
+    throw new Error("Drive no ha confirmat l'escriptura. Recarrega la campanya abans de continuar.");
+  }
+}
+
+function createOperationId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return `sync-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function jsonpRequest(payload) {
@@ -237,7 +276,7 @@ async function postWithoutCors(payload) {
   await fetch(CLOUD_CONFIG.apiUrl, {
     method: "POST",
     mode: "no-cors",
-    credentials: "include",
+    credentials: "omit",
     headers: {
       "Content-Type": "text/plain;charset=utf-8",
     },

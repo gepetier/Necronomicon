@@ -18,9 +18,8 @@
 
 ## Encara obert
 
-- Abans de deploy, decidir quines dades son canon i publicar-les al nou `campaign.json` de Drive. El `data.js` local ja conte les sessions 1-4, pero Drive pot continuar necessitant una sembra manual amb aquestes dades.
+- Abans de deploy, fer backup del `campaign.json` de Drive, que es sempre la font canonica; no substituir-lo amb `data.js` o localStorage sense una importacio o fusio revisada explicitament.
 - Validar en navegador real el login Google i el desat contra Apps Script quan el client OAuth tingui autoritzats els origins de GitHub Pages i `localhost`.
-- Reprendre la landing d'auth nomes si es vol polir mes: la cenefa `resources/landing-wait-ring.png` ja s'activa amb `body.auth-waiting-server` mentre s'espera resposta del backend. Ultima captura revisada: `qa-results/captures/auth-waiting-mobile.png`; `npm.cmd run qa:functional` passa.
 - Si es vol una validacio manual estricta del flux `Exporta JSON` / `Importa JSON` amb `IndexedDB` i selector natiu de fitxers, fer-la en navegador real. El flux de backup ara comparteix helpers interns i el codi esta cobert per build + unit + QA del harness, pero el picker natiu i l'asset store no son un objectiu fiable per a automatitzacio headless en aquesta base.
 
 ## Context
@@ -36,9 +35,7 @@
   - `qa-harness.js`
   - `capture-harness.js`
   - `capture-runner.mjs`
-  - `resources/landing-cover-texture.png`
-  - `resources/landing-sigil.png`
+  - `resources/landing-cover-texture.jpg`
   - `resources/landing-sigil-cutout.png`
-  - `resources/landing-wait-ring.png`
   - `AGENTS.md`
 - Captures noves escrites a `qa-results/captures/`.

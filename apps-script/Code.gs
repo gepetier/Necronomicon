@@ -5,7 +5,7 @@
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
-    const BACKEND_VERSION = "2026-07-07-character-sync-diagnostics";
+    const BACKEND_VERSION = "2026-07-15-authorization-atomic-revisions";
 
     const DEFAULT_ACCESS = {
       roles: {
@@ -66,115 +66,162 @@
         }
 
         if (request.action === "loadCampaign") {
-          const campaign = loadCampaign();
-          return ok({
-            user: decorateUser(user, campaign.access),
-            campaign,
-            capabilities: getClientCapabilities(),
-            driveFile: getCurrentCampaignFileInfo(),
+          return withCampaignLock(() => {
+            const campaign = loadCampaign();
+            const authorized = createAuthorizedCampaignView(campaign, user);
+            return ok({
+              user: authorized.user,
+              campaign: authorized.campaign,
+              capabilities: getClientCapabilities(),
+              driveFile: getCurrentCampaignFileInfo(),
+            });
           });
         }
 
         if (request.action === "saveCampaign") {
-          const campaign = normalizeCampaign(request.campaign);
-          const current = loadCampaign();
-          const actor = decorateUser(user, current.access || campaign.access);
-          if (!canManageCampaign(actor)) {
-            throw new Error("No tens permisos per publicar tota la campanya.");
-          }
+          return withCampaignLock(() => {
+            const campaign = normalizeCampaign(request.campaign);
+            const current = loadCampaign();
+            const targetState = getCampaignStateForId(current, campaign.activeCampaignId);
+            const actor = decorateUser(user, targetState.access || current.access || campaign.access);
+            if (!canManageCampaign(actor)) {
+              throw new Error("No tens permisos per publicar tota la campanya.");
+            }
+            assertExpectedRevision(current, request.expectedRevision);
+            const mergedCampaign = mergeCampaignPublication(current, campaign, user, actor);
 
-          const driveFile = saveCampaign(campaign, user.email);
-          return ok({
-            user: decorateUser(user, campaign.access),
-            campaign,
-            capabilities: getClientCapabilities(),
-            driveFile,
+            const driveFile = persistCampaignUnlocked(
+              mergedCampaign,
+              user.email,
+              getCampaignRevision(current),
+              request.operationId,
+            );
+            const authorized = createAuthorizedCampaignView(mergedCampaign, user);
+            return ok({
+              user: authorized.user,
+              campaign: authorized.campaign,
+              capabilities: getClientCapabilities(),
+              driveFile,
+            });
           });
         }
 
         if (request.action === "saveCharacter") {
-          const current = loadCampaign();
-          const campaignId = normalizeCampaignId(request.campaignId);
-          const targetState = getCampaignStateForId(current, campaignId);
-          const actor = decorateUser(user, targetState.access || current.access);
-          const character = request.character || null;
-          if (!character || !character.id) {
-            throw new Error("Fitxa de personatge no valida.");
-          }
-          if (!canEditCharacter(actor, String(character.id))) {
-            throw new Error("No tens permisos per editar aquesta fitxa.");
-          }
-
-          const currentCharacter = findCampaignItem(current, campaignId, "characters", String(character.id));
-          const nextCharacter = request.preserveExistingPortrait && currentCharacter
-            ? {
-              ...currentCharacter,
-              ...character,
-              portrait: currentCharacter.portrait,
+          return withCampaignLock(() => {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            const character = request.character || null;
+            if (!character || !character.id) {
+              throw new Error("Fitxa de personatge no valida.");
             }
-            : character;
-          updateCampaignItem(current, campaignId, "characters", nextCharacter);
-          const driveFile = saveCampaign(current, user.email);
-          return ok({
-            user: decorateUser(user, targetState.access || current.access),
-            campaign: current,
-            capabilities: getClientCapabilities(),
-            driveFile,
+            if (!canEditCharacter(actor, String(character.id))) {
+              throw new Error("No tens permisos per editar aquesta fitxa.");
+            }
+
+            const currentCharacter = findCampaignItem(current, campaignId, "characters", String(character.id));
+            if (!currentCharacter && !actor.permissions.editAnyCharacter) {
+              throw new Error("No tens permisos per crear fitxes de personatge.");
+            }
+            const nextCharacter = request.preserveExistingPortrait && currentCharacter
+              ? {
+                ...currentCharacter,
+                ...character,
+                portrait: currentCharacter.portrait,
+              }
+              : character;
+            updateCampaignItem(current, campaignId, "characters", nextCharacter);
+            const driveFile = persistCampaignUnlocked(
+              current,
+              user.email,
+              getCampaignRevision(current),
+              request.operationId,
+            );
+            const authorized = createAuthorizedCampaignView(current, user);
+            return ok({
+              user: authorized.user,
+              campaign: authorized.campaign,
+              capabilities: getClientCapabilities(),
+              driveFile,
+            });
           });
         }
 
         if (request.action === "saveChronicle") {
-          const current = loadCampaign();
-          const campaignId = normalizeCampaignId(request.campaignId);
-          const targetState = getCampaignStateForId(current, campaignId);
-          const actor = decorateUser(user, targetState.access || current.access);
-          const chronicle = request.chronicle || null;
-          if (!chronicle || !chronicle.id) {
-            throw new Error("Cronica no valida.");
-          }
-          const currentChronicle = findCampaignItem(current, campaignId, "chronicles", String(chronicle.id));
-          if (!canEditChronicle(actor, currentChronicle || chronicle)) {
-            throw new Error("No tens permisos per editar aquesta cronica.");
-          }
+          return withCampaignLock(() => {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            const chronicle = request.chronicle || null;
+            if (!chronicle || !chronicle.id) {
+              throw new Error("Cronica no valida.");
+            }
+            const currentChronicle = findCampaignItem(current, campaignId, "chronicles", String(chronicle.id));
+            if (!currentChronicle && !actor.permissions.editChronicles) {
+              throw new Error("No tens permisos per crear croniques.");
+            }
+            if (!canEditChronicle(actor, currentChronicle || chronicle)) {
+              throw new Error("No tens permisos per editar aquesta cronica.");
+            }
 
-          updateCampaignItem(current, campaignId, "chronicles", chronicle);
-          const driveFile = saveCampaign(current, user.email);
-          return ok({
-            user: decorateUser(user, targetState.access || current.access),
-            campaign: current,
-            capabilities: getClientCapabilities(),
-            driveFile,
+            updateCampaignItem(current, campaignId, "chronicles", chronicle);
+            const driveFile = persistCampaignUnlocked(
+              current,
+              user.email,
+              getCampaignRevision(current),
+              request.operationId,
+            );
+            const authorized = createAuthorizedCampaignView(current, user);
+            return ok({
+              user: authorized.user,
+              campaign: authorized.campaign,
+              capabilities: getClientCapabilities(),
+              driveFile,
+            });
           });
         }
 
         if (request.action === "saveGlossaryEntry") {
-          const current = loadCampaign();
-          const campaignId = normalizeCampaignId(request.campaignId);
-          const targetState = getCampaignStateForId(current, campaignId);
-          const actor = decorateUser(user, targetState.access || current.access);
-          const entry = request.entry || null;
-          if (!entry || !entry.id) {
-            throw new Error("Entrada de glossari no valida.");
-          }
-          const currentEntry = findCampaignItem(current, campaignId, "glossary", String(entry.id));
-          if (!canEditGlossaryEntry(actor, currentEntry || entry)) {
-            throw new Error("No tens permisos per editar aquesta entrada del glossari.");
-          }
-
-          const nextEntry = request.preserveExistingImageAssets && currentEntry
-            ? {
-              ...currentEntry,
-              ...entry,
-              imageAssets: currentEntry.imageAssets,
+          return withCampaignLock(() => {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            const entry = request.entry || null;
+            if (!entry || !entry.id) {
+              throw new Error("Entrada de glossari no valida.");
             }
-            : entry;
-          updateCampaignItem(current, campaignId, "glossary", nextEntry);
-          const driveFile = saveCampaign(current, user.email);
-          return ok({
-            user: decorateUser(user, targetState.access || current.access),
-            campaign: current,
-            capabilities: getClientCapabilities(),
-            driveFile,
+            const currentEntry = findCampaignItem(current, campaignId, "glossary", String(entry.id));
+            if (!currentEntry && !actor.permissions.editGlossary) {
+              throw new Error("No tens permisos per crear entrades del glossari.");
+            }
+            if (!canEditGlossaryEntry(actor, currentEntry || entry)) {
+              throw new Error("No tens permisos per editar aquesta entrada del glossari.");
+            }
+
+            const nextEntry = request.preserveExistingImageAssets && currentEntry
+              ? {
+                ...currentEntry,
+                ...entry,
+                imageAssets: currentEntry.imageAssets,
+              }
+              : entry;
+            updateCampaignItem(current, campaignId, "glossary", nextEntry);
+            const driveFile = persistCampaignUnlocked(
+              current,
+              user.email,
+              getCampaignRevision(current),
+              request.operationId,
+            );
+            const authorized = createAuthorizedCampaignView(current, user);
+            return ok({
+              user: authorized.user,
+              campaign: authorized.campaign,
+              capabilities: getClientCapabilities(),
+              driveFile,
+            });
           });
         }
 
@@ -266,24 +313,46 @@
       });
     }
 
-    function saveCampaign(campaign, actorEmail) {
+    function withCampaignLock(callback) {
       const lock = LockService.getScriptLock();
       lock.waitLock(15000);
       try {
-        const normalized = normalizeCampaign(campaign);
-        stampServerWriteMetadata(normalized, actorEmail);
-        backupCampaign(actorEmail);
-        return getDriveFileInfo(writeCampaignFile(normalized));
+        return callback();
       } finally {
         lock.releaseLock();
       }
     }
 
-    function stampServerWriteMetadata(campaign, actorEmail) {
+    function persistCampaignUnlocked(campaign, actorEmail, previousRevision, operationId) {
+      const normalized = normalizeCampaign(campaign);
+      stampServerWriteMetadata(normalized, actorEmail, previousRevision, operationId);
+      campaign.serverSync = normalized.serverSync;
+      backupCampaign(actorEmail);
+      return getDriveFileInfo(writeCampaignFile(normalized));
+    }
+
+    function stampServerWriteMetadata(campaign, actorEmail, previousRevision, operationId) {
       campaign.serverSync = {
+        revision: Math.max(0, Number(previousRevision) || 0) + 1,
         savedAt: new Date().toISOString(),
         savedBy: String(actorEmail || "").toLowerCase(),
+        operationId: String(operationId || ""),
       };
+    }
+
+    function getCampaignRevision(campaign) {
+      return Math.max(0, Number(campaign && campaign.serverSync && campaign.serverSync.revision) || 0);
+    }
+
+    function assertExpectedRevision(campaign, expectedRevision) {
+      if (expectedRevision === undefined || expectedRevision === null || expectedRevision === "") {
+        return;
+      }
+      const expected = Math.max(0, Number(expectedRevision) || 0);
+      const current = getCampaignRevision(campaign);
+      if (expected !== current) {
+        throw new Error(`Conflicte de sincronitzacio: revisio esperada ${expected}, revisio actual ${current}. Recarrega abans de publicar.`);
+      }
     }
 
     function normalizeCampaign(candidate) {
@@ -440,6 +509,75 @@
       syncTopLevelCampaignFields(campaign);
     }
 
+    function mergeCampaignPublication(currentCandidate, incomingCandidate, user, publicationActor) {
+      const current = normalizeCampaign(cloneJson(currentCandidate));
+      const incoming = normalizeCampaign(cloneJson(incomingCandidate));
+      if (!Array.isArray(current.campaigns) || !Array.isArray(incoming.campaigns)) {
+        if (!publicationActor.permissions.managePermissions) {
+          incoming.access = current.access;
+        }
+        return incoming;
+      }
+
+      const incomingById = incoming.campaigns.reduce((map, entry) => {
+        if (entry && entry.id) {
+          map[String(entry.id)] = entry;
+        }
+        return map;
+      }, {});
+      const merged = [];
+
+      current.campaigns.forEach((currentEntry) => {
+        if (!currentEntry || !currentEntry.id) {
+          return;
+        }
+        const actor = decorateUser(user, currentEntry.state && currentEntry.state.access || current.access);
+        const replacement = incomingById[String(currentEntry.id)] || null;
+        if (!actor.hasAccess) {
+          merged.push(currentEntry);
+          delete incomingById[String(currentEntry.id)];
+          return;
+        }
+        if (!replacement) {
+          if (!canManageCampaignCatalog(actor)) {
+            merged.push(currentEntry);
+          }
+          return;
+        }
+        if (!canManageCampaign(actor)) {
+          throw new Error(`No tens permisos per publicar la campanya ${currentEntry.name || currentEntry.id}.`);
+        }
+        merged.push(actor.permissions.managePermissions
+          ? replacement
+          : {
+            ...replacement,
+            state: {
+              ...replacement.state,
+              access: currentEntry.state && currentEntry.state.access || current.access,
+            },
+          });
+        delete incomingById[String(currentEntry.id)];
+      });
+
+      const newEntries = Object.keys(incomingById).map((id) => incomingById[id]);
+      if (newEntries.length && !canManageCampaignCatalog(publicationActor)) {
+        throw new Error("No tens permisos per crear campanyes al cataleg compartit.");
+      }
+      merged.push(...newEntries);
+      if (!merged.length) {
+        throw new Error("El cataleg compartit no pot quedar buit.");
+      }
+
+      current.campaigns = merged;
+      current.activeCampaignId = merged.some((entry) => entry.id === incoming.activeCampaignId)
+        ? incoming.activeCampaignId
+        : merged.some((entry) => entry.id === current.activeCampaignId)
+          ? current.activeCampaignId
+          : merged[0].id;
+      syncTopLevelCampaignFields(current);
+      return current;
+    }
+
     function syncTopLevelCampaignFields(campaign) {
       if (!Array.isArray(campaign.campaigns)) {
         return;
@@ -457,9 +595,7 @@
       const email = String(user.email || "").toLowerCase();
       const normalizedAccess = normalizeCampaign({ access }).access;
       const configured = normalizedAccess.users[email] || null;
-      const bootstrapAdmin = CONFIG.BOOTSTRAP_ADMIN_EMAILS
-        .map((item) => String(item || "").toLowerCase())
-        .includes(email);
+      const bootstrapAdmin = isBootstrapAdminEmail(email);
       const role = configured && configured.role
         ? configured.role
         : bootstrapAdmin
@@ -470,18 +606,91 @@
 
       return {
         ...user,
+        hasAccess: Boolean(configured || bootstrapAdmin),
         role: normalizedRole,
         characterIds: Array.isArray(configured && configured.characterIds) ? configured.characterIds : [],
         permissions,
       };
     }
 
+    function isBootstrapAdminEmail(email) {
+      const normalizedEmail = String(email || "").toLowerCase();
+      return CONFIG.BOOTSTRAP_ADMIN_EMAILS
+        .map((item) => String(item || "").toLowerCase())
+        .includes(normalizedEmail);
+    }
+
+    function createAuthorizedCampaignView(candidate, user) {
+      const campaign = normalizeCampaign(cloneJson(candidate));
+      if (!Array.isArray(campaign.campaigns)) {
+        const actor = decorateUser(user, campaign.access);
+        if (!actor.hasAccess) {
+          throw new Error("No tens acces a aquesta campanya.");
+        }
+        campaign.access = filterAccessForActor(campaign.access, actor);
+        return { campaign, user: actor };
+      }
+
+      const accessibleCampaigns = campaign.campaigns
+        .map((entry) => {
+          if (!entry || !entry.state) {
+            return null;
+          }
+          const actor = decorateUser(user, entry.state.access || campaign.access);
+          if (!actor.hasAccess) {
+            return null;
+          }
+          return {
+            ...entry,
+            state: {
+              ...entry.state,
+              access: filterAccessForActor(entry.state.access || campaign.access, actor),
+            },
+          };
+        })
+        .filter(Boolean);
+
+      if (!accessibleCampaigns.length) {
+        throw new Error("No tens cap campanya assignada.");
+      }
+
+      campaign.campaigns = accessibleCampaigns;
+      if (!accessibleCampaigns.some((entry) => entry.id === campaign.activeCampaignId)) {
+        campaign.activeCampaignId = accessibleCampaigns[0].id;
+      }
+      syncTopLevelCampaignFields(campaign);
+      const actor = decorateUser(user, campaign.access);
+      return { campaign, user: actor };
+    }
+
+    function filterAccessForActor(access, actor) {
+      const normalized = normalizeCampaign({ access }).access;
+      if (actor && actor.permissions && actor.permissions.managePermissions) {
+        return normalized;
+      }
+
+      const email = String(actor && actor.email || "").toLowerCase();
+      const configured = email ? normalized.users[email] : null;
+      return {
+        roles: normalized.roles,
+        users: configured ? { [email]: configured } : {},
+      };
+    }
+
+    function cloneJson(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+
     function canManageCampaign(user) {
-      return Boolean(user && user.permissions && (user.permissions.publishCampaign || user.permissions.managePermissions));
+      return Boolean(user && user.hasAccess && user.permissions && (user.permissions.publishCampaign || user.permissions.managePermissions));
+    }
+
+    function canManageCampaignCatalog(user) {
+      return Boolean(user && user.hasAccess && user.permissions && user.permissions.manageCampaigns);
     }
 
     function canEditCharacter(user, characterId) {
-      if (!user || !user.permissions) {
+      if (!user || !user.hasAccess || !user.permissions) {
         return false;
       }
       if (user.permissions.editAnyCharacter) {
@@ -495,7 +704,7 @@
     }
 
     function canEditChronicle(user, chronicle) {
-      if (!user || !user.permissions || !chronicle) {
+      if (!user || !user.hasAccess || !user.permissions || !chronicle) {
         return false;
       }
       if (user.permissions.editChronicles) {
@@ -508,7 +717,7 @@
     }
 
     function canEditGlossaryEntry(user, entry) {
-      if (!user || !user.permissions || !entry) {
+      if (!user || !user.hasAccess || !user.permissions || !entry) {
         return false;
       }
       if (user.permissions.editGlossary) {
@@ -624,6 +833,8 @@
       return {
         backendVersion: BACKEND_VERSION,
         driveFolderId: extractDriveId(CONFIG.DRIVE_FOLDER_ID),
+        atomicCampaignWrites: true,
+        campaignRevisions: true,
         preserveExistingCharacterPortrait: true,
         preserveExistingImageAssets: true,
       };

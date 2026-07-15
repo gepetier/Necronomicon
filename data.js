@@ -10,15 +10,15 @@ const CHARACTER_PORTRAITS = {
 };
 
 const GLOSSARY_ILLUSTRATIONS = {
-  mijo: new URL("./resources/glossary/mijo.png", import.meta.url).href,
-  portadoresDelVelo: new URL("./resources/glossary/portadores-del-velo.png", import.meta.url).href,
-  marcaDeNishaar: new URL("./resources/glossary/marca-de-nishaar.png", import.meta.url).href,
-  kaelorSimbol: new URL("./resources/glossary/kaelor-simbol.png", import.meta.url).href,
-  avatarDeNishaar: new URL("./resources/glossary/avatar-de-nishaar.png", import.meta.url).href,
-  vozDeKaelor: new URL("./resources/glossary/voz-de-kaelor.png", import.meta.url).href,
-  nishaar: new URL("./resources/glossary/nishaar.png", import.meta.url).href,
-  reinaElisabeth: new URL("./resources/glossary/reina-elisabeth.png", import.meta.url).href,
-  varronThayne: new URL("./resources/glossary/varron-thayne.png", import.meta.url).href,
+  mijo: new URL("./resources/glossary/mijo.jpg", import.meta.url).href,
+  portadoresDelVelo: new URL("./resources/glossary/portadores-del-velo.jpg", import.meta.url).href,
+  marcaDeNishaar: new URL("./resources/glossary/marca-de-nishaar.jpg", import.meta.url).href,
+  kaelorSimbol: new URL("./resources/glossary/kaelor-simbol.jpg", import.meta.url).href,
+  avatarDeNishaar: new URL("./resources/glossary/avatar-de-nishaar.jpg", import.meta.url).href,
+  vozDeKaelor: new URL("./resources/glossary/voz-de-kaelor.jpg", import.meta.url).href,
+  nishaar: new URL("./resources/glossary/nishaar.jpg", import.meta.url).href,
+  reinaElisabeth: new URL("./resources/glossary/reina-elisabeth.jpg", import.meta.url).href,
+  varronThayne: new URL("./resources/glossary/varron-thayne.jpg", import.meta.url).href,
 };
 
 export const seedData = {

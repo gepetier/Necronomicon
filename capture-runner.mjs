@@ -78,7 +78,9 @@ function buildScenarios() {
     { name: "office-characters", ...desktop, fileName: "office-characters-desktop.png" },
     { name: "office-chronicles", ...desktop, fileName: "office-chronicles-desktop.png" },
     { name: "office-options", ...desktop, fileName: "office-options-desktop.png" },
+    { name: "office-campaigns", ...desktop, fileName: "office-campaigns-desktop.png" },
     { name: "campaigns-dashboard", ...desktop, fileName: "campaigns-dashboard-desktop.png" },
+    { name: "campaigns-dashboard-edit", ...desktop, fileName: "campaigns-dashboard-edit-desktop.png" },
     { name: "baskins-character-sheet", ...desktop, fileName: "baskins-character-sheet-desktop.png" },
     { name: "baskins-character-tooltip", ...desktop, fileName: "baskins-character-tooltip-desktop.png" },
     { name: "baskins-character-loadout", ...desktop, height: 1900, fileName: "baskins-character-loadout-desktop.png" },
@@ -111,7 +113,9 @@ function buildScenarios() {
     { name: "office-characters", ...mobile, fileName: "office-characters-mobile.png" },
     { name: "office-chronicles", ...mobile, fileName: "office-chronicles-mobile.png" },
     { name: "office-options", ...mobile, fileName: "office-options-mobile.png" },
+    { name: "office-campaigns", ...mobile, fileName: "office-campaigns-mobile.png" },
     { name: "campaigns-dashboard", ...mobile, fileName: "campaigns-dashboard-mobile.png" },
+    { name: "campaigns-dashboard-edit", ...mobile, scrollY: 500, fileName: "campaigns-dashboard-edit-mobile.png" },
     { name: "baskins-character-sheet", ...mobile, fileName: "baskins-character-sheet-mobile.png" },
     { name: "baskins-character-tooltip", ...mobile, fileName: "baskins-character-tooltip-mobile.png" },
     { name: "baskins-character-loadout", ...mobile, fileName: "baskins-character-loadout-mobile.png" },
@@ -200,6 +204,10 @@ function resolveChromeBinary() {
     "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
     "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
   ].filter(Boolean);
 
   return candidates.find((candidate) => existsSync(candidate)) || "";

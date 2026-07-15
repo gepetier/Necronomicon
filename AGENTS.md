@@ -76,7 +76,7 @@
 - Chronicle reading spreads split the prose body across the left and right book pages, keeping the left page from becoming a mostly empty cover while still avoiding the old order/key-milestones sections.
 - Chronicle read pages without a real cover image should render an ornamental session plate instead of an empty placeholder rectangle.
 - Desktop sidebar is collapsed by default, only opens preview from hover/focus on the round toggle button, keeps that preview open while the pointer remains inside the sidebar, can be pinned open with the same button, and keeps its content in an internal scroll area; mobile keeps the full stacked navigation.
-- Shared persistence now uses Google login plus a Google Apps Script Web App that reads/writes `campaign.json` in Drive; localStorage remains a local cache/fallback, not the source of truth.
+- Shared persistence now uses Google login plus a Google Apps Script Web App that reads/writes `campaign.json` in Drive; that Drive file is always the sole canonical campaign state, while `data.js` is bootstrap content and localStorage is only a cache/fallback.
 - The client stores the public Google OAuth client id and Apps Script `/exec` URL, but no secret token or API key.
 - The default capture catalog is intentionally focused instead of exhaustive; use aliases such as `changed`, `characters`, `chronicles`, `glossary`, `options`, `desktop`, or `mobile` for targeted review.
 - Persistence now supports a local/Drive campaign catalog; the app still renders one active campaign at a time, while `Opcions` can switch campaigns or create a new starter campaign such as `Savage Worlds`.
@@ -92,11 +92,18 @@
 - Office mode is a local UI preference (`state.ui.officeMode`) that keeps the same app workflows but applies a neutral document/spreadsheet skin, hides visible media/ornaments, and relabels navigation/UI copy for workplace-safe use.
 - Chronicle editor previews should mirror read-mode auto-linking for known character/glossary names, while the textarea still preserves the source text unless the user explicitly inserts a `[[id|label]]` reference.
 - Chronicle reference suggestions include a quick `Nova entrada` glossary flow that creates a minimal glossary entry, optionally stores an optimized inline image, links it to the active chronicle, and inserts the reference into the selected text.
+- Campaign cards keep their edit forms collapsed behind an `Edita campanya` disclosure so the campaign library stays scannable on desktop and mobile.
+- Drive authorization is enforced server-side per campaign: loads return only accessible campaigns, non-managers do not receive other users' access rows, and full publications cannot replace permissions they are not allowed to manage.
+- Apps Script writes hold a script lock across read/authorize/backup/write, stamp a monotonically increasing `serverSync.revision` plus operation id, and reject stale full-campaign publications.
+- Google ID credentials are session-scoped in the client; legacy persistent credentials are removed from `localStorage`.
+- Bundled photographic and painted assets use JPEG while PNG is reserved for transparency/UI; `Glossary/images/` remains the unbundled source archive, and stored packaged glossary URLs are repaired to the current seed asset during sanitization.
+- Role changes must stay covered both by client permission-unit tests and by Apps Script integration tests with virtual authenticated users for `superadmin`, `gm`, `player`, and unassigned access.
 
 ## Pending
-- Before committing/deploying, seed the new Drive `campaign.json` with the desired canonical campaign data; local `data.js` now contains sessions 1-4, but Drive may still need to be updated from the local canonical data.
+- Before deploying sync changes, back up the canonical Drive `campaign.json`; never seed or replace it from `data.js`/localStorage without an explicit reviewed import or merge.
 - Clean up or commit the pending visual artifacts and code changes once the current restyle is considered stable.
 - Validate the Google Apps Script deployment from a real browser session after the OAuth client origins and the bootstrap DM email are confirmed.
+- Deploy the 2026-07-15 Apps Script revision before relying on filtered reads, atomic writes, revision conflicts, and operation-id confirmation in production.
 
 ## Next steps
 - On next session start, read this file before inspecting code.
@@ -185,6 +192,11 @@
 - 2026-07-07: added Drive file diagnostics to Apps Script responses plus `serverSync.savedAt/savedBy` stamps inside `campaign.json` so real backend writes can be verified against the exact Drive file being updated.
 - 2026-07-07: changed manual Drive publish to flush any pending item-level save first, and added compact character saves that preserve existing remote portraits when only text/stat fields change.
 - 2026-07-07: surfaced cloud sync diagnostics in `Opcions` with frontend/backend sync versions, Apps Script `/exec`, Drive folder id, Drive file id/url, and remote file updated time.
+- 2026-07-15: compacted the mobile app header/navigation and collapsed campaign edit forms behind an accessible disclosure; added campaign and office-mode capture scenarios, refreshed desktop/mobile captures, and confirmed build plus functional/UI QA pass.
+- 2026-07-15: hardened Drive sync authorization and concurrency, added Apps Script regression tests plus GitHub Actions CI, moved Google credentials to session storage, and confirmed 23 unit tests, production build, and full functional/UI/edit QA pass.
+- 2026-07-15: converted the nine bundled glossary illustrations and auth cover from lossless PNG to quality-84/82 JPEG, resized the transparent auth sigil to 768px, removed two unused auth PNGs, added stale glossary-URL repair, and reduced the heavy bundled image set from 26.94 MB to 3.23 MB while preserving reviewed desktop/mobile visuals.
+- 2026-07-15: confirmed that Drive `campaign.json` is always the sole canonical data source; local seed and browser storage must never supersede it automatically.
+- 2026-07-15: expanded Apps Script tests with virtual Google users covering the complete server-side role matrix, including permission visibility, campaign management, content publication, assigned edits, cross-campaign denial, and unassigned denial; all 29 unit/integration tests pass.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

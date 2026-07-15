@@ -194,6 +194,7 @@ const cloudSession = {
   pendingInitialPublish: false,
   capabilities: {},
   driveFile: null,
+  revision: 0,
 };
 
 const RENDER_PARTS = {
@@ -364,6 +365,7 @@ function handleClick(event) {
     cloudSession.ready = false;
     cloudSession.idToken = "";
     cloudSession.user = null;
+    cloudSession.revision = 0;
     cloudSession.selectingCampaign = false;
     updateCloudStatus("Sessio tancada. Torna a iniciar sessio per sincronitzar.", { renderOptions: false });
     void initializeCloudSession();
@@ -1313,6 +1315,7 @@ async function handleGoogleCredential(credential, options = {}) {
     };
     cloudSession.capabilities = response.capabilities || {};
     cloudSession.driveFile = response.driveFile || null;
+    cloudSession.revision = getCloudCampaignRevision(response.campaign);
     cloudSession.ready = true;
     cloudSession.awaitingServer = false;
     cloudSession.selectingCampaign = true;
@@ -1331,6 +1334,7 @@ async function handleGoogleCredential(credential, options = {}) {
     clearStoredCredential();
     cloudSession.idToken = "";
     cloudSession.user = null;
+    cloudSession.revision = 0;
     cloudSession.ready = false;
     cloudSession.awaitingServer = false;
     cloudSession.selectingCampaign = false;
@@ -1912,7 +1916,10 @@ function renderCampaignCard(campaign, options = {}) {
         >
           ${isActive ? "Activa" : "Fes focus"}
         </button>
-        ${options.canEdit ? `
+      </div>
+      ${options.canEdit ? `
+        <details class="campaign-edit-disclosure">
+          <summary>Edita campanya</summary>
           <form data-form="campaign-update" class="campaign-edit-form">
             <input type="hidden" name="campaignId" value="${escapeAttribute(campaign.id)}" />
             <label class="field">
@@ -1936,8 +1943,8 @@ function renderCampaignCard(campaign, options = {}) {
               </button>
             </div>
           </form>
-        ` : ""}
-      </div>
+        </details>
+      ` : ""}
     </article>
   `;
 }
@@ -3218,6 +3225,7 @@ async function pushStateToCloud(options = {}) {
       response = await saveCampaignToCloud(
         cloudSession.idToken,
         storageCreateCloudCampaignPayload(stripTransientUiState(state)),
+        { expectedRevision: cloudSession.revision },
       );
     } else if (target.type === "character") {
       response = await saveCharacterToCloud(cloudSession.idToken, target.character, campaignId, {
@@ -3241,6 +3249,9 @@ async function pushStateToCloud(options = {}) {
       ...(response?.capabilities || {}),
     };
     cloudSession.driveFile = response?.driveFile || cloudSession.driveFile;
+    cloudSession.revision = response?.campaign
+      ? getCloudCampaignRevision(response.campaign)
+      : cloudSession.revision;
     cloudSession.status = response?.unverified
       ? "Canvis enviats a Drive; confirmacio no disponible per mida."
       : getConfirmedCloudSaveStatus(response?.driveFile);
@@ -3251,6 +3262,10 @@ async function pushStateToCloud(options = {}) {
     cloudSession.saving = false;
     render([RENDER_PARTS.notice, RENDER_PARTS.options]);
   }
+}
+
+function getCloudCampaignRevision(campaign) {
+  return Math.max(0, Number(campaign?.serverSync?.revision) || 0);
 }
 
 async function publishCampaignToCloud() {
