@@ -205,13 +205,14 @@ async function runScenario(context, scenarioName) {
     "characters-grid-lightbox": async () => {
       await context.click(".portrait-media");
     },
-    "character-detail-lore": async () => {
-      await openCharacter(context);
-    },
     "character-detail-sheet": async () => {
       await openCharacter(context);
       await context.click('[data-character-tab="sheet"]');
       await scrollCharacterSheetIntoView(context);
+    },
+    "character-detail-tabs": async () => {
+      await openCharacter(context);
+      await scrollCharacterTabsIntoView(context);
     },
     "character-detail-inventory": async () => {
       await openCharacter(context);
@@ -232,8 +233,8 @@ async function runScenario(context, scenarioName) {
     "character-editor-references": async () => {
       await openCharacter(context);
       await context.click('[data-toggle-edit="characters"]');
-      await context.type('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
-      await context.selectText('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
+      await context.type('form[data-form="character-tab"] textarea[name="abilities"]', "Catedral");
+      await context.selectText('form[data-form="character-tab"] textarea[name="abilities"]', "Catedral");
     },
     "chronicles-character-return": async () => {
       await context.click('[data-module-link="chronicles"]');
@@ -297,6 +298,14 @@ async function runScenario(context, scenarioName) {
       await context.type('form[data-form="chronicle"] textarea[name="content"]', "Arxiu nou");
       await context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Arxiu nou");
       await context.click('#chroniclesModule [data-create-reference-entry]');
+      const categorySelect = context.query('form[data-form="quick-glossary"] select[name="quickGlossaryCategory"]');
+      if (categorySelect instanceof context.win.HTMLSelectElement) {
+        categorySelect.value = "Esdeveniments";
+      }
+      const modal = context.query("#quickGlossaryModal");
+      if (modal instanceof context.win.HTMLElement) {
+        modal.style.placeItems = "start center";
+      }
     },
     "chronicles-search-empty": async () => {
       await context.click('[data-module-link="chronicles"]');
@@ -379,6 +388,33 @@ async function runScenario(context, scenarioName) {
       await context.click('[data-glossary-filter="Faccions"]');
       await context.click('[data-glossary-id="portadores-del-velo"]');
       await context.click("[data-edit-glossary-card]");
+      const imageButton = context.query("[data-glossary-image-button]");
+      const imageButtonLabel = context.query("[data-glossary-image-button-label]");
+      const imageStatus = context.query("[data-glossary-image-status]");
+      if (imageButton instanceof context.win.HTMLElement) {
+        imageButton.classList.add("is-processing");
+        imageButton.setAttribute("aria-disabled", "true");
+      }
+      if (imageButtonLabel instanceof context.win.HTMLElement) {
+        imageButtonLabel.textContent = "Processant imatge...";
+      }
+      if (imageStatus instanceof context.win.HTMLElement) {
+        imageStatus.hidden = false;
+        imageStatus.textContent = "Processant imatge...";
+      }
+      if (imageButton instanceof context.win.HTMLElement) {
+        if (context.win.innerWidth >= 900) {
+          const showcase = context.doc.createElement("section");
+          showcase.className = "module-surface";
+          showcase.style.cssText = "position:fixed;z-index:200;top:80px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 40px));padding:24px;";
+          showcase.innerHTML = "<h3>Imatges</h3>";
+          showcase.append(imageButton.closest(".glossary-image-picker")?.cloneNode(true));
+          context.doc.body.append(showcase);
+        } else {
+          const imageButtonTop = imageButton.getBoundingClientRect().top + context.win.scrollY;
+          context.win.scrollTo(0, Math.max(0, imageButtonTop - (context.win.innerHeight / 2)));
+        }
+      }
     },
     "glossary-edit-references": async () => {
       await context.click('[data-module-link="glossary"]');
@@ -586,6 +622,14 @@ async function scrollCharacterSheetIntoView(context) {
   const sheet = context.query(".dnd-sheet");
   if (sheet instanceof context.win.HTMLElement) {
     sheet.scrollIntoView({ block: "start", inline: "nearest" });
+    await delay(180);
+  }
+}
+
+async function scrollCharacterTabsIntoView(context) {
+  const tabs = context.query(".tab-strip");
+  if (tabs instanceof context.win.HTMLElement) {
+    tabs.scrollIntoView({ block: "center", inline: "nearest" });
     await delay(180);
   }
 }

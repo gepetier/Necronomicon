@@ -59,6 +59,7 @@
 - Glossary detail entries now surface a short "situacio actual" summary plus a manually editable "ultima vegada vist/visitat a" session marker, with `Llocs` using the visit wording and other categories using seen wording.
 - Glossary image insertion now uses the browser's native file picker in the editor, converting selected files into persisted inline data so no manual path entry is required for normal use.
 - Glossary image uploads are optimized client-side before persistence: raster images are resized within 1800x1800 and converted to WebP when the result is smaller; GIF/SVG and failed conversions keep the original file.
+- Regular glossary image uploads prioritize reliable immediate preview: the original file is stored first without blocking on raster conversion, and Drive payloads materialize local `asset://` references as image data before sync.
 - Shared Drive sync status uses the wax-seal icon set in `resources/sync-status/`, with `synced`, `syncing`, and `unsynced` states rendered in the save toast and Options sync card.
 - Rich-text editor reference suggestions are now available in `Personatges`, `Cròniques`, and `Glossari`, and selecting text should also expose a `Multimedia` suggestion that preserves the selected label.
 - Rich-text editor reference suggestions include a selected-text search field for linking synonyms or alternate labels to glossary/character targets while preserving the selected label.
@@ -197,6 +198,7 @@
 - 2026-07-15: converted the nine bundled glossary illustrations and auth cover from lossless PNG to quality-84/82 JPEG, resized the transparent auth sigil to 768px, removed two unused auth PNGs, added stale glossary-URL repair, and reduced the heavy bundled image set from 26.94 MB to 3.23 MB while preserving reviewed desktop/mobile visuals.
 - 2026-07-15: confirmed that Drive `campaign.json` is always the sole canonical data source; local seed and browser storage must never supersede it automatically.
 - 2026-07-15: expanded Apps Script tests with virtual Google users covering the complete server-side role matrix, including permission visibility, campaign management, content publication, assigned edits, cross-campaign denial, and unassigned denial; all 29 unit/integration tests pass.
+- 2026-07-15: fixed glossary image uploads that could stall during PNG optimization, deduplicated file input/change handling, added visible processing feedback, and materialized local image assets into Drive payloads; validated with the reported 1254x1254 PNG.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.

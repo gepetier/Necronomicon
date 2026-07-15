@@ -1011,7 +1011,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
   ui: {
     currentModule: "characters",
     selectedCharacterId: "ilu",
-    selectedCharacterTab: "lore",
+    selectedCharacterTab: "sheet",
     showCharacterGrid: true,
     officeMode: false,
     selectedChronicleId: "judici-acantilado",

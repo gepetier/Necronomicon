@@ -12,9 +12,11 @@ import {
 } from "../app/cloud-sync.js";
 import {
   collectAssetTokensFromState,
+  collectAssetTokensFromValue,
   collectEmbeddedDataUrlsFromState,
   createAssetToken,
   replaceAssetSourcesInState,
+  replaceAssetTokensInValue,
 } from "../app/assets.js";
 import {
   activateCampaign,
@@ -102,6 +104,25 @@ test("cloud character compact payload preserves existing remote portrait", () =>
   assert.equal(payload.preserveExistingPortrait, true);
   assert.equal(Object.hasOwn(payload.character, "portrait"), false);
   assert.equal(payload.character.level, 4);
+});
+
+test("cloud asset helpers materialize direct and rich-text asset tokens", () => {
+  const imageToken = createAssetToken("glossary-image");
+  const documentToken = createAssetToken("chronicle-document");
+  const value = {
+    imageAssets: [imageToken],
+    notes: `{{media:file|Carta|${documentToken}}}`,
+  };
+  const replacements = new Map([
+    [imageToken, "data:image/webp;base64,AAAA"],
+    [documentToken, "data:application/pdf;base64,BBBB"],
+  ]);
+
+  assert.deepEqual(collectAssetTokensFromValue(value), [imageToken, documentToken]);
+  assert.deepEqual(replaceAssetTokensInValue(value, replacements), {
+    imageAssets: ["data:image/webp;base64,AAAA"],
+    notes: "{{media:file|Carta|data:application/pdf;base64,BBBB}}",
+  });
 });
 
 test("Google credential is session-scoped and legacy local storage is cleared", () => {

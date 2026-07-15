@@ -494,7 +494,7 @@ function renderGlossaryEditor(entry, state) {
                 <label class="field">
                   <span>Categoria</span>
                   <select name="category">
-                    ${["Llocs", "Religió", "Antagonistes", "Entitats", "Faccions", "Objectes", "Monstres", "Races", "Altres"]
+                    ${["Llocs", "Religió", "Antagonistes", "Entitats", "Esdeveniments", "Faccions", "Objectes", "Monstres", "Races", "Altres"]
                       .map(
                         (category) => `
                           <option value="${category}" ${readDraftValue(draft.category, entry?.category || "") === category ? "selected" : ""}>
@@ -541,7 +541,7 @@ function renderGlossaryEditor(entry, state) {
                   <span>Imatges</span>
                   ${renderGlossaryImagePicker(entry, draft)}
                   <textarea name="imageAssets" hidden>${escapeHtml(readDraftValue(draft.imageAssets, (entry?.imageAssets || []).join("\n")))}</textarea>
-                  <small class="field-help">Selecciona una o mes imatges des del teu equip. Es redimensionen i comprimeixen automaticament abans de guardar-les.</small>
+                  <small class="field-help">Selecciona una o mes imatges des del teu equip. Es previsualitzen abans de desar l'entrada i se sincronitzen amb Drive.</small>
                 </label>
               </div>
             `,
@@ -602,21 +602,24 @@ function formatChronicleLinks(ids, state) {
 
 function renderGlossaryImagePicker(entry, draft) {
   const images = readDraftLines(draft.imageAssets, entry?.imageAssets || []);
+  const inputId = `glossary-image-${entry?.id || "new"}`;
 
   return `
     <div class="glossary-image-picker">
-      <input
-        type="file"
-        accept="image/*"
-        multiple
-        data-glossary-image-picker
-        data-glossary-id="${escapeAttribute(entry?.id || "")}"
-        class="glossary-image-picker-input"
-      />
-      <button type="button" class="secondary" data-open-glossary-image-picker>
+      <label class="secondary glossary-image-picker-button" for="${escapeAttribute(inputId)}" data-glossary-image-button>
+        <input
+          id="${escapeAttribute(inputId)}"
+          type="file"
+          accept="image/*"
+          multiple
+          data-glossary-image-picker
+          data-glossary-id="${escapeAttribute(entry?.id || "")}"
+          class="glossary-image-picker-input"
+        />
         <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
-        <span>Afegeix imatge</span>
-      </button>
+        <span data-glossary-image-button-label>Afegeix imatge</span>
+      </label>
+      <p class="glossary-image-picker-status" data-glossary-image-status aria-live="polite" hidden></p>
       ${images.length
         ? `
           <div class="glossary-editor-media-grid">

@@ -5,6 +5,11 @@ import { createServer } from "node:http";
 const host = process.env.QA_HOST || "127.0.0.1";
 const port = Number(process.env.QA_PORT || "4173");
 const root = resolve(process.cwd());
+const qaImagePath = process.env.QA_IMAGE_PATH || "";
+const FALLBACK_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XwWvWQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -21,6 +26,18 @@ const MIME_TYPES = {
 createServer((request, response) => {
   const requestUrl = new URL(request.url || "/", `http://${host}:${port}`);
   const pathname = decodeURIComponent(requestUrl.pathname === "/" ? "/index.html" : requestUrl.pathname);
+  if (pathname === "/__qa_upload_image") {
+    response.writeHead(200, {
+      "Cache-Control": "no-store",
+      "Content-Type": "image/png",
+    });
+    if (qaImagePath && existsSync(qaImagePath)) {
+      createReadStream(qaImagePath).pipe(response);
+    } else {
+      response.end(FALLBACK_PNG);
+    }
+    return;
+  }
   const safePath = normalize(pathname).replace(/^(\.\.(\/|\\|$))+/, "");
   const targetPath = resolve(join(root, safePath));
 

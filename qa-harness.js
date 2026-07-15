@@ -115,11 +115,36 @@ function createContext(currentFrame) {
         throw new Error(`Input de fitxers no trobat: ${selector}`);
       }
 
-      const fileList = (files || []).map((file) => new win.File(
-        [file.content || ""],
-        file.name || "qa-file.bin",
-        { type: file.type || "application/octet-stream" },
-      ));
+      const fileList = await Promise.all((files || []).map(async (file) => {
+        let content = file.content || "";
+        if (file.url) {
+          const response = await win.fetch(file.url, { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`No s'ha pogut carregar el fitxer QA: ${file.url}`);
+          }
+          content = new Uint8Array(await response.arrayBuffer());
+        } else if (file.canvas) {
+          const canvas = doc.createElement("canvas");
+          canvas.width = file.canvas.width || 64;
+          canvas.height = file.canvas.height || 64;
+          const context = canvas.getContext("2d");
+          const gradient = context?.createLinearGradient(0, 0, canvas.width, canvas.height);
+          gradient?.addColorStop(0, "#267ac5");
+          gradient?.addColorStop(0.5, "#f4df8a");
+          gradient?.addColorStop(1, "#335f45");
+          if (context && gradient) {
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+          }
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, file.type || "image/png"));
+          content = blob ? new Uint8Array(await blob.arrayBuffer()) : "";
+        }
+        return new win.File(
+          [content || ""],
+          file.name || "qa-file.bin",
+          { type: file.type || "application/octet-stream" },
+        );
+      }));
 
       if (typeof win.DataTransfer === "function") {
         const dataTransfer = new win.DataTransfer();
@@ -553,9 +578,9 @@ async function runEditSuite(context) {
     context.doc.querySelector(".editor-workspace-character") !== null,
     "L'editor de personatges s'obre des del modul",
   );
-  context.type('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
+  context.type('form[data-form="character-tab"] textarea[name="abilities"]', "Catedral");
   await delay(80);
-  context.selectText('form[data-form="character-tab"] textarea[name="origin"]', "Catedral");
+  context.selectText('form[data-form="character-tab"] textarea[name="abilities"]', "Catedral");
   await delay(80);
   const characterEditorSuggestions = context.qsa(".reference-suggestions .suggestion-chip")
     .map((element) => element.textContent?.trim() || "");
@@ -665,12 +690,36 @@ async function runEditSuite(context) {
     "La referència de glossari conserva el text seleccionat i només canvia el destí de la referència",
     { glossaryReferenceSuggestions, referencedChronicleContent },
   );
+
+  context.type('form[data-form="chronicle"] textarea[name="content"]', "La Catedral va quedar en silenci.");
+  await delay(80);
+  context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
+  await delay(80);
+  context.pointerDown('[data-insert-reference="catedral-del-silencio"]');
+  context.click('[data-rich-action="bold"]');
+  await delay(80);
+  const clickThroughContent = context.doc.querySelector('form[data-form="chronicle"] textarea[name="content"]')?.value || "";
+  record(
+    steps,
+    clickThroughContent === "La [[catedral-del-silencio|Catedral]] va quedar en silenci.",
+    "Seleccionar una suggerencia no activa la negreta del paragraf per un clic residual",
+    { clickThroughContent },
+  );
+
   context.type('form[data-form="chronicle"] textarea[name="content"]', "Arxiu QA");
   await delay(80);
   context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Arxiu QA");
   await delay(80);
   context.click('#chroniclesModule [data-create-reference-entry]');
   await delay(120);
+  const quickGlossaryCategories = context.qsa('form[data-form="quick-glossary"] select[name="quickGlossaryCategory"] option')
+    .map((option) => option.value);
+  record(
+    steps,
+    quickGlossaryCategories.includes("Esdeveniments"),
+    "La creacio rapida del glossari permet classificar entrades com a esdeveniments",
+    { quickGlossaryCategories },
+  );
   context.type('form[data-form="quick-glossary"] input[name="quickGlossaryName"]', "Arxiu QA");
   context.type('form[data-form="quick-glossary"] textarea[name="quickGlossaryDescription"]', "Entrada creada des de croniques.");
   await context.setFiles('form[data-form="quick-glossary"] input[name="quickGlossaryImage"]', [{
@@ -855,6 +904,50 @@ async function runEditSuite(context) {
     context.doc.querySelector(".editor-workspace-glossary") !== null
       && context.doc.querySelector('input[data-glossary-image-picker]') !== null,
     "L'editor de glossari s'obre des de la targeta de resultat",
+  );
+  const nativeGlossaryImageInput = context.doc.querySelector('input[data-glossary-image-picker]');
+  const nativeGlossaryImageControl = context.doc.querySelector("label[data-glossary-image-button]");
+  record(
+    steps,
+    nativeGlossaryImageInput instanceof context.win.HTMLInputElement
+      && nativeGlossaryImageControl instanceof context.win.HTMLLabelElement
+      && nativeGlossaryImageControl.htmlFor === nativeGlossaryImageInput.id,
+    "El boto Afegeix imatge activa directament el selector natiu de fitxers",
+    {
+      inputId: nativeGlossaryImageInput?.id || "",
+      controlFor: nativeGlossaryImageControl?.htmlFor || "",
+    },
+  );
+  const glossaryImageCountBeforeUpload = context.qsa(".glossary-editor-media-frame").length;
+  const glossaryImageValueBeforeUpload = context.doc.querySelector('form[data-form="glossary"] textarea[name="imageAssets"]')?.value || "";
+  await context.setFiles('form[data-form="glossary"] input[data-glossary-image-picker]', [{
+    name: "apolion-qa.png",
+    type: "image/png",
+    url: "/__qa_upload_image",
+  }]);
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    const currentValue = context.doc.querySelector('form[data-form="glossary"] textarea[name="imageAssets"]')?.value || "";
+    if (currentValue !== glossaryImageValueBeforeUpload) {
+      break;
+    }
+    await delay(100);
+  }
+  const glossaryImageCountAfterUpload = context.qsa(".glossary-editor-media-frame").length;
+  const uploadedGlossaryImageValue = context.doc.querySelector('form[data-form="glossary"] textarea[name="imageAssets"]')?.value || "";
+  const glossaryImageUploadStatus = context.doc.querySelector("[data-glossary-image-status]")?.textContent || "";
+  record(
+    steps,
+    glossaryImageCountAfterUpload >= 1
+      && uploadedGlossaryImageValue !== glossaryImageValueBeforeUpload
+      && uploadedGlossaryImageValue.includes("asset://"),
+    "El selector del glossari processa i previsualitza la imatge PNG seleccionada",
+    {
+      glossaryImageCountBeforeUpload,
+      glossaryImageCountAfterUpload,
+      glossaryImageValueBeforeUpload: glossaryImageValueBeforeUpload.slice(-80),
+      uploadedGlossaryImageValue: uploadedGlossaryImageValue.slice(-80),
+      glossaryImageUploadStatus,
+    },
   );
   context.type('form[data-form="glossary"] textarea[name="description"]', "Catedral");
   await delay(80);

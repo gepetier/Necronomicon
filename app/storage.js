@@ -577,7 +577,7 @@ function createStarterCampaignState({ id, name, system, createdAt }) {
       ...structuredClone(seedData.ui),
       currentModule: "chronicles",
       selectedCharacterId: characterId,
-      selectedCharacterTab: "lore",
+      selectedCharacterTab: "sheet",
       showCharacterGrid: true,
       selectedChronicleId: chronicleId,
       showChronicleLanding: true,
@@ -924,6 +924,9 @@ function sanitizeState(candidate) {
 
   if (!safe.characters.some((character) => character.id === safe.ui.selectedCharacterId)) {
     safe.ui.selectedCharacterId = safe.characters[0]?.id || "";
+  }
+  if (!["sheet", "inventory", "history"].includes(safe.ui.selectedCharacterTab)) {
+    safe.ui.selectedCharacterTab = "sheet";
   }
   if (!safe.chronicles.some((chronicle) => chronicle.id === safe.ui.selectedChronicleId)) {
     safe.ui.selectedChronicleId = safe.chronicles[0]?.id || "";

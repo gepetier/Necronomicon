@@ -20,6 +20,21 @@ export function isDataUrl(value) {
   return typeof value === "string" && DATA_URL_PATTERN.test(value.trim());
 }
 
+export function collectAssetTokensFromValue(value) {
+  const tokens = new Set();
+  visitAssetValue(value, (source) => {
+    if (isAssetToken(source)) {
+      tokens.add(source);
+    }
+  });
+  return [...tokens];
+}
+
+export function replaceAssetTokensInValue(value, replacements) {
+  const replaceSource = (source) => replacements.get(source) || source;
+  return mapAssetValue(value, replaceSource);
+}
+
 export function inferAssetKindFromMimeType(mimeType) {
   const normalized = String(mimeType || "").toLowerCase();
   if (normalized.startsWith("image/")) {
@@ -42,6 +57,51 @@ export function collectAssetTokensFromState(state) {
     }
   });
   return [...tokens];
+}
+
+function visitAssetValue(value, onSource) {
+  if (typeof value === "string") {
+    if (isAssetToken(value)) {
+      onSource(value);
+    }
+    for (const match of value.matchAll(RICH_MEDIA_TOKEN_PATTERN)) {
+      onSource(match[3]);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => visitAssetValue(item, onSource));
+    return;
+  }
+
+  if (value && typeof value === "object") {
+    Object.values(value).forEach((item) => visitAssetValue(item, onSource));
+  }
+}
+
+function mapAssetValue(value, replaceSource) {
+  if (typeof value === "string") {
+    if (isAssetToken(value)) {
+      return replaceSource(value);
+    }
+    return value.replaceAll(
+      RICH_MEDIA_TOKEN_PATTERN,
+      (_full, kind, label, source) => `{{media:${kind}|${label}|${replaceSource(source)}}}`,
+    );
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => mapAssetValue(item, replaceSource));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, mapAssetValue(item, replaceSource)]),
+    );
+  }
+
+  return value;
 }
 
 export function collectEmbeddedDataUrlsFromState(state) {

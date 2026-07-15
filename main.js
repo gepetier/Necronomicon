@@ -51,6 +51,7 @@ import {
   exportAssetBundle,
   hydrateAssetReferences,
   importAssetBundle,
+  materializeAssetTokens,
   storeAssetDataUrl,
   storeAssetFile,
 } from "./app/asset-store.js";
@@ -105,6 +106,7 @@ let cloudSaveTimer = null;
 let pendingCloudSaveTarget = null;
 
 const referenceSuggestionTimers = new WeakMap();
+const glossaryImageInputsProcessing = new WeakSet();
 const richPreviewTimers = new WeakMap();
 
 const saveNoticeEl = document.querySelector("#saveNotice");
@@ -131,6 +133,7 @@ let lastLightboxTrigger = null;
 let pendingRichMediaInsert = null;
 let pendingQuickGlossaryInsert = null;
 let ignoredSuggestionClickTarget = null;
+let suppressSuggestionFollowupClickUntil = 0;
 
 const IMAGE_OPTIMIZATION_OPTIONS = {
   maxWidth: 1800,
@@ -292,6 +295,13 @@ function applyCaptureUserOverride() {
 }
 
 function handleClick(event) {
+  if (Date.now() < suppressSuggestionFollowupClickUntil) {
+    suppressSuggestionFollowupClickUntil = 0;
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+
   const savageConceptTrigger = event.target.closest(".savage-concept");
   if (savageConceptTrigger) {
     event.preventDefault();
@@ -469,7 +479,8 @@ function handleClick(event) {
 
   const characterTab = event.target.closest("[data-character-tab]");
   if (characterTab) {
-    state.ui.selectedCharacterTab = characterTab.dataset.characterTab;
+    const tab = characterTab.dataset.characterTab || "";
+    state.ui.selectedCharacterTab = ["sheet", "inventory", "history"].includes(tab) ? tab : "sheet";
     persistAndRender();
     return;
   }
@@ -530,20 +541,6 @@ function handleClick(event) {
       return;
     }
     deleteGlossaryEntryById(glossaryId);
-    return;
-  }
-
-  if (event.target.closest("[data-open-glossary-image-picker]")) {
-    const glossaryId = event.target.closest('form[data-form="glossary"]')?.querySelector('input[name="id"]')?.value || state.ui.selectedGlossaryId;
-    if (!canEditGlossaryEntry(glossaryId)) {
-      denyPermission("No tens permisos per editar les imatges d'aquesta entrada.");
-      return;
-    }
-    const form = event.target.closest('form[data-form="glossary"]');
-    const picker = form?.querySelector("[data-glossary-image-picker]");
-    if (picker instanceof HTMLInputElement) {
-      picker.click();
-    }
     return;
   }
 
@@ -712,6 +709,7 @@ function handleReferenceSuggestionPointerDown(event) {
 
   event.preventDefault();
   event.stopPropagation();
+  suppressSuggestionFollowupClickUntil = Date.now() + 500;
   ignoredSuggestionClickTarget = suggestionButton;
   handleReferenceSuggestionAction(suggestionButton);
 }
@@ -2510,19 +2508,11 @@ function applyCharacterOverviewDraft(character) {
 function applyCharacterTabDrafts(character) {
   const tabDrafts = state.ui.drafts.characters.tabs[character.id] || {};
 
-  ["lore", "sheet", "inventory", "history"].forEach((tab) => {
+  ["sheet", "inventory", "history"].forEach((tab) => {
     const draft = tabDrafts[tab] || {};
     const formData = new FormData();
     formData.set("id", character.id);
     formData.set("tab", tab);
-
-    if (tab === "lore") {
-      formData.set("origin", draft.origin !== undefined ? String(draft.origin) : character.lore.origin || "");
-      formData.set("bonds", draft.bonds !== undefined ? String(draft.bonds) : character.lore.bonds || "");
-      formData.set("secrets", draft.secrets !== undefined ? String(draft.secrets) : character.lore.secrets || "");
-      formData.set("goals", draft.goals !== undefined ? String(draft.goals) : character.lore.goals || "");
-      formData.set("wounds", draft.wounds !== undefined ? String(draft.wounds) : character.lore.wounds || "");
-    }
 
     if (tab === "sheet") {
       formData.set("ac", draft.ac !== undefined ? String(draft.ac) : character.sheet.ac || "");
@@ -3222,21 +3212,27 @@ async function pushStateToCloud(options = {}) {
     const campaignId = storageGetActiveCampaignMeta().id;
     let response = null;
     if (target.type === "campaign") {
+      const campaignPayload = await materializeAssetTokens(
+        storageCreateCloudCampaignPayload(stripTransientUiState(state)),
+      );
       response = await saveCampaignToCloud(
         cloudSession.idToken,
-        storageCreateCloudCampaignPayload(stripTransientUiState(state)),
+        campaignPayload,
         { expectedRevision: cloudSession.revision },
       );
     } else if (target.type === "character") {
-      response = await saveCharacterToCloud(cloudSession.idToken, target.character, campaignId, {
+      const characterPayload = await materializeAssetTokens(target.character);
+      response = await saveCharacterToCloud(cloudSession.idToken, characterPayload, campaignId, {
         preserveExistingPortrait:
           target.preserveExistingPortrait === true
           && cloudSession.capabilities?.preserveExistingCharacterPortrait === true,
       });
     } else if (target.type === "chronicle") {
-      response = await saveChronicleToCloud(cloudSession.idToken, target.chronicle, campaignId);
+      const chroniclePayload = await materializeAssetTokens(target.chronicle);
+      response = await saveChronicleToCloud(cloudSession.idToken, chroniclePayload, campaignId);
     } else if (target.type === "glossary") {
-      response = await saveGlossaryEntryToCloud(cloudSession.idToken, target.entry, campaignId, {
+      const glossaryPayload = await materializeAssetTokens(target.entry);
+      response = await saveGlossaryEntryToCloud(cloudSession.idToken, glossaryPayload, campaignId, {
         preserveExistingImageAssets:
           target.preserveExistingImageAssets === true
           && cloudSession.capabilities?.preserveExistingImageAssets === true,
@@ -3971,6 +3967,9 @@ function updateGlossaryDraftImageAssets(glossaryId, updater) {
 }
 
 async function handleGlossaryImageSelection(input) {
+  if (glossaryImageInputsProcessing.has(input)) {
+    return;
+  }
   const form = input.closest('form[data-form="glossary"]');
   const glossaryId = form?.querySelector('input[name="id"]')?.value || input.dataset.glossaryId || "";
   const files = Array.from(input.files || []).filter((file) => file instanceof File);
@@ -3985,15 +3984,45 @@ async function handleGlossaryImageSelection(input) {
     return;
   }
 
-  const assetTokens = (await Promise.all(files.map(async (file) => {
-    const optimizedFile = await optimizeImageFile(file);
-    return storeAssetFile(optimizedFile);
-  }))).filter(Boolean);
-  if (assetTokens.length) {
-    updateGlossaryDraftImageAssets(glossaryId, (images) => [...images, ...assetTokens]);
+  glossaryImageInputsProcessing.add(input);
+  setGlossaryImagePickerStatus(input, `Processant ${files.length > 1 ? `${files.length} imatges` : "imatge"}...`, true);
+  try {
+    const assetTokens = (await Promise.all(files.map((file) => storeAssetFile(file)))).filter(Boolean);
+    if (assetTokens.length) {
+      updateGlossaryDraftImageAssets(glossaryId, (images) => [...images, ...assetTokens]);
+      return;
+    }
+    setGlossaryImagePickerStatus(input, "No s'ha pogut processar la imatge.", false);
+  } catch (error) {
+    console.error("No s'ha pogut afegir la imatge del glossari.", error);
+    setGlossaryImagePickerStatus(input, "No s'ha pogut afegir la imatge. Torna-ho a provar.", false);
+  } finally {
+    glossaryImageInputsProcessing.delete(input);
+    input.value = "";
   }
+}
 
-  input.value = "";
+function setGlossaryImagePickerStatus(input, message, processing) {
+  const picker = input.closest(".glossary-image-picker");
+  const button = picker?.querySelector("[data-glossary-image-button]");
+  const label = picker?.querySelector("[data-glossary-image-button-label]");
+  const status = picker?.querySelector("[data-glossary-image-status]");
+
+  if (button instanceof HTMLElement) {
+    button.classList.toggle("is-processing", processing);
+    button.setAttribute("aria-disabled", processing ? "true" : "false");
+  }
+  if (input instanceof HTMLInputElement) {
+    input.disabled = processing;
+  }
+  if (label instanceof HTMLElement) {
+    label.textContent = processing ? "Processant imatge..." : "Afegeix imatge";
+  }
+  if (status instanceof HTMLElement) {
+    status.textContent = message;
+    status.hidden = !message;
+    status.classList.toggle("error", !processing);
+  }
 }
 
 function openRichMediaPicker(insertContext) {
@@ -4148,15 +4177,28 @@ function shouldOptimizeImageFile(file) {
 }
 
 async function loadImageForOptimization(file) {
-  if ("createImageBitmap" in window) {
-    return createImageBitmap(file, { imageOrientation: "from-image" });
-  }
-
-  const source = await readFileAsDataUrl(file);
+  const source = URL.createObjectURL(file);
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.addEventListener("load", () => resolve(image), { once: true });
-    image.addEventListener("error", () => reject(new Error("La imatge no s'ha pogut carregar.")), { once: true });
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      URL.revokeObjectURL(source);
+      callback();
+    };
+    const timeoutId = window.setTimeout(() => {
+      finish(() => reject(new Error("La imatge ha trigat massa a carregar-se.")));
+    }, 1000);
+    image.addEventListener("load", () => {
+      finish(() => resolve(image));
+    }, { once: true });
+    image.addEventListener("error", () => {
+      finish(() => reject(new Error("La imatge no s'ha pogut carregar.")));
+    }, { once: true });
     image.src = source;
   });
 }
@@ -4419,7 +4461,9 @@ function restoreViewState(view) {
 
   state.ui.currentModule = view.currentModule || "characters";
   state.ui.selectedCharacterId = view.selectedCharacterId || state.ui.selectedCharacterId;
-  state.ui.selectedCharacterTab = view.selectedCharacterTab || state.ui.selectedCharacterTab;
+  state.ui.selectedCharacterTab = ["sheet", "inventory", "history"].includes(view.selectedCharacterTab)
+    ? view.selectedCharacterTab
+    : state.ui.selectedCharacterTab;
   state.ui.showCharacterGrid = typeof view.showCharacterGrid === "boolean" ? view.showCharacterGrid : state.ui.showCharacterGrid;
   state.ui.selectedChronicleId = view.selectedChronicleId || state.ui.selectedChronicleId;
   state.ui.showChronicleLanding = typeof view.showChronicleLanding === "boolean" ? view.showChronicleLanding : state.ui.showChronicleLanding;

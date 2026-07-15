@@ -84,6 +84,7 @@ export function getGlossaryCategoryTheme(category) {
     "Altres": "npcs",
     "Antagonistes": "antagonists",
     "Entitats": "entities",
+    "Esdeveniments": "events",
     "Objectes": "objects",
     "Monstres": "monsters",
     "Races": "races",
@@ -93,7 +94,6 @@ export function getGlossaryCategoryTheme(category) {
 
 export function characterTabLabel(tab) {
   return {
-    lore: "Lore",
     sheet: "Fitxa",
     inventory: "Inventari",
     history: "Història personal",

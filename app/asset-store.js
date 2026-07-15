@@ -1,8 +1,10 @@
 import {
   createAssetToken,
+  collectAssetTokensFromValue,
   getAssetIdFromToken,
   inferAssetKindFromMimeType,
   isAssetToken,
+  replaceAssetTokensInValue,
 } from "./assets.js";
 
 const DB_NAME = "campaign-compendium-assets";
@@ -125,6 +127,22 @@ export async function exportAssetBundle(tokens) {
   }
 
   return bundle;
+}
+
+export async function materializeAssetTokens(value) {
+  const tokens = collectAssetTokensFromValue(value);
+  if (!tokens.length) {
+    return value;
+  }
+
+  const bundle = await exportAssetBundle(tokens);
+  const replacements = new Map(
+    bundle
+      .filter((entry) => entry?.id && entry?.dataUrl)
+      .map((entry) => [createAssetToken(entry.id), entry.dataUrl]),
+  );
+
+  return replacements.size ? replaceAssetTokensInValue(value, replacements) : value;
 }
 
 export async function importAssetBundle(bundle) {

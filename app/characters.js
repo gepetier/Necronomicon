@@ -25,6 +25,8 @@ const ABILITY_DEFINITIONS = [
   { key: "car", source: "Car", label: "Carisma", shortLabel: "CAR", skills: ["Engany", "Intimidació", "Interpretació", "Persuasió"] },
 ];
 
+const CHARACTER_TABS = ["sheet", "inventory", "history"];
+
 const SAVAGE_ATTRIBUTE_DEFINITIONS = [
   { key: "agilitat", label: "Agilitat" },
   { key: "astucia", label: "Astucia" },
@@ -165,6 +167,7 @@ export function renderCharactersModule({
   }
   const returnLabel = shouldShowCharacterReturnFab?.(character.id) ? getViewStateLabel?.(state.ui.glossaryReturnView) : "";
   const canEditCurrentCharacter = canEditCharacter(character);
+  const selectedCharacterTab = getVisibleCharacterTab(state.ui.selectedCharacterTab);
 
   rootEl.innerHTML = `
     <section class="detail-card ${state.ui.notesPanelOpen ? "notes-open" : ""}">
@@ -210,18 +213,18 @@ export function renderCharactersModule({
             <div class="rich-text">${renderRichText(character.quickNotes)}</div>
           </div>
           <div class="tab-strip" role="tablist" aria-label="Seccions del personatge">
-            ${["lore", "sheet", "inventory", "history"]
+            ${CHARACTER_TABS
               .map(
                 (tab) => `
                   <button
                     type="button"
-                    class="tab-button ${state.ui.selectedCharacterTab === tab ? "active" : ""}"
+                    class="tab-button ${selectedCharacterTab === tab ? "active" : ""}"
                     data-character-tab="${tab}"
                     id="character-tab-${tab}"
                     role="tab"
-                    aria-selected="${state.ui.selectedCharacterTab === tab ? "true" : "false"}"
+                    aria-selected="${selectedCharacterTab === tab ? "true" : "false"}"
                     aria-controls="character-tab-panel"
-                    tabindex="${state.ui.selectedCharacterTab === tab ? "0" : "-1"}"
+                    tabindex="${selectedCharacterTab === tab ? "0" : "-1"}"
                   >
                     ${characterTabLabel(tab)}
                   </button>
@@ -233,11 +236,11 @@ export function renderCharactersModule({
             id="character-tab-panel"
             class="detail-tab-panel"
             role="tabpanel"
-            aria-labelledby="character-tab-${state.ui.selectedCharacterTab}"
+            aria-labelledby="character-tab-${selectedCharacterTab}"
           >
-            ${renderCharacterTabContent(character, state.ui.selectedCharacterTab, state)}
+            ${renderCharacterTabContent(character, selectedCharacterTab, state)}
           </div>
-          ${state.ui.editModes.characters && canEditCurrentCharacter ? renderCharacterEditor(character, state.ui.selectedCharacterTab, state) : ""}
+          ${state.ui.editModes.characters && canEditCurrentCharacter ? renderCharacterEditor(character, selectedCharacterTab, state) : ""}
         </div>
       </div>
       ${renderPlayerNotesPanel()}
@@ -296,14 +299,6 @@ export function saveCharacterTab(formData, { getSelectedCharacter, showSaveNotic
   }
 
   const tab = readString(formData, "tab");
-  if (tab === "lore") {
-    character.lore.origin = readString(formData, "origin");
-    character.lore.bonds = readString(formData, "bonds");
-    character.lore.secrets = readString(formData, "secrets");
-    character.lore.goals = readString(formData, "goals");
-    character.lore.wounds = readString(formData, "wounds");
-  }
-
   if (tab === "sheet") {
     character.sheet.ac = readString(formData, "ac");
     character.sheet.hp = readString(formData, "hp");
@@ -369,17 +364,11 @@ function renderCharacterCard(character, state) {
   `;
 }
 
-function renderCharacterTabContent(character, tab, state) {
-  if (tab === "lore") {
-    return `
-      ${renderTextCard("Origen", character.lore.origin, { rich: true })}
-      ${renderTextCard("Vincles", character.lore.bonds, { rich: true })}
-      ${renderTextCard("Secrets", character.lore.secrets, { rich: true })}
-      ${renderTextCard("Objectius", character.lore.goals, { rich: true })}
-      ${renderTextCard("Ferides", character.lore.wounds, { rich: true })}
-    `;
-  }
+function getVisibleCharacterTab(tab) {
+  return CHARACTER_TABS.includes(tab) ? tab : "sheet";
+}
 
+function renderCharacterTabContent(character, tab, state) {
   if (tab === "sheet") {
     return isSavageWorldsCampaign(state) ? renderSavageWorldsSheetTab(character) : renderDndSheetTab(character);
   }
@@ -1304,16 +1293,6 @@ function renderCharacterEditor(character, tab, state) {
 }
 
 function renderCharacterTabEditor(character, tab, draft, state) {
-  if (tab === "lore") {
-    return `
-      ${renderRichTextareaField("origin", "Origen", readDraftValue(draft.origin, character.lore.origin), 4)}
-      ${renderRichTextareaField("bonds", "Vincles", readDraftValue(draft.bonds, character.lore.bonds), 4)}
-      ${renderRichTextareaField("secrets", "Secrets", readDraftValue(draft.secrets, character.lore.secrets), 4)}
-      ${renderRichTextareaField("goals", "Objectius", readDraftValue(draft.goals, character.lore.goals), 4)}
-      ${renderRichTextareaField("wounds", "Ferides", readDraftValue(draft.wounds, character.lore.wounds), 4)}
-    `;
-  }
-
   if (tab === "sheet") {
     if (isSavageWorldsCampaign(state)) {
       return `

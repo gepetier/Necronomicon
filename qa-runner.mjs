@@ -11,7 +11,7 @@ const chromeBinary = resolveChromeBinary();
 const requestedTarget = process.argv[2] || "all";
 const scenarios = getScenarios(requestedTarget);
 const chromeTimeoutMs = Number(process.env.QA_CHROME_TIMEOUT_MS || "20000");
-const chromeVirtualTimeBudgetMs = Number(process.env.QA_CHROME_VIRTUAL_TIME_BUDGET_MS || "8000");
+const chromeVirtualTimeBudgetMs = Number(process.env.QA_CHROME_VIRTUAL_TIME_BUDGET_MS || "12000");
 
 async function main() {
   if (!chromeBinary) {
