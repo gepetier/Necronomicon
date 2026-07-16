@@ -84,6 +84,7 @@ export function getGlossaryCategoryTheme(category) {
     "Faccions": "factions",
     "Altres": "npcs",
     "Antagonistes": "antagonists",
+    "Personatges secundaris": "npcs",
     "Entitats": "entities",
     "Esdeveniments": "events",
     "Objectes": "objects",

@@ -147,6 +147,9 @@ export function migrateStoredState(payload) {
   if (version < 9) {
     nextState = migrateSessionFourContent(nextState);
   }
+  if (version < 10) {
+    nextState = migrateSecondaryGlossaryCharacters(nextState);
+  }
 
   return sanitizeState(nextState);
 }
@@ -876,6 +879,28 @@ function mergeUniqueStrings(currentValues, addedValues) {
       ...(Array.isArray(addedValues) ? addedValues.map(String) : []),
     ].filter(Boolean)),
   ];
+}
+
+function migrateSecondaryGlossaryCharacters(candidate) {
+  const next = structuredClone(candidate);
+  const secondaryCharacterIds = new Set([
+    "varron-thayne",
+    "hermana-seraphe",
+    "reina-elisabeth",
+    "mijo",
+    "uric",
+    "elyse",
+  ]);
+
+  next.glossary = Array.isArray(next.glossary)
+    ? next.glossary.map((entry) => (
+      secondaryCharacterIds.has(entry?.id) && entry.category === "Altres"
+        ? { ...entry, category: "Personatges secundaris" }
+        : entry
+    ))
+    : next.glossary;
+
+  return next;
 }
 
 function sanitizeState(candidate) {

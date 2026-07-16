@@ -107,6 +107,8 @@
 - Glossary image selection must keep a visible processing/success/error state across rerenders and prevent saving or closing the editor flow until the selected image is ready; quick glossary creation is atomic when it includes an image.
 - Glossary file inputs must be excluded from the generic glossary-card click handler so the native picker input stays connected; upload diagnostics persist a bounded local event log and expose copy/clear controls in the editor.
 
+- Glossary supporting cast uses the dedicated `Personatges secundaris` category; protagonist sheets remain in `Personatges` and hostile figures remain under `Antagonistes`.
+
 ## Pending
 - Before deploying sync changes, back up the canonical Drive `campaign.json`; never seed or replace it from `data.js`/localStorage without an explicit reviewed import or merge.
 - Clean up or commit the pending visual artifacts and code changes once the current restyle is considered stable.
@@ -219,3 +221,5 @@
 - 2026-07-16: fixed glossary image uploads so large selected files show durable progress and success/error feedback, block premature saves, preview before save, and persist after a cache-cleared browser restart; applied the same guarded feedback to quick glossary creation.
 
 - 2026-07-16: traced the native glossary picker failure to the generic [data-glossary-id] click rerender disconnecting the file input, fixed the click/event ordering, and added a persistent visible execution log from picker click through IndexedDB completion.
+
+- 2026-07-16: added the `Personatges secundaris` glossary category, migrated known supporting NPCs out of `Altres`, and added unit, functional, and desktop/mobile visual coverage.

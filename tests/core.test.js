@@ -291,6 +291,23 @@ test("storage persistence reports quota failures without throwing", () => {
   }
 });
 
+test("storage migration classifies supporting glossary characters separately", () => {
+  const legacy = structuredClone(seedData);
+  legacy.glossary = legacy.glossary.map((entry) => (
+    ["varron-thayne", "hermana-seraphe", "reina-elisabeth", "mijo", "uric", "elyse"].includes(entry.id)
+      ? { ...entry, category: "Altres" }
+      : entry
+  ));
+
+  const migrated = migrateStoredState({ version: 9, state: legacy });
+  const byId = new Map(migrated.glossary.map((entry) => [entry.id, entry]));
+
+  assert.equal(byId.get("uric")?.category, "Personatges secundaris");
+  assert.equal(byId.get("reina-elisabeth")?.category, "Personatges secundaris");
+  assert.equal(byId.get("dren")?.category, "Altres");
+  assert.equal(byId.get("zaher-ar-kal")?.category, "Antagonistes");
+});
+
 test("storage repairs stale packaged Meledar character portraits", () => {
   const migrated = migrateStoredState({
     version: DATA_VERSION,

@@ -1,5 +1,5 @@
 ﻿export const STORAGE_KEY = "campaign-compendium";
-export const DATA_VERSION = 9;
+export const DATA_VERSION = 10;
 
 
 const CHARACTER_PORTRAITS = {
@@ -521,7 +521,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     {
       id: "varron-thayne",
       name: "Varron Thayne",
-      category: "Altres",
+      category: "Personatges secundaris",
       description:
         "Alt càrrec del clergat present al judici, portaveu del ritual major i una de les figures més visibles del poder religiós de la ciutat.",
       tags: ["clergat", "jutge", "ritual"],
@@ -539,7 +539,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     {
       id: "hermana-seraphe",
       name: "Hermana Seraphe",
-      category: "Altres",
+      category: "Personatges secundaris",
       description:
         "Membre destacada del clergat present al judici i al ritual, percebuda com a menys alineada amb la brutalitat de l'Església del Silenci.",
       tags: ["clergat", "dubte", "sacrifici"],
@@ -553,7 +553,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     {
       id: "reina-elisabeth",
       name: "Reina Elisabeth d'Andoras",
-      category: "Altres",
+      category: "Personatges secundaris",
       description:
         "Monarca andorana present a la cerimònia de la Fossa, protegida contra contacte mental i prou decidida a desafiar l'autoritat religiosa en públic.",
       tags: ["reina", "andoras", "cop d'estat"],
@@ -571,7 +571,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     {
       id: "mijo",
       name: "Mijo",
-      category: "Altres",
+      category: "Personatges secundaris",
       description:
         "Vell mediano poruc i espavilat, descobert a les cel·les de sota la Catedral i arrossegat després al centre dels rituals d'Acantilado.",
       tags: ["mediano", "presó", "supervivència"],
@@ -589,7 +589,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     {
       id: "uric",
       name: "Uric",
-      category: "Altres",
+      category: "Personatges secundaris",
       description:
         "Presoner que arriba amb els protagonistes a Acantilado del Silencio i intenta declarar-se digne de Kaelor abans de ser condemnat.",
       tags: ["presoner", "judici", "condemnat"],
@@ -823,7 +823,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     {
       id: "elyse",
       name: "Elyse",
-      category: "Altres",
+      category: "Personatges secundaris",
       description:
         "Elfa de cabells platejats que es fa passar per serventa obedient, però actua amb massa lucidesa i urgència per ser només una peça més del Sagnatori.",
       tags: ["elfa", "aliada", "serventa"],

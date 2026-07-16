@@ -396,8 +396,17 @@ async function runFunctionalSuite(context) {
     { glossaryTitle },
   );
 
-  context.click('[data-glossary-filter="Altres"]');
+  context.click('[data-glossary-filter="Personatges secundaris"]');
   await delay(80);
+  const secondaryCharacterResults = context.qsa(".glossary-entry h3").map((element) => element.textContent?.trim() || "");
+  record(
+    steps,
+    secondaryCharacterResults.includes("Uric")
+      && secondaryCharacterResults.includes("Reina Elisabeth d'Andoras")
+      && !secondaryCharacterResults.includes("Zaher-Ar'Kal"),
+    "La categoria de personatges secundaris separa PNJ, protagonistes i antagonistes",
+    { secondaryCharacterResults },
+  );
   context.click('[data-glossary-id="uric"]');
   await delay(80);
   const glossaryLatestCopy = context.doc.querySelector(".glossary-latest-copy")?.textContent?.trim() || "";

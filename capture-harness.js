@@ -358,6 +358,16 @@ async function runScenario(context, scenarioName) {
       await context.click('[data-glossary-id="portadores-del-velo"]');
       await scrollGlossaryDetailIntoView(context);
     },
+    "glossary-secondary-characters": async () => {
+      await context.click('[data-module-link="glossary"]');
+      await context.click('[data-glossary-filter="Personatges secundaris"]');
+      await context.click('[data-glossary-id="reina-elisabeth"]');
+      if (context.win.innerWidth < 720) {
+        context.query('[data-glossary-filter="Personatges secundaris"]')?.scrollIntoView({ block: "center" });
+      } else {
+        await scrollGlossaryDetailIntoView(context);
+      }
+    },
     "glossary-return": async () => {
       await context.click('[data-module-link="chronicles"]');
       await openChronicle(context);
