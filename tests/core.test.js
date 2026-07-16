@@ -302,10 +302,17 @@ test("storage migration classifies supporting glossary characters separately", (
   const migrated = migrateStoredState({ version: 9, state: legacy });
   const byId = new Map(migrated.glossary.map((entry) => [entry.id, entry]));
 
-  assert.equal(byId.get("uric")?.category, "Personatges secundaris");
-  assert.equal(byId.get("reina-elisabeth")?.category, "Personatges secundaris");
+  assert.equal(byId.get("uric")?.category, "Personatges");
+  assert.equal(byId.get("reina-elisabeth")?.category, "Personatges");
   assert.equal(byId.get("dren")?.category, "Altres");
   assert.equal(byId.get("zaher-ar-kal")?.category, "Antagonistes");
+
+  const versionTen = structuredClone(seedData);
+  versionTen.glossary = versionTen.glossary.map((entry) => (
+    entry.id === "uric" ? { ...entry, category: "Personatges secundaris" } : entry
+  ));
+  const renamed = migrateStoredState({ version: 10, state: versionTen });
+  assert.equal(renamed.glossary.find((entry) => entry.id === "uric")?.category, "Personatges");
 });
 
 test("storage repairs stale packaged Meledar character portraits", () => {

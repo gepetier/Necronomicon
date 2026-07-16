@@ -396,7 +396,7 @@ async function runFunctionalSuite(context) {
     { glossaryTitle },
   );
 
-  context.click('[data-glossary-filter="Personatges secundaris"]');
+  context.click('[data-glossary-filter="Personatges"]');
   await delay(80);
   const secondaryCharacterResults = context.qsa(".glossary-entry h3").map((element) => element.textContent?.trim() || "");
   record(
@@ -799,7 +799,7 @@ async function runEditSuite(context) {
   const referencedCharacterContent = context.doc.querySelector('form[data-form="chronicle"] textarea[name="content"]')?.value || "";
   record(
     steps,
-    characterReferenceSuggestions.some((label) => label.includes("Ilu") && label.includes("Personatge"))
+    characterReferenceSuggestions.some((label) => label.includes("Ilu") && label.includes("Protagonistes"))
       && referencedCharacterContent === "[[ilu|l'Ilu]]",
     "La referÃ¨ncia de personatge conserva el text seleccionat i apunta a la fitxa principal",
     { characterReferenceSuggestions, referencedCharacterContent },

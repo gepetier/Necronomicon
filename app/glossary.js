@@ -496,7 +496,7 @@ function renderGlossaryEditor(entry, state, imageUploadState = null) {
                 <label class="field">
                   <span>Categoria</span>
                   <select name="category">
-                    ${["Llocs", "Religió", "Antagonistes", "Personatges secundaris", "Entitats", "Esdeveniments", "Faccions", "Objectes", "Monstres", "Races", "Altres"]
+                    ${["Llocs", "Religió", "Antagonistes", "Personatges", "Entitats", "Esdeveniments", "Faccions", "Objectes", "Monstres", "Races", "Altres"]
                       .map(
                         (category) => `
                           <option value="${category}" ${readDraftValue(draft.category, entry?.category || "") === category ? "selected" : ""}>

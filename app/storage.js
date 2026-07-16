@@ -150,6 +150,9 @@ export function migrateStoredState(payload) {
   if (version < 10) {
     nextState = migrateSecondaryGlossaryCharacters(nextState);
   }
+  if (version < 11) {
+    nextState = migrateGlossaryCharacterCategoryName(nextState);
+  }
 
   return sanitizeState(nextState);
 }
@@ -895,11 +898,23 @@ function migrateSecondaryGlossaryCharacters(candidate) {
   next.glossary = Array.isArray(next.glossary)
     ? next.glossary.map((entry) => (
       secondaryCharacterIds.has(entry?.id) && entry.category === "Altres"
-        ? { ...entry, category: "Personatges secundaris" }
+        ? { ...entry, category: "Personatges" }
         : entry
     ))
     : next.glossary;
 
+  return next;
+}
+
+function migrateGlossaryCharacterCategoryName(candidate) {
+  const next = structuredClone(candidate);
+  next.glossary = Array.isArray(next.glossary)
+    ? next.glossary.map((entry) => (
+      entry.category === "Personatges secundaris"
+        ? { ...entry, category: "Personatges" }
+        : entry
+    ))
+    : next.glossary;
   return next;
 }
 

@@ -84,13 +84,13 @@ export function getGlossaryCategoryTheme(category) {
     "Faccions": "factions",
     "Altres": "npcs",
     "Antagonistes": "antagonists",
-    "Personatges secundaris": "npcs",
+    "Personatges": "npcs",
     "Entitats": "entities",
     "Esdeveniments": "events",
     "Objectes": "objects",
     "Monstres": "monsters",
     "Races": "races",
-    "Personatge": "heroes",
+    "Protagonistes": "heroes",
   }[category] || "neutral";
 }
 

@@ -5171,7 +5171,7 @@ function getReferenceEntries() {
     ...state.characters.map((character) => ({
       id: character.id,
       name: character.name,
-      category: "Personatge",
+      category: "Protagonistes",
       targetType: "character",
       searchValues: [
         character.name,
@@ -5462,7 +5462,7 @@ function getReferenceCategory(referenceId) {
 
   const character = referenceId ? findCharacter(referenceId) : null;
   if (character) {
-    return "Personatge";
+    return "Protagonistes";
   }
 
   return "";

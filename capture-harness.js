@@ -282,8 +282,8 @@ async function runScenario(context, scenarioName) {
       await context.click('[data-module-link="chronicles"]');
       await openChronicle(context);
       await context.click('[data-toggle-edit="chronicles"]');
-      await context.type('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
-      await context.selectText('form[data-form="chronicle"] textarea[name="content"]', "Catedral");
+      await context.type('form[data-form="chronicle"] textarea[name="content"]', "l'Ilu");
+      await context.selectText('form[data-form="chronicle"] textarea[name="content"]', "l'Ilu");
     },
     "chronicles-reference-search": async () => {
       await context.click('[data-module-link="chronicles"]');
@@ -360,10 +360,10 @@ async function runScenario(context, scenarioName) {
     },
     "glossary-secondary-characters": async () => {
       await context.click('[data-module-link="glossary"]');
-      await context.click('[data-glossary-filter="Personatges secundaris"]');
+      await context.click('[data-glossary-filter="Personatges"]');
       await context.click('[data-glossary-id="reina-elisabeth"]');
       if (context.win.innerWidth < 720) {
-        context.query('[data-glossary-filter="Personatges secundaris"]')?.scrollIntoView({ block: "center" });
+        context.query('[data-glossary-filter="Personatges"]')?.scrollIntoView({ block: "center" });
       } else {
         await scrollGlossaryDetailIntoView(context);
       }
