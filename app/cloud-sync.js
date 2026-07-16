@@ -10,6 +10,7 @@ const JSONP_MAX_PAYLOAD_LENGTH = 7000;
 
 let googleIdentityPromise = null;
 let jsonpCounter = 0;
+let serverSessionToken = "";
 
 export function getStoredCredential() {
   const credential = window.sessionStorage.getItem(CREDENTIAL_STORAGE_KEY) || "";
@@ -25,6 +26,7 @@ export function storeCredential(credential) {
 }
 
 export function clearStoredCredential() {
+  serverSessionToken = "";
   window.sessionStorage.removeItem(CREDENTIAL_STORAGE_KEY);
   window.localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
 }
@@ -95,6 +97,11 @@ export function renderGoogleButton(rootEl, callback) {
     logo_alignment: "left",
     width: 320,
   });
+  const removeHiddenGoogleButtonFromTabOrder = () => {
+    rootEl.querySelectorAll("iframe").forEach((iframe) => iframe.setAttribute("tabindex", "-1"));
+  };
+  removeHiddenGoogleButtonFromTabOrder();
+  window.requestAnimationFrame(removeHiddenGoogleButtonFromTabOrder);
 }
 
 export function promptGoogleSignIn() {
@@ -104,54 +111,55 @@ export function promptGoogleSignIn() {
 }
 
 export async function loadCampaignFromCloud(idToken) {
+  await establishServerSession(idToken);
   return jsonpRequest({
     action: "loadCampaign",
-    idToken,
+    ...createAuthPayload(idToken),
   });
 }
 
 export async function saveCampaignToCloud(idToken, campaign, options = {}) {
   return postAndConfirm({
     action: "saveCampaign",
-    idToken,
+    ...createAuthPayload(idToken),
     campaign,
     expectedRevision: Math.max(0, Number(options.expectedRevision) || 0),
-  });
+  }, idToken);
 }
 
 export async function saveCharacterToCloud(idToken, character, campaignId = "", options = {}) {
   const payload = {
     action: "saveCharacter",
-    idToken,
+    ...createAuthPayload(idToken),
     campaignId,
     character,
   };
   const compactPayload = options.preserveExistingPortrait
     ? createCharacterPayloadWithoutPortrait(payload)
     : null;
-  return saveItemToCloud(payload, compactPayload);
+  return saveItemToCloud(payload, compactPayload, idToken);
 }
 
 export async function saveChronicleToCloud(idToken, chronicle, campaignId = "") {
   return saveItemToCloud({
     action: "saveChronicle",
-    idToken,
+    ...createAuthPayload(idToken),
     campaignId,
     chronicle,
-  });
+  }, null, idToken);
 }
 
 export async function saveGlossaryEntryToCloud(idToken, entry, campaignId = "", options = {}) {
   const payload = {
     action: "saveGlossaryEntry",
-    idToken,
+    ...createAuthPayload(idToken),
     campaignId,
     entry,
   };
   const compactPayload = options.preserveExistingImageAssets
     ? createGlossaryEntryPayloadWithoutImages(payload)
     : null;
-  return saveItemToCloud(payload, compactPayload);
+  return saveItemToCloud(payload, compactPayload, idToken);
 }
 
 export function createGlossaryEntryPayloadWithoutImages(payload) {
@@ -184,7 +192,7 @@ export function createCharacterPayloadWithoutPortrait(payload) {
   };
 }
 
-async function saveItemToCloud(payload, compactPayload = null) {
+async function saveItemToCloud(payload, compactPayload = null, idToken = "") {
   const operationId = createOperationId();
   const confirmedPayload = { ...payload, operationId };
   const confirmedCompactPayload = compactPayload ? { ...compactPayload, operationId } : null;
@@ -204,13 +212,13 @@ async function saveItemToCloud(payload, compactPayload = null) {
     }
   }
 
-  return postAndConfirm(confirmedPayload);
+  return postAndConfirm(confirmedPayload, idToken);
 }
 
-async function postAndConfirm(payload) {
+async function postAndConfirm(payload, idToken = "") {
   const operationId = String(payload.operationId || createOperationId());
   await postWithoutCors({ ...payload, operationId });
-  const response = await loadCampaignFromCloud(payload.idToken);
+  const response = await loadCampaignFromCloud(idToken);
   assertConfirmedOperation(response, operationId);
   return response;
 }
@@ -234,6 +242,23 @@ function createOperationId() {
     return window.crypto.randomUUID();
   }
   return `sync-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function establishServerSession(idToken) {
+  if (serverSessionToken || !idToken) return serverSessionToken;
+  const operationId = createOperationId();
+  try {
+    await postWithoutCors({ action: "createSession", idToken, operationId });
+    const response = await jsonpRequest({ action: "claimSession", operationId });
+    serverSessionToken = String(response?.sessionToken || "");
+  } catch {
+    serverSessionToken = "";
+  }
+  return serverSessionToken;
+}
+
+function createAuthPayload(idToken) {
+  return serverSessionToken ? { sessionToken: serverSessionToken } : { idToken };
 }
 
 function jsonpRequest(payload) {
@@ -263,6 +288,7 @@ function jsonpRequest(payload) {
     const url = new URL(CLOUD_CONFIG.apiUrl);
     url.searchParams.set("callback", callbackName);
     url.searchParams.set("payload", JSON.stringify(payload));
+    script.referrerPolicy = "no-referrer";
     script.src = url.toString();
     script.onerror = () => {
       cleanup();

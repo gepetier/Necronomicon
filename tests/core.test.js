@@ -23,12 +23,15 @@ import {
   createCampaign,
   deleteCampaign,
   getCampaignCatalog,
+  getLastPersistenceError,
   loadState,
   migrateStoredState,
   persistState,
   updateCampaign,
 } from "../app/storage.js";
 import { plainTextFromRichText, renderRichText } from "../app/utils.js";
+import { createCloudSaveQueue } from "../app/cloud-save-queue.js";
+import { sanitizeMediaSource } from "../app/media-source.js";
 
 test("backup payload wraps state and asset bundle", () => {
   const payload = createBackupPayload(seedData, [{ id: "asset-1", dataUrl: "data:image/png;base64,AAA" }], "2026-04-28T12:00:00.000Z");
@@ -41,6 +44,41 @@ test("backup payload wraps state and asset bundle", () => {
     version: DATA_VERSION,
     state: payload.state,
   });
+});
+
+test("cloud save queue retains distinct rapid saves and coalesces repeated items", () => {
+  const queue = createCloudSaveQueue();
+  queue.enqueue({ type: "character", characterId: "ilu", version: 1 });
+  queue.enqueue({ type: "glossary", entryId: "nishaar" });
+  queue.enqueue({ type: "character", characterId: "ilu", version: 2 });
+  assert.deepEqual(queue.snapshot(), [
+    { type: "character", characterId: "ilu", version: 2 },
+    { type: "glossary", entryId: "nishaar" },
+  ]);
+});
+
+test("full campaign save supersedes queued item saves", () => {
+  const queue = createCloudSaveQueue();
+  queue.enqueue({ type: "character", characterId: "ilu" });
+  queue.enqueue({ type: "campaign" });
+  queue.enqueue({ type: "glossary", entryId: "nishaar" });
+  assert.deepEqual(queue.snapshot(), [{ type: "campaign" }]);
+});
+
+test("media sources reject executable and unsafe data URLs", () => {
+  assert.equal(sanitizeMediaSource("javascript:alert(1)", "file"), "");
+  assert.equal(sanitizeMediaSource("data:text/html,<script>alert(1)</script>", "file"), "");
+  assert.equal(sanitizeMediaSource("file:///C:/secret.txt", "file"), "");
+  assert.equal(sanitizeMediaSource("https://example.com/map.webp", "image"), "https://example.com/map.webp");
+  assert.equal(sanitizeMediaSource("resources/imatges/ilu.jpg", "image"), "resources/imatges/ilu.jpg");
+  assert.match(sanitizeMediaSource("data:image/png;base64,AAAA", "image"), /^data:image\/png/);
+});
+
+test("rich text marks unsafe media links without rendering a dangerous href", () => {
+  const html = renderRichText("{{media:file|Obre|javascript:alert(1)}}");
+  assert.doesNotMatch(html, /href=/);
+  assert.doesNotMatch(html, /javascript:/);
+  assert.match(html, /data-invalid-media-source/);
 });
 
 test("asset helpers collect and replace embedded asset sources", () => {
@@ -228,6 +266,26 @@ test("storage wraps legacy state in a campaign catalog and creates a Savage Worl
     assert.equal(finalCatalog.campaigns.length, 1);
     assert.equal(finalCatalog.campaigns[0].id, meledarId);
     assert.equal(afterDelete.meta.id, meledarId);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("storage persistence reports quota failures without throwing", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => { throw new DOMException("Quota plena", "QuotaExceededError"); },
+      removeItem: () => {},
+    },
+  };
+
+  try {
+    const result = persistState(structuredClone(seedData));
+    assert.equal(result.ok, false);
+    assert.equal(result.error?.name, "QuotaExceededError");
+    assert.equal(getLastPersistenceError()?.name, "QuotaExceededError");
   } finally {
     globalThis.window = previousWindow;
   }

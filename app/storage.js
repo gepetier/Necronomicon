@@ -8,6 +8,7 @@ const DEFAULT_CAMPAIGN_NAME = "Meledar";
 const DEFAULT_CAMPAIGN_SYSTEM = "D&D 5e";
 
 let campaignLibrary = null;
+let lastPersistenceError = null;
 
 const DEFAULT_ACCESS = {
   roles: {
@@ -75,8 +76,19 @@ export function loadState() {
 
 export function persistState(state) {
   updateActiveCampaignState(state);
-  writeCampaignLibrary();
-  LEGACY_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
+  try {
+    writeCampaignLibrary();
+    LEGACY_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
+    lastPersistenceError = null;
+    return { ok: true, error: null };
+  } catch (error) {
+    lastPersistenceError = error instanceof Error ? error : new Error(String(error));
+    return { ok: false, error: lastPersistenceError };
+  }
+}
+
+export function getLastPersistenceError() {
+  return lastPersistenceError;
 }
 
 export function createPersistedPayload(nextState) {
@@ -446,10 +458,10 @@ function updateActiveCampaignState(state) {
     createdAt: active.createdAt,
     updatedAt: now,
   };
-  const safeState = sanitizeState({
+  const safeState = {
     ...state,
     meta,
-  });
+  };
 
   active.name = meta.name;
   active.system = meta.system;
@@ -464,8 +476,6 @@ function writeCampaignLibrary() {
 
 function createCampaignLibraryPayload() {
   ensureCampaignLibrary();
-  const active = findActiveCampaignRecord();
-  const topLevelState = active.state || {};
   return {
     kind: CAMPAIGN_LIBRARY_KIND,
     version: DATA_VERSION,
@@ -479,12 +489,6 @@ function createCampaignLibraryPayload() {
       version: DATA_VERSION,
       state: campaign.state,
     })),
-    meta: topLevelState.meta,
-    characters: topLevelState.characters,
-    chronicles: topLevelState.chronicles,
-    glossary: topLevelState.glossary,
-    access: topLevelState.access,
-    ui: topLevelState.ui,
   };
 }
 

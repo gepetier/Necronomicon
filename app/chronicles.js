@@ -440,52 +440,40 @@ function renderChronicleCoverPlate(current) {
 
 function renderChronicleLanding(state, permissions = {}) {
   const canCreateChronicle = permissions.canCreateChronicle !== false;
-  const featuredChronicle = state.chronicles[0] || null;
-  const latestChronicle = state.chronicles.at(-1) || featuredChronicle;
-  const featuredImage = featuredChronicle?.imageAssets?.[0] || latestChronicle?.imageAssets?.[0] || "";
-  const totalChapters = state.chronicles.length;
 
   return `
     <div class="chronicle-landing">
-      <section class="chronicle-landing-hero">
-        <div class="chronicle-landing-hero-media" style="${paletteStyle(featuredChronicle?.palette || seedData.chronicles[0].palette)}">
-          ${featuredImage
-            ? `<img src="${escapeAttribute(featuredImage)}" alt="${escapeAttribute(featuredChronicle?.title || "Portada de croniques")}" loading="lazy" />`
-            : `
-              <div class="chronicle-landing-sigil" aria-hidden="true">
-                <span>III</span>
-                <strong>Cròniques</strong>
-              </div>
-            `}
-        </div>
-        <div class="chronicle-landing-hero-copy">
-          <p class="eyebrow">Arxiu de campanya</p>
-          <h3>Cròniques de Meledar</h3>
-          <p>Una taula de sessions, rastres i decisions. Obre qualsevol entrada per tornar al llibre de lectura.</p>
-          <div class="chronicle-landing-stats" aria-label="Estat de les croniques">
-            <span><strong>${escapeHtml(String(totalChapters))}</strong> sessions</span>
-            <span><strong>${escapeHtml(latestChronicle?.chapter || "Sense")}</strong> darrera entrada</span>
-            <span><strong>${escapeHtml(formatShortDate(latestChronicle?.date) || latestChronicle?.date || "Sense data")}</strong> calendari</span>
-          </div>
-        </div>
-      </section>
-
       <section class="chronicle-atlas">
-        <div class="chronicle-atlas-head">
-          <div>
-            <p class="eyebrow">Index complet</p>
-            <h3>Totes les entrades</h3>
-          </div>
-          ${canCreateChronicle ? `<button type="button" class="chapter-create-button" data-create-chronicle>
-            <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
-            <span>Nova cronica</span>
-          </button>` : ""}
-        </div>
         <div class="chronicle-atlas-grid" role="list" aria-label="Totes les croniques">
           ${state.chronicles.map((chronicle, index) => renderChronicleLandingCard(chronicle, index)).join("")}
+          ${canCreateChronicle ? renderChronicleCreateCard() : ""}
         </div>
       </section>
     </div>
+  `;
+}
+
+function renderChronicleCreateCard() {
+  return `
+    <button
+      type="button"
+      class="chronicle-atlas-card chronicle-atlas-create-card"
+      data-create-chronicle
+      aria-label="Crea una nova cronica"
+    >
+      <div class="chronicle-atlas-card-media" aria-hidden="true">
+        <span>+</span>
+      </div>
+      <div class="chronicle-atlas-card-copy">
+        <p class="eyebrow">Nova entrada</p>
+        <h4>Nova cronica</h4>
+        <p>Afegeix una sessio nova al final de l'arxiu de campanya.</p>
+      </div>
+      <div class="chronicle-atlas-card-foot">
+        <span>Crea</span>
+        <span>Obre l'editor</span>
+      </div>
+    </button>
   `;
 }
 

@@ -19,7 +19,7 @@
 ## Encara obert
 
 - Abans de deploy, fer backup del `campaign.json` de Drive, que es sempre la font canonica; no substituir-lo amb `data.js` o localStorage sense una importacio o fusio revisada explicitament.
-- Validar en navegador real el login Google i el desat contra Apps Script quan el client OAuth tingui autoritzats els origins de GitHub Pages i `localhost`.
+- Fer backup del `campaign.json`, desplegar la revisio Apps Script 2026-07-16 i validar en navegador real el login Google, la sessio efimera i el desat contra Drive quan el client OAuth tingui autoritzats els origins de GitHub Pages i `localhost`.
 - Si es vol una validacio manual estricta del flux `Exporta JSON` / `Importa JSON` amb `IndexedDB` i selector natiu de fitxers, fer-la en navegador real. El flux de backup ara comparteix helpers interns i el codi esta cobert per build + unit + QA del harness, pero el picker natiu i l'asset store no son un objectiu fiable per a automatitzacio headless en aquesta base.
 
 ## Context

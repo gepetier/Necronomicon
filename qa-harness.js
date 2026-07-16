@@ -24,8 +24,10 @@ bootstrap().catch((error) => {
 });
 
 async function bootstrap() {
-  resetStorage(window.localStorage);
-  await resetAssetStore(window.indexedDB);
+  if (suite !== "persistence-read") {
+    resetStorage(window.localStorage);
+    await resetAssetStore(window.indexedDB);
+  }
   const frameLoaded = onceLoaded(iframe);
   iframe.src = `/index.html?qaRun=${Date.now()}`;
   await frameLoaded;
@@ -36,7 +38,11 @@ async function bootstrap() {
     ? await runUiSuite(context)
     : suite === "edit"
       ? await runEditSuite(context)
-      : await runFunctionalSuite(context);
+      : suite === "persistence-write"
+        ? await runPersistenceWriteSuite(context)
+        : suite === "persistence-read"
+          ? await runPersistenceReadSuite(context)
+          : await runFunctionalSuite(context);
 
   publish(result);
 }
@@ -109,7 +115,7 @@ function createContext(currentFrame) {
       }
       form.requestSubmit();
     },
-    async setFiles(selector, files) {
+    async setFiles(selector, files, options = {}) {
       const target = doc.querySelector(selector);
       if (!(target instanceof win.HTMLInputElement) || target.type !== "file") {
         throw new Error(`Input de fitxers no trobat: ${selector}`);
@@ -160,8 +166,12 @@ function createContext(currentFrame) {
         });
       }
 
+      target.dispatchEvent(new win.Event("input", { bubbles: true }));
       target.dispatchEvent(new win.Event("change", { bubbles: true }));
-      await delay(600);
+      const waitAfterMs = Number.isFinite(options.waitAfterMs) ? options.waitAfterMs : 600;
+      if (waitAfterMs > 0) {
+        await delay(waitAfterMs);
+      }
     },
     startDownloadCapture() {
       if (restoreDownloadCapture) {
@@ -327,7 +337,7 @@ async function runFunctionalSuite(context) {
   const searchSeed = glossaryBefore[0]?.querySelector("h3")?.textContent?.trim() || "";
   const searchTerm = searchSeed.slice(0, Math.min(5, searchSeed.length));
   context.type('input[name="glossarySearch"]', searchTerm);
-  await delay(80);
+  await delay(180);
   const glossaryAfter = context.qsa(".glossary-entry");
   const glossarySearchFocusName = context.doc.activeElement?.getAttribute?.("name") || "";
   const glossarySearchValue = context.doc.querySelector('input[name="glossarySearch"]')?.value || "";
@@ -335,7 +345,7 @@ async function runFunctionalSuite(context) {
     steps,
     glossaryBefore.length > 0
       && glossaryAfter.length > 0
-      && glossaryAfter.length <= glossaryBefore.length
+      && glossaryAfter.length < glossaryBefore.length
       && glossarySearchFocusName === "glossarySearch"
       && glossarySearchValue === searchTerm,
     "La cerca del glossari redueix o mante un subconjunt consistent",
@@ -349,7 +359,7 @@ async function runFunctionalSuite(context) {
   );
 
   context.type('input[name="glossarySearch"]', "religio");
-  await delay(80);
+  await delay(180);
   const accentInsensitiveResults = context.qsa(".glossary-entry h3").map((element) => element.textContent?.trim() || "");
   record(
     steps,
@@ -359,7 +369,7 @@ async function runFunctionalSuite(context) {
   );
 
   context.type('input[name="glossarySearch"]', "");
-  await delay(80);
+  await delay(180);
   context.click('input[data-glossary-session="judici-acantilado"]');
   await delay(80);
   const sessionResults = context.qsa(".glossary-entry h3").map((element) => element.textContent?.trim() || "");
@@ -728,7 +738,13 @@ async function runEditSuite(context) {
     content: "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><rect width='32' height='32' fill='red'/></svg>",
   }]);
   context.submit('form[data-form="quick-glossary"]');
-  await delay(220);
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const createdEntry = context.win.__NECRONOMICON_QA__?.state?.glossary?.find?.((entry) => entry.name === "Arxiu QA");
+    if (createdEntry?.imageAssets?.length === 1 && context.q("#quickGlossaryModal")?.hidden) {
+      break;
+    }
+    await delay(100);
+  }
   const quickCreatedContent = context.doc.querySelector('form[data-form="chronicle"] textarea[name="content"]')?.value || "";
   const quickCreatedEntry = context.win.__NECRONOMICON_QA__?.state?.glossary?.find?.((entry) => entry.name === "Arxiu QA");
   record(
@@ -918,14 +934,26 @@ async function runEditSuite(context) {
       controlFor: nativeGlossaryImageControl?.htmlFor || "",
     },
   );
+  nativeGlossaryImageInput?.dispatchEvent(new context.win.MouseEvent("click", { bubbles: true }));
+  await delay(40);
+  const glossaryPickerSurvivedNativeClick = nativeGlossaryImageInput?.isConnected === true
+    && context.doc.querySelector('input[data-glossary-image-picker]') === nativeGlossaryImageInput;
+  record(
+    steps,
+    glossaryPickerSurvivedNativeClick,
+    "El clic que obre el selector natiu no rerenderitza ni desconnecta l'input",
+    { glossaryPickerSurvivedNativeClick },
+  );
   const glossaryImageCountBeforeUpload = context.qsa(".glossary-editor-media-frame").length;
   const glossaryImageValueBeforeUpload = context.doc.querySelector('form[data-form="glossary"] textarea[name="imageAssets"]')?.value || "";
   await context.setFiles('form[data-form="glossary"] input[data-glossary-image-picker]', [{
     name: "apolion-qa.png",
     type: "image/png",
     url: "/__qa_upload_image",
-  }]);
-  for (let attempt = 0; attempt < 15; attempt += 1) {
+  }], { waitAfterMs: 0 });
+  const glossaryImageProcessingStatus = context.doc.querySelector("[data-glossary-image-status]")?.textContent || "";
+  const glossarySaveDisabledWhileProcessing = context.doc.querySelector('form[data-form="glossary"] button[type="submit"]')?.disabled === true;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
     const currentValue = context.doc.querySelector('form[data-form="glossary"] textarea[name="imageAssets"]')?.value || "";
     if (currentValue !== glossaryImageValueBeforeUpload) {
       break;
@@ -935,18 +963,27 @@ async function runEditSuite(context) {
   const glossaryImageCountAfterUpload = context.qsa(".glossary-editor-media-frame").length;
   const uploadedGlossaryImageValue = context.doc.querySelector('form[data-form="glossary"] textarea[name="imageAssets"]')?.value || "";
   const glossaryImageUploadStatus = context.doc.querySelector("[data-glossary-image-status]")?.textContent || "";
+  const glossaryUploadDebugText = context.doc.querySelector("[data-glossary-upload-debug-log]")?.textContent || "";
   record(
     steps,
-    glossaryImageCountAfterUpload >= 1
+    glossaryImageProcessingStatus.includes("Processant")
+      && glossarySaveDisabledWhileProcessing
+      && glossaryImageCountAfterUpload >= 1
       && uploadedGlossaryImageValue !== glossaryImageValueBeforeUpload
-      && uploadedGlossaryImageValue.includes("asset://"),
+      && uploadedGlossaryImageValue.includes("asset://")
+      && glossaryImageUploadStatus.includes("preparada")
+      && glossaryUploadDebugText.includes("event change")
+      && glossaryUploadDebugText.includes("IndexedDB correcte"),
     "El selector del glossari processa i previsualitza la imatge PNG seleccionada",
     {
       glossaryImageCountBeforeUpload,
       glossaryImageCountAfterUpload,
+      glossaryImageProcessingStatus,
+      glossarySaveDisabledWhileProcessing,
       glossaryImageValueBeforeUpload: glossaryImageValueBeforeUpload.slice(-80),
       uploadedGlossaryImageValue: uploadedGlossaryImageValue.slice(-80),
       glossaryImageUploadStatus,
+      glossaryUploadDebugText,
     },
   );
   context.type('form[data-form="glossary"] textarea[name="description"]', "Catedral");
@@ -1005,6 +1042,215 @@ async function runEditSuite(context) {
     viewport: `${window.innerWidth}x${window.innerHeight}`,
     steps,
   };
+}
+
+
+async function runPersistenceWriteSuite(context) {
+  const steps = [];
+  const quickName = "Arxiu persistent QA";
+  const quickId = "arxiu-persistent-qa";
+  const quickDescription = "Descripcio persistent creada des de croniques.";
+  const directName = "Entrada directa persistent QA";
+  const directId = "entrada-directa-persistent-qa";
+  const directDescription = "Descripcio persistent creada des del menu de glossari.";
+
+  context.click('[data-module-link="chronicles"]');
+  await delay(100);
+  context.qsa("[data-chronicle-id]")[0]?.click();
+  await delay(100);
+  context.click('[data-toggle-edit="chronicles"]');
+  await delay(100);
+  context.type('form[data-form="chronicle"] input[name="title"]', "Cronica persistent QA");
+  context.type('form[data-form="chronicle"] textarea[name="content"]', `La referencia és ${quickName}.`);
+  await delay(100);
+  context.selectText('form[data-form="chronicle"] textarea[name="content"]', quickName);
+  await delay(100);
+  context.click('#chroniclesModule [data-create-reference-entry]');
+  await delay(120);
+  context.type('form[data-form="quick-glossary"] input[name="quickGlossaryName"]', quickName);
+  context.type('form[data-form="quick-glossary"] textarea[name="quickGlossaryDescription"]', quickDescription);
+  await context.setFiles('form[data-form="quick-glossary"] input[name="quickGlossaryImage"]', [{
+    name: "arxiu-persistent-qa.png",
+    type: "image/png",
+    url: "/__qa_upload_image?fallback=1",
+  }]);
+  context.submit('form[data-form="quick-glossary"]');
+  let quickEntry = null;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    quickEntry = context.win.__NECRONOMICON_QA__?.state?.glossary?.find?.((entry) => entry.id === quickId) || null;
+    if (quickEntry?.imageAssets?.length === 1 && context.q("#quickGlossaryModal")?.hidden) {
+      break;
+    }
+    await delay(100);
+  }
+
+  quickEntry = quickEntry || context.win.__NECRONOMICON_QA__?.state?.glossary?.find?.((entry) => entry.id === quickId);
+  const chronicleDraft = context.q('form[data-form="chronicle"] textarea[name="content"]')?.value || "";
+  record(
+    steps,
+    quickEntry?.description === quickDescription
+      && quickEntry?.imageAssets?.length === 1
+      && chronicleDraft.includes(`[[${quickId}|${quickName}]]`),
+    "Croniques > Nova entrada crea una entrada amb descripcio, imatge i referencia",
+    {
+      quickId: quickEntry?.id || "",
+      imageAssets: quickEntry?.imageAssets?.length || 0,
+      chronicleDraft,
+      quickStatus: context.q("[data-quick-glossary-status]")?.textContent || "",
+      quickBusy: context.q('form[data-form="quick-glossary"]')?.hasAttribute("aria-busy") || false,
+    },
+  );
+
+  context.submit('form[data-form="chronicle"]');
+  await delay(250);
+  const reference = context.q(`[data-reference-jump="${quickId}"]`);
+  reference?.classList.add("tooltip-capture-open");
+  await delay(250);
+  const tooltip = reference?.querySelector(".glossary-reference-tooltip");
+  const tooltipImage = tooltip?.querySelector("img");
+  await waitForLoadedImage(tooltipImage, 5000);
+  const tooltipOpacity = tooltip ? context.win.getComputedStyle(tooltip).opacity : "";
+  const tooltipPageOverflow = reference?.closest(".book-page")
+    ? context.win.getComputedStyle(reference.closest(".book-page")).overflow
+    : "";
+  record(
+    steps,
+    Boolean(reference)
+      && (tooltip?.textContent || "").includes(quickDescription)
+      && isLoadedAssetImage(tooltipImage)
+      && tooltipOpacity === "1"
+      && tooltipPageOverflow === "visible",
+    "La referencia desada activa el tooltip amb descripcio i imatge carregada",
+    { tooltipOpacity, tooltipText: tooltip?.textContent?.trim() || "", tooltipSrc: tooltipImage?.src || "" },
+  );
+
+  context.click('[data-module-link="glossary"]');
+  await delay(120);
+  context.click("[data-create-glossary]");
+  await delay(120);
+  context.type('form[data-form="glossary"] input[name="name"]', directName);
+  context.type('form[data-form="glossary"] textarea[name="description"]', directDescription);
+  await context.setFiles('form[data-form="glossary"] input[data-glossary-image-picker]', [{
+    name: "entrada-directa-persistent-qa.png",
+    type: "image/png",
+    url: "/__qa_upload_image",
+  }]);
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const imageAssetsValue = context.q('form[data-form="glossary"] textarea[name="imageAssets"]')?.value || "";
+    if (imageAssetsValue.includes("asset://")) {
+      break;
+    }
+    await delay(100);
+  }
+  context.submit('form[data-form="glossary"]');
+  await delay(300);
+
+  const directEntry = context.win.__NECRONOMICON_QA__?.state?.glossary?.find?.((entry) => entry.name === directName);
+  const directEntryId = directEntry?.id || directId;
+  const directDetail = context.q(`[data-glossary-detail="${directEntryId}"]`);
+  const directImage = directDetail?.querySelector("img");
+  directImage?.scrollIntoView({ block: "center" });
+  await waitForLoadedImage(directImage, 5000);
+  record(
+    steps,
+    directEntry?.description === directDescription
+      && directEntry?.imageAssets?.length === 1
+      && (directDetail?.querySelector(".glossary-detail-body")?.textContent || "").includes(directDescription)
+      && isLoadedAssetImage(directImage),
+    "Glossari > Nova entrada desa descripcio activa i imatge carregada",
+    { directId: directEntry?.id || "", imageAssets: directEntry?.imageAssets?.length || 0, imageSrc: directImage?.src || "" },
+  );
+
+  return makeSuiteResult(context, steps);
+}
+
+async function runPersistenceReadSuite(context) {
+  const steps = [];
+  const quickId = "arxiu-persistent-qa";
+  const quickDescription = "Descripcio persistent creada des de croniques.";
+  const directId = "entrada-directa-persistent-qa";
+  const directDescription = "Descripcio persistent creada des del menu de glossari.";
+  const state = context.win.__NECRONOMICON_QA__?.state;
+
+  const quickEntry = state?.glossary?.find?.((entry) => entry.id === quickId);
+  const directEntry = state?.glossary?.find?.((entry) => entry.name === "Entrada directa persistent QA");
+  const savedChronicle = state?.chronicles?.find?.((entry) => entry.title === "Cronica persistent QA");
+  record(
+    steps,
+    quickEntry?.description === quickDescription
+      && directEntry?.description === directDescription
+      && savedChronicle?.content?.includes?.(`[[${quickId}|Arxiu persistent QA]]`),
+    "Despres de reiniciar Chrome, les dues entrades i la referencia continuen al model",
+    { quickFound: Boolean(quickEntry), directFound: Boolean(directEntry), chronicleFound: Boolean(savedChronicle) },
+  );
+
+  context.click('[data-module-link="glossary"]');
+  await delay(120);
+  const directEntryId = directEntry?.id || directId;
+  context.q(`[data-glossary-id="${directEntryId}"]`)?.click();
+  await delay(180);
+  const directDetail = context.q(`[data-glossary-detail="${directEntryId}"]`);
+  const directImage = directDetail?.querySelector("img");
+  directImage?.scrollIntoView({ block: "center" });
+  await waitForLoadedImage(directImage, 5000);
+  record(
+    steps,
+    (directDetail?.querySelector(".glossary-detail-body")?.textContent || "").includes(directDescription)
+      && isLoadedAssetImage(directImage),
+    "La fitxa directa conserva descripcio visible i imatge d'IndexedDB despres de netejar cache",
+    { imageSrc: directImage?.src || "", description: directDetail?.querySelector(".glossary-detail-body")?.textContent?.trim() || "" },
+  );
+
+  context.click('[data-module-link="chronicles"]');
+  await delay(120);
+  if (savedChronicle?.id) {
+    context.q(`[data-chronicle-id="${savedChronicle.id}"]`)?.click();
+  }
+  await delay(180);
+  const reference = context.q(`[data-reference-jump="${quickId}"]`);
+  reference?.classList.add("tooltip-capture-open");
+  await delay(220);
+  const tooltip = reference?.querySelector(".glossary-reference-tooltip");
+  const tooltipImage = tooltip?.querySelector("img");
+  await waitForLoadedImage(tooltipImage, 5000);
+  const tooltipOpacity = tooltip ? context.win.getComputedStyle(tooltip).opacity : "";
+  record(
+    steps,
+    Boolean(reference)
+      && (tooltip?.textContent || "").includes(quickDescription)
+      && isLoadedAssetImage(tooltipImage),
+    "El tooltip de la referencia persisteix amb descripcio i imatge despres del reinici",
+    { tooltipOpacity, tooltipSrc: tooltipImage?.src || "", tooltipText: tooltip?.textContent?.trim() || "" },
+  );
+
+  return makeSuiteResult(context, steps);
+}
+
+function makeSuiteResult(context, steps) {
+  return {
+    ok: steps.every((step) => step.ok),
+    suite: context.suite,
+    mode: context.mode,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    steps,
+  };
+}
+
+function isLoadedAssetImage(image) {
+  return image?.tagName === "IMG"
+    && (image.src.startsWith("blob:") || image.src.startsWith("data:image/"))
+    && image.complete
+    && image.naturalWidth > 0;
+}
+
+async function waitForLoadedImage(image, timeoutMs = 1600) {
+  if (image?.tagName !== "IMG") {
+    return;
+  }
+  const startedAt = Date.now();
+  while ((!image.complete || image.naturalWidth <= 0) && Date.now() - startedAt < timeoutMs) {
+    await delay(80);
+  }
 }
 
 function readColumnCount(context, element) {

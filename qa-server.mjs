@@ -31,7 +31,7 @@ createServer((request, response) => {
       "Cache-Control": "no-store",
       "Content-Type": "image/png",
     });
-    if (qaImagePath && existsSync(qaImagePath)) {
+    if (!requestUrl.searchParams.has("fallback") && qaImagePath && existsSync(qaImagePath)) {
       createReadStream(qaImagePath).pipe(response);
     } else {
       response.end(FALLBACK_PNG);

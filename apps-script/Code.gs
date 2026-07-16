@@ -5,7 +5,11 @@
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
-    const BACKEND_VERSION = "2026-07-15-authorization-atomic-revisions";
+    const BACKEND_VERSION = "2026-07-16-queued-sync-bounded-backups";
+    const BACKUP_EVERY_REVISIONS = 20;
+    const MAX_BACKUP_FILES = 40;
+    const SESSION_TTL_SECONDS = 3600;
+    const SESSION_CLAIM_TTL_SECONDS = 60;
 
     const DEFAULT_ACCESS = {
       roles: {
@@ -60,7 +64,10 @@
 
     function handleRequest(request) {
       try {
-        const user = verifyGoogleToken(request.idToken || "");
+        if (request.action === "createSession") return createServerSession(request);
+        if (request.action === "claimSession") return claimServerSession(request);
+
+        const user = resolveRequestUser(request);
         if (!user.email) {
           throw new Error("Usuari Google no validat.");
         }
@@ -95,6 +102,7 @@
               user.email,
               getCampaignRevision(current),
               request.operationId,
+              { forceBackup: true },
             );
             const authorized = createAuthorizedCampaignView(mergedCampaign, user);
             return ok({
@@ -250,6 +258,32 @@
       };
     }
 
+    function createServerSession(request) {
+      const user = verifyGoogleToken(request.idToken || "");
+      const sessionToken = Utilities.getUuid();
+      const cache = CacheService.getScriptCache();
+      cache.put(`session:${sessionToken}`, JSON.stringify(user), SESSION_TTL_SECONDS);
+      cache.put(`session-claim:${String(request.operationId || "")}`, sessionToken, SESSION_CLAIM_TTL_SECONDS);
+      return ok({ operationId: String(request.operationId || "") });
+    }
+
+    function claimServerSession(request) {
+      const cache = CacheService.getScriptCache();
+      const claimKey = `session-claim:${String(request.operationId || "")}`;
+      const sessionToken = cache.get(claimKey) || "";
+      if (!sessionToken) throw new Error("La sessio segura no esta preparada.");
+      cache.remove(claimKey);
+      return ok({ sessionToken, expiresIn: SESSION_TTL_SECONDS });
+    }
+
+    function resolveRequestUser(request) {
+      const sessionToken = String(request.sessionToken || "");
+      if (!sessionToken) return verifyGoogleToken(request.idToken || "");
+      const cached = CacheService.getScriptCache().get(`session:${sessionToken}`);
+      if (!cached) throw new Error("La sessio ha caducat. Torna a iniciar sessio.");
+      return JSON.parse(cached);
+    }
+
     function verifyGoogleToken(idToken) {
       if (!idToken) {
         throw new Error("Falta token de Google.");
@@ -323,11 +357,14 @@
       }
     }
 
-    function persistCampaignUnlocked(campaign, actorEmail, previousRevision, operationId) {
+    function persistCampaignUnlocked(campaign, actorEmail, previousRevision, operationId, options) {
       const normalized = normalizeCampaign(campaign);
       stampServerWriteMetadata(normalized, actorEmail, previousRevision, operationId);
       campaign.serverSync = normalized.serverSync;
-      backupCampaign(actorEmail);
+      const revision = Math.max(0, Number(previousRevision) || 0);
+      if ((options && options.forceBackup) || revision % BACKUP_EVERY_REVISIONS === 0) {
+        backupCampaign(actorEmail);
+      }
       return getDriveFileInfo(writeCampaignFile(normalized));
     }
 
@@ -795,6 +832,24 @@
         String(content || ""),
         MimeType.PLAIN_TEXT,
       );
+      pruneCampaignBackups();
+    }
+
+    function pruneCampaignBackups() {
+      const folder = getCampaignFolder();
+      if (!folder || typeof folder.getFiles !== "function") return;
+      const files = folder.getFiles();
+      const backups = [];
+      while (files.hasNext()) {
+        const file = files.next();
+        if (String(file.getName ? file.getName() : "").indexOf(CONFIG.BACKUP_PREFIX) !== 0) continue;
+        const updatedAt = file.getLastUpdated ? file.getLastUpdated().getTime() : 0;
+        backups.push({ file, updatedAt });
+      }
+      backups
+        .sort((left, right) => right.updatedAt - left.updatedAt)
+        .slice(MAX_BACKUP_FILES)
+        .forEach((entry) => entry.file.setTrashed(true));
     }
 
     function getCampaignFolder() {
@@ -835,6 +890,7 @@
         driveFolderId: extractDriveId(CONFIG.DRIVE_FOLDER_ID),
         atomicCampaignWrites: true,
         campaignRevisions: true,
+        ephemeralServerSessions: true,
         preserveExistingCharacterPortrait: true,
         preserveExistingImageAssets: true,
       };

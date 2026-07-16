@@ -20,6 +20,7 @@
 - `npm.cmd run qa:functional`: functional QA only.
 - `npm.cmd run qa:ui`: UI/layout QA only.
 - `npm.cmd run qa:edit`: edit-flow QA only.
+- `npm.cmd run qa:persistence`: create glossary entries through both UI paths, restart Chrome with a persistent profile after deleting browser cache folders, and verify Local Storage/IndexedDB persistence.
 
 ## Working conventions
 - Prefer minimal, targeted edits. Preserve the existing visual language unless a redesign is requested.
@@ -99,12 +100,18 @@
 - Google ID credentials are session-scoped in the client; legacy persistent credentials are removed from `localStorage`.
 - Bundled photographic and painted assets use JPEG while PNG is reserved for transparency/UI; `Glossary/images/` remains the unbundled source archive, and stored packaged glossary URLs are repaired to the current seed asset during sanitization.
 - Role changes must stay covered both by client permission-unit tests and by Apps Script integration tests with virtual authenticated users for `superadmin`, `gm`, `player`, and unassigned access.
+- Cloud saves use a target-aware queue so rapid edits to different records are retained; a queued full-campaign publish supersedes earlier item saves.
+- Google ID credentials are exchanged for short-lived opaque Apps Script session tokens through a one-time claim; subsequent JSONP URLs must never carry the Google credential.
+- Apps Script item saves create a Drive backup every 20 server revisions, full publications always back up, and only the 40 newest campaign backups are retained.
+- The persistence QA suite uses two independent Chrome processes with one temporary profile, removes only cache folders between runs, and verifies glossary descriptions, IndexedDB images, chronicle references, and tooltip content after restart.
+- Glossary image selection must keep a visible processing/success/error state across rerenders and prevent saving or closing the editor flow until the selected image is ready; quick glossary creation is atomic when it includes an image.
+- Glossary file inputs must be excluded from the generic glossary-card click handler so the native picker input stays connected; upload diagnostics persist a bounded local event log and expose copy/clear controls in the editor.
 
 ## Pending
 - Before deploying sync changes, back up the canonical Drive `campaign.json`; never seed or replace it from `data.js`/localStorage without an explicit reviewed import or merge.
 - Clean up or commit the pending visual artifacts and code changes once the current restyle is considered stable.
 - Validate the Google Apps Script deployment from a real browser session after the OAuth client origins and the bootstrap DM email are confirmed.
-- Deploy the 2026-07-15 Apps Script revision before relying on filtered reads, atomic writes, revision conflicts, and operation-id confirmation in production.
+- Deploy the 2026-07-16 Apps Script revision before relying on ephemeral server sessions, queued sync confirmation, and bounded/throttled Drive backups in production.
 
 ## Next steps
 - On next session start, read this file before inspecting code.
@@ -189,6 +196,7 @@
 - 2026-06-26: made chronicle edit previews show the same auto-linked references as read mode and added a quick glossary-entry modal from selected-text suggestions, with edit/UI QA plus desktop/mobile modal captures passing.
 - 2026-07-07: fixed Drive persistence routing for multi-campaign item saves by sending the active `campaignId`, updating Apps Script upserts against that campaign instead of the shared `activeCampaignId`, aligning the Apps Script OAuth client id with the frontend, preventing campaign focus changes from publishing Drive state, and surfacing unverified no-CORS saves distinctly.
 - 2026-07-07: hardened glossary Drive sync by sending compact confirmed JSONP updates when image assets are unchanged, preserving existing remote images in Apps Script, and resolving pending cloud targets from current state before upload.
+- 2026-07-16: fixed chronicle reference tooltips being clipped by book-page overflow, replaced the tooltip capture with a real inline-reference scenario, and added regression coverage for active-page overflow.
 - 2026-07-07: gated compact glossary Drive saves behind an Apps Script capability flag so older deployed backends fall back to full-entry saves instead of using the new image-preserving merge path.
 - 2026-07-07: added Drive file diagnostics to Apps Script responses plus `serverSync.savedAt/savedBy` stamps inside `campaign.json` so real backend writes can be verified against the exact Drive file being updated.
 - 2026-07-07: changed manual Drive publish to flush any pending item-level save first, and added compact character saves that preserve existing remote portraits when only text/stat fields change.
@@ -199,8 +207,15 @@
 - 2026-07-15: confirmed that Drive `campaign.json` is always the sole canonical data source; local seed and browser storage must never supersede it automatically.
 - 2026-07-15: expanded Apps Script tests with virtual Google users covering the complete server-side role matrix, including permission visibility, campaign management, content publication, assigned edits, cross-campaign denial, and unassigned denial; all 29 unit/integration tests pass.
 - 2026-07-15: fixed glossary image uploads that could stall during PNG optimization, deduplicated file input/change handling, added visible processing feedback, and materialized local image assets into Drive payloads; validated with the reported 1254x1254 PNG.
+- 2026-07-16: completed a security/performance/UI hardening pass: queued Drive saves, ephemeral Apps Script sessions, safe media-source validation, quota-safe local persistence, bounded backups, accessible nested dialog focus, scoped asset hydration, mobile glossary scrolling fixes, dependency audit cleanup, and a two-process Chrome persistence test covering both glossary creation paths plus reference tooltips.
+
+- 2026-07-16: simplified the Chronicles landing by removing the campaign hero and index heading, moved the create action to a final card in the chronicle grid, removed the sidebar brand/office-mode block, kept Office mode in Options, added dedicated landing captures, and confirmed build plus desktop/mobile functional/UI QA pass.
 
 ## Current known state
 - Dev server normally runs through Vite on port `5173`.
 - QA artifacts are written to `qa-results/`.
 - The project already has `node_modules/` installed.
+
+- 2026-07-16: fixed glossary image uploads so large selected files show durable progress and success/error feedback, block premature saves, preview before save, and persist after a cache-cleared browser restart; applied the same guarded feedback to quick glossary creation.
+
+- 2026-07-16: traced the native glossary picker failure to the generic [data-glossary-id] click rerender disconnecting the file input, fixed the click/event ordering, and added a persistent visible execution log from picker click through IndexedDB completion.

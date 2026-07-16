@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const rootDir = process.cwd();
@@ -12,6 +12,7 @@ const requestedTarget = process.argv[2] || "all";
 const scenarios = getScenarios(requestedTarget);
 const chromeTimeoutMs = Number(process.env.QA_CHROME_TIMEOUT_MS || "20000");
 const chromeVirtualTimeBudgetMs = Number(process.env.QA_CHROME_VIRTUAL_TIME_BUDGET_MS || "12000");
+const persistenceProfileDir = resolve(resultsDir, "persistence-profile");
 
 async function main() {
   if (!chromeBinary) {
@@ -25,10 +26,22 @@ async function main() {
     await waitForServer();
     const results = [];
 
+    if (requestedTarget === "persistence") {
+      await rm(persistenceProfileDir, { recursive: true, force: true });
+    }
+
     for (const scenario of scenarios) {
-      const result = await runScenario(scenario);
+      if (scenario.suite === "persistence-read") {
+        await clearBrowserCache(persistenceProfileDir);
+      }
+      const result = await runScenario(scenario, {
+        profileDir: scenario.suite.startsWith("persistence-") ? persistenceProfileDir : "",
+      });
       results.push(result);
       printScenarioResult(result);
+      if (scenario.suite === "persistence-write") {
+        await delay(1200);
+      }
     }
 
     const summary = {
@@ -71,6 +84,13 @@ function getScenarios(target) {
 
   if (target === "all") {
     return all;
+  }
+
+  if (target === "persistence") {
+    return [
+      { suite: "persistence-write", mode: "desktop", width: 1440, height: 1200 },
+      { suite: "persistence-read", mode: "desktop", width: 1440, height: 1200 },
+    ];
   }
 
   if (target === "smoke") {
@@ -134,15 +154,21 @@ async function waitForServer() {
   throw new Error(`El servidor de QA no respon a ${targetUrl}`);
 }
 
-async function runScenario({ suite, mode, width, height }) {
+async function runScenario({ suite, mode, width, height }, options = {}) {
   const artifactPath = resolve(resultsDir, `${suite}-${mode}.html`);
   const url = `http://${host}:${port}/qa-harness.html?suite=${suite}&mode=${mode}`;
+  const profileArgs = options.profileDir
+    ? ["--user-data-dir=" + options.profileDir, "--no-first-run", "--no-default-browser-check"]
+    : [];
   const dom = await runChrome([
     "--headless=new",
     "--disable-gpu",
+    "--disable-background-mode",
+    "--disable-component-update",
     `--virtual-time-budget=${chromeVirtualTimeBudgetMs}`,
     `--window-size=${width},${height}`,
     "--dump-dom",
+    ...profileArgs,
     url,
   ]);
 
@@ -155,6 +181,17 @@ async function runScenario({ suite, mode, width, height }) {
     suite,
     mode,
   };
+}
+
+async function clearBrowserCache(profileDir) {
+  const cachePaths = [
+    resolve(profileDir, "Default", "Cache"),
+    resolve(profileDir, "Default", "Code Cache"),
+    resolve(profileDir, "Default", "GPUCache"),
+    resolve(profileDir, "ShaderCache"),
+    resolve(profileDir, "GrShaderCache"),
+  ];
+  await Promise.all(cachePaths.map((cachePath) => rm(cachePath, { recursive: true, force: true })));
 }
 
 function runChrome(args) {

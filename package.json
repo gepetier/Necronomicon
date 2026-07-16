@@ -13,6 +13,7 @@
     "qa:functional": "node qa-runner.mjs functional",
     "qa:ui": "node qa-runner.mjs ui",
     "qa:edit": "node qa-runner.mjs edit",
+    "qa:persistence": "node qa-runner.mjs persistence",
     "capture": "node capture-runner.mjs",
     "capture:changed": "node capture-runner.mjs changed",
     "capture:smoke": "node capture-runner.mjs smoke"

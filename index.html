@@ -20,24 +20,7 @@
           <span aria-hidden="true"></span>
         </button>
         <div class="sidebar-scroll">
-          <div class="sidebar-top">
-            <div class="sidebar-brand">
-              <p class="eyebrow">Campanya D&amp;D</p>
-              <h1>Compendi de Campanya</h1>
-              <p class="sidebar-copy">
-                Pergamins, cròniques i memòria viva dels personatges.
-              </p>
-            </div>
-            <button
-              type="button"
-              class="sidebar-office-toggle"
-              data-toggle-office-mode
-              aria-pressed="false"
-            >
-              Mode oficina
-            </button>
-            <div class="sidebar-campaign-slot" data-sidebar-campaign-switcher hidden></div>
-          </div>
+          <div class="sidebar-campaign-slot" data-sidebar-campaign-switcher hidden></div>
 
           <nav class="module-nav" aria-label="Mòduls principals" role="tablist">
             <button
@@ -120,8 +103,8 @@
         <div class="auth-sigil-login">
           <div class="auth-wait-ring" aria-hidden="true"></div>
           <div id="googleSignInButton" class="google-signin-button" aria-hidden="true"></div>
-          <button type="button" class="auth-sigil-button" data-auth-logo-login aria-label="Obre el segell"></button>
-          <p class="auth-status" data-auth-status></p>
+          <button type="button" class="auth-sigil-button" data-auth-logo-login aria-label="Obre el segell" aria-describedby="authStatus"></button>
+          <p id="authStatus" class="auth-status" data-auth-status role="status" aria-live="polite"></p>
         </div>
         <div class="auth-campaign-select" data-auth-campaign-select hidden></div>
       </div>
@@ -130,7 +113,7 @@
     <input id="backupImportPicker" type="file" accept=".json,application/json" hidden />
     <div id="quickGlossaryModal" class="quick-glossary-modal" hidden>
       <div class="quick-glossary-backdrop" data-close-quick-glossary></div>
-      <div class="quick-glossary-dialog" role="dialog" aria-modal="true" aria-labelledby="quickGlossaryTitle">
+      <div class="quick-glossary-dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="quickGlossaryTitle">
         <form data-form="quick-glossary" class="quick-glossary-form">
           <div class="quick-glossary-head">
             <div>
@@ -148,6 +131,7 @@
             <input name="quickGlossaryImage" type="file" accept="image/*" />
             <small class="field-help">La imatge es comprimeix abans de guardar-se.</small>
           </label>
+          <p class="glossary-image-picker-status quick-glossary-upload-status" data-quick-glossary-status role="status" aria-live="polite" hidden></p>
           <label class="field">
             <span>Categoria</span>
             <select name="quickGlossaryCategory">
@@ -181,6 +165,7 @@
         role="dialog"
         aria-modal="true"
         aria-label="Visor d'imatge"
+        tabindex="-1"
       >
         <button
           type="button"

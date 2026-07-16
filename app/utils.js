@@ -1,4 +1,5 @@
 import { isAssetToken } from "./assets.js";
+import { sanitizeMediaSource } from "./media-source.js";
 
 export function escapeHtml(value) {
   return String(value ?? "")
@@ -264,10 +265,11 @@ export function renderEditorCard(title, description, content) {
   `;
 }
 
-export function renderEditorActions(primaryLabel, secondaryButtons = "") {
+export function renderEditorActions(primaryLabel, secondaryButtons = "", options = {}) {
+  const disabled = options.disabled === true;
   return `
     <div class="editor-actions">
-      <button type="submit">${escapeHtml(primaryLabel)}</button>
+      <button type="submit" ${disabled ? 'disabled aria-disabled="true"' : ""}>${escapeHtml(primaryLabel)}</button>
       ${secondaryButtons}
     </div>
   `;
@@ -556,7 +558,18 @@ function renderAssetAttribute(attribute, source) {
     return `data-asset-${attribute}="${escapeAttribute(source)}"`;
   }
 
-  return `${attribute}="${escapeAttribute(source)}"`;
+  const kind = attribute === "href" ? "file" : inferRenderedMediaKind(source);
+  const safeSource = sanitizeMediaSource(source, kind);
+  return safeSource
+    ? `${attribute}="${escapeAttribute(safeSource)}"`
+    : 'data-invalid-media-source="true"';
+}
+
+function inferRenderedMediaKind(source) {
+  const value = String(source || "").toLowerCase();
+  if (/\.(?:mp3|m4a|ogg|wav)(?:[?#]|$)/.test(value) || value.startsWith("data:audio/")) return "audio";
+  if (/\.(?:mp4|mov|ogv|webm)(?:[?#]|$)/.test(value) || value.startsWith("data:video/")) return "video";
+  return "image";
 }
 
 function renderAssetLabel(source, fallback) {

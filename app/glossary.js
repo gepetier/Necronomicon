@@ -28,6 +28,7 @@ export function renderGlossaryModule({
   canEditGlossaryEntry = () => true,
   canCreateGlossaryEntry = true,
   canDeleteGlossaryEntry = true,
+  getGlossaryImageUploadState = () => null,
 }) {
   const entries = getFilteredGlossaryEntries();
   const current = entries.find((entry) => entry.id === state.ui.selectedGlossaryId) || entries[0] || null;
@@ -112,7 +113,7 @@ export function renderGlossaryModule({
 
         <div class="glossary-detail-wrap">
           ${current ? renderGlossaryDetail(current, state, findCharacter, returnLabel) : renderGlossaryEmptyDetail()}
-          ${isEditingCurrent ? renderGlossaryEditor(current, state) : ""}
+          ${isEditingCurrent ? renderGlossaryEditor(current, state, getGlossaryImageUploadState(current.id)) : ""}
           ${renderPlayerNotesPanel()}
         </div>
       </div>
@@ -458,8 +459,9 @@ function renderGlossaryReturnChip(targetLabel) {
   `;
 }
 
-function renderGlossaryEditor(entry, state) {
+function renderGlossaryEditor(entry, state, imageUploadState = null) {
   const draft = state.ui.drafts.glossary[entry?.id || ""] || {};
+  const isImageUploadProcessing = imageUploadState?.status === "processing";
   const selectedCharacters = new Set(readDraftArray(draft.characterIds, entry?.characterIds || []));
   const selectedChronicles = new Set(readDraftArray(draft.chronicleIds, entry?.chronicleIds || []));
   const selectedLastSeenChronicleId = readDraftValue(
@@ -539,7 +541,7 @@ function renderGlossaryEditor(entry, state) {
                 </label>
                 <label class="field span-2">
                   <span>Imatges</span>
-                  ${renderGlossaryImagePicker(entry, draft)}
+                  ${renderGlossaryImagePicker(entry, draft, imageUploadState)}
                   <textarea name="imageAssets" hidden>${escapeHtml(readDraftValue(draft.imageAssets, (entry?.imageAssets || []).join("\n")))}</textarea>
                   <small class="field-help">Selecciona una o mes imatges des del teu equip. Es previsualitzen abans de desar l'entrada i se sincronitzen amb Drive.</small>
                 </label>
@@ -580,8 +582,9 @@ function renderGlossaryEditor(entry, state) {
           )}
         </div>
         ${renderEditorActions(
-          "Desa entrada",
+          isImageUploadProcessing ? "Preparant imatge..." : "Desa entrada",
           '<button type="button" class="secondary" data-discard-glossary-edit>Descarta canvis</button>',
+          { disabled: isImageUploadProcessing },
         )}
       </form>
     </section>
@@ -600,13 +603,18 @@ function formatChronicleLinks(ids, state) {
     .join(", ") || "Sense lligams";
 }
 
-function renderGlossaryImagePicker(entry, draft) {
+function renderGlossaryImagePicker(entry, draft, uploadState = null) {
   const images = readDraftLines(draft.imageAssets, entry?.imageAssets || []);
   const inputId = `glossary-image-${entry?.id || "new"}`;
+  const uploadStatus = ["processing", "success", "error"].includes(uploadState?.status)
+    ? uploadState.status
+    : "";
+  const uploadMessage = String(uploadState?.message || "");
+  const isProcessing = uploadStatus === "processing";
 
   return `
     <div class="glossary-image-picker">
-      <label class="secondary glossary-image-picker-button" for="${escapeAttribute(inputId)}" data-glossary-image-button>
+      <label class="secondary glossary-image-picker-button ${isProcessing ? "is-processing" : ""}" for="${escapeAttribute(inputId)}" data-glossary-image-button ${isProcessing ? 'aria-disabled="true"' : ""}>
         <input
           id="${escapeAttribute(inputId)}"
           type="file"
@@ -615,11 +623,23 @@ function renderGlossaryImagePicker(entry, draft) {
           data-glossary-image-picker
           data-glossary-id="${escapeAttribute(entry?.id || "")}"
           class="glossary-image-picker-input"
+          ${isProcessing ? "disabled" : ""}
         />
         <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
-        <span data-glossary-image-button-label>Afegeix imatge</span>
+        <span data-glossary-image-button-label>${isProcessing ? "Processant imatge..." : "Afegeix imatge"}</span>
       </label>
-      <p class="glossary-image-picker-status" data-glossary-image-status aria-live="polite" hidden></p>
+      <p class="glossary-image-picker-status ${uploadStatus}" data-glossary-image-status role="${uploadStatus === "error" ? "alert" : "status"}" aria-live="polite" ${uploadMessage ? "" : "hidden"}>${escapeHtml(uploadMessage)}</p>
+      <details class="glossary-upload-debug" open>
+        <summary>
+          <span>Registre d'execucio</span>
+          <span class="badge" data-glossary-upload-debug-count>0</span>
+        </summary>
+        <div class="glossary-upload-debug-actions">
+          <button type="button" class="secondary" data-copy-glossary-upload-debug data-glossary-upload-debug-id="${escapeAttribute(entry?.id || "")}">Copia</button>
+          <button type="button" class="secondary" data-clear-glossary-upload-debug data-glossary-upload-debug-id="${escapeAttribute(entry?.id || "")}">Neteja</button>
+        </div>
+        <div class="glossary-upload-debug-log" data-glossary-upload-debug-log="${escapeAttribute(entry?.id || "")}" aria-live="polite"></div>
+      </details>
       ${images.length
         ? `
           <div class="glossary-editor-media-grid">

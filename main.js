@@ -93,6 +93,8 @@ import {
   saveGlossaryEntryToCloud,
   storeCredential,
 } from "./app/cloud-sync.js";
+import { createCloudSaveQueue } from "./app/cloud-save-queue.js";
+import { activateDialogFocus, deactivateDialogFocus, setAuthPageInert, trapDialogFocus } from "./app/dialog-focus.js";
 
 const SYNC_CLIENT_VERSION = "2026-07-07-character-sync-diagnostics";
 
@@ -103,10 +105,17 @@ let persistStateTimer = null;
 let glossarySearchTimer = null;
 let chronicleIndexSearchTimer = null;
 let cloudSaveTimer = null;
-let pendingCloudSaveTarget = null;
+let cloudSaveRetryTimer = null;
+let cloudSaveInFlight = false;
+const pendingCloudSaveTargets = createCloudSaveQueue();
 
 const referenceSuggestionTimers = new WeakMap();
-const glossaryImageInputsProcessing = new WeakSet();
+const glossaryImageUploadsInFlight = new Set();
+const glossaryImageUploadStates = new Map();
+const GLOSSARY_UPLOAD_DEBUG_STORAGE_KEY = "necronomicon-glossary-upload-debug-v1";
+const GLOSSARY_UPLOAD_DEBUG_LIMIT = 80;
+let glossaryUploadDebugEntries = loadGlossaryUploadDebugEntries();
+let pendingGlossaryFileDialog = null;
 const richPreviewTimers = new WeakMap();
 
 const saveNoticeEl = document.querySelector("#saveNotice");
@@ -250,6 +259,7 @@ function initialize() {
   document.addEventListener("submit", handleSubmit);
   document.addEventListener("input", handleInput);
   document.addEventListener("change", handleInput);
+  window.addEventListener("focus", handleGlossaryFileDialogFocusReturn);
   window.addEventListener("pagehide", flushPendingPersist);
   sidebarToggle?.addEventListener("pointerenter", openSidebarPreview);
   sidebarToggle?.addEventListener("focus", openSidebarPreview);
@@ -383,7 +393,9 @@ function handleClick(event) {
   }
 
   if (event.target.closest("[data-close-quick-glossary]")) {
-    closeQuickGlossaryModal();
+    if (!isQuickGlossaryUploadBusy()) {
+      closeQuickGlossaryModal();
+    }
     return;
   }
 
@@ -541,6 +553,24 @@ function handleClick(event) {
       return;
     }
     deleteGlossaryEntryById(glossaryId);
+    return;
+  }
+
+  const glossaryUploadDebugClear = event.target.closest("[data-clear-glossary-upload-debug]");
+  if (glossaryUploadDebugClear) {
+    clearGlossaryUploadDebugEntries(glossaryUploadDebugClear.dataset.glossaryUploadDebugId || "");
+    return;
+  }
+
+  const glossaryUploadDebugCopy = event.target.closest("[data-copy-glossary-upload-debug]");
+  if (glossaryUploadDebugCopy) {
+    void copyGlossaryUploadDebugEntries(glossaryUploadDebugCopy.dataset.glossaryUploadDebugId || "");
+    return;
+  }
+
+  const glossaryImagePickerClick = event.target.closest("[data-glossary-image-picker]");
+  if (glossaryImagePickerClick instanceof HTMLInputElement) {
+    registerGlossaryFileDialogOpen(glossaryImagePickerClick);
     return;
   }
 
@@ -754,9 +784,13 @@ function handleKeydown(event) {
     return;
   }
 
+  if (trapDialogFocus(event)) return;
+
   if (event.key === "Escape") {
     if (quickGlossaryModal && !quickGlossaryModal.hidden) {
-      closeQuickGlossaryModal();
+      if (!isQuickGlossaryUploadBusy()) {
+        closeQuickGlossaryModal();
+      }
       return;
     }
     closeSavageConceptTooltips();
@@ -988,7 +1022,11 @@ function handleInput(event) {
   }
 
   if (event.target instanceof HTMLInputElement && event.target.dataset.glossaryImagePicker !== undefined) {
-    void handleGlossaryImageSelection(event.target);
+    logGlossaryImageNativeEvent(event.target, event.type);
+    if (event.type === "change") {
+      pendingGlossaryFileDialog = null;
+      void handleGlossaryImageSelection(event.target);
+    }
     return;
   }
 
@@ -1060,12 +1098,19 @@ function handleSubmit(event) {
   }
 
   if (form.dataset.form === "glossary") {
-    if (!canEditGlossaryEntry(readString(formData, "id"))) {
+    const glossaryId = readString(formData, "id");
+    if (!canEditGlossaryEntry(glossaryId)) {
       denyPermission("No tens permisos per desar aquesta entrada del glossari.");
       return;
     }
-    clearGlossaryDraft(readString(formData, "id"));
-    if (state.ui.newGlossaryId === readString(formData, "id")) {
+    if (glossaryImageUploadsInFlight.has(glossaryId)) {
+      appendGlossaryUploadDebug(glossaryId, "desat blocat", "La imatge encara s'estava processant.");
+      showSaveNotice("Espera que la imatge acabi de processar-se.");
+      return;
+    }
+    appendGlossaryUploadDebug(glossaryId, "desat", "El formulari incorpora les imatges preparades.");
+    clearGlossaryDraft(glossaryId);
+    if (state.ui.newGlossaryId === glossaryId) {
       state.ui.newGlossaryId = "";
     }
     saveGlossary(formData);
@@ -1126,18 +1171,34 @@ function render(parts = FULL_RENDER_PARTS) {
   if (renderSet.has(RENDER_PARTS.themes)) {
     applyReferenceThemes();
   }
+  const renderedRoots = getRenderedRoots(renderSet);
   if (renderSet.has(RENDER_PARTS.assets)) {
-    void hydrateAssetReferences(document);
+    void Promise.all(renderedRoots.map((root) => hydrateAssetReferences(root)));
   }
   refreshRichPreviews();
-  applyOfficeVocabulary();
+  applyOfficeVocabulary(renderedRoots);
+  if (renderSet.has(RENDER_PARTS.glossary)) {
+    refreshGlossaryUploadDebugPanels();
+  }
+}
+
+function getRenderedRoots(renderSet) {
+  const roots = [];
+  if (renderSet.has(RENDER_PARTS.sidebar) && sidebar) roots.push(sidebar);
+  if (renderSet.has(RENDER_PARTS.notice) && saveNoticeEl) roots.push(saveNoticeEl);
+  if (renderSet.has(RENDER_PARTS.characters) && charactersModule) roots.push(charactersModule);
+  if (renderSet.has(RENDER_PARTS.chronicles) && chroniclesModule) roots.push(chroniclesModule);
+  if (renderSet.has(RENDER_PARTS.glossary) && glossaryModule) roots.push(glossaryModule);
+  if (renderSet.has(RENDER_PARTS.campaigns) && campaignsModule) roots.push(campaignsModule);
+  if (renderSet.has(RENDER_PARTS.options) && optionsModule) roots.push(optionsModule);
+  return roots.length ? [...new Set(roots)] : [document.body];
 }
 
 function applyOfficeMode() {
   document.body.classList.toggle("office-mode", Boolean(state.ui.officeMode));
 }
 
-function applyOfficeVocabulary() {
+function applyOfficeVocabulary(roots = [document.body]) {
   if (!state.ui.officeMode) {
     return;
   }
@@ -1181,17 +1242,17 @@ function applyOfficeVocabulary() {
     ".glossary-description",
     ".player-note-card",
   ].join(",");
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const nodes = [];
-
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-    const parent = node.parentElement;
-    if (!parent || parent.closest(excludedSelector)) {
-      continue;
+  roots.forEach((root) => {
+    if (!(root instanceof HTMLElement)) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const parent = node.parentElement;
+      if (!parent || parent.closest(excludedSelector)) continue;
+      nodes.push(node);
     }
-    nodes.push(node);
-  }
+  });
 
   nodes.forEach((node) => {
     const nextValue = replacements.reduce(
@@ -1421,6 +1482,7 @@ function updateAuthGate() {
 
   const shouldShowAuthGate = cloudSession.enabled && (!cloudSession.ready || cloudSession.selectingCampaign);
   authGate.hidden = !shouldShowAuthGate;
+  setAuthPageInert(shouldShowAuthGate);
   document.body.classList.toggle("auth-required", shouldShowAuthGate);
   document.body.classList.toggle("auth-selecting-campaign", cloudSession.selectingCampaign);
   document.body.classList.toggle(
@@ -1655,24 +1717,6 @@ function updateSidebar() {
     button.setAttribute("tabindex", isActive ? "0" : "-1");
   });
 
-  const sidebarTop = document.querySelector(".sidebar-top");
-  if (sidebarTop) {
-    const eyebrow = sidebarTop.querySelector(".eyebrow");
-    const title = sidebarTop.querySelector("h1");
-    const copy = sidebarTop.querySelector(".sidebar-copy");
-    if (eyebrow) {
-      eyebrow.textContent = state.ui.officeMode ? "Projecte intern" : "Campanya D&D";
-    }
-    if (title) {
-      title.textContent = state.ui.officeMode ? "Espai de treball" : "Compendi de Campanya";
-    }
-    if (copy) {
-      copy.textContent = state.ui.officeMode
-        ? "Documents, contactes i referencies compartides."
-        : "Pergamins, croniques i memoria viva dels personatges.";
-    }
-  }
-
   document.querySelectorAll(".module-view").forEach((view) => {
     const isActive = view.id === `${state.ui.currentModule}Module`;
     view.classList.toggle("active", isActive);
@@ -1723,7 +1767,15 @@ function updateSaveNotice() {
 }
 
 function getCloudSyncState() {
-  if (cloudSession.saving || cloudSession.awaitingServer || cloudSession.pendingInitialPublish || cloudSaveTimer !== null) {
+  if (
+    cloudSession.saving
+    || cloudSession.awaitingServer
+    || cloudSession.pendingInitialPublish
+    || cloudSaveTimer !== null
+    || cloudSaveRetryTimer !== null
+    || cloudSaveInFlight
+    || pendingCloudSaveTargets.size > 0
+  ) {
     return "syncing";
   }
 
@@ -1820,6 +1872,7 @@ function renderGlossaryModule() {
     canEditGlossaryEntry,
     canCreateGlossaryEntry: canCreateGlossaryEntry(),
     canDeleteGlossaryEntry,
+    getGlossaryImageUploadState: (glossaryId) => glossaryImageUploadStates.get(glossaryId) || null,
   });
 }
 
@@ -2340,14 +2393,23 @@ function renderPermissionUserRow(email, user, index, access, enabled) {
 
   return `
     <div class="permissions-user-row">
-      <input name="userEmail" value="${escapeAttribute(email)}" placeholder="nom@gmail.com" ${enabled ? "" : "disabled"} />
-      <select name="userRole" ${enabled ? "" : "disabled"}>${roleOptions}</select>
-      <input
-        name="userCharacterIds"
-        value="${escapeAttribute(characterValue)}"
-        placeholder="${escapeAttribute(state.characters.map((character) => character.id).join(", "))}"
-        ${enabled ? "" : "disabled"}
-      />
+      <label class="permissions-user-field">
+        <span class="permissions-field-label">Correu</span>
+        <input name="userEmail" value="${escapeAttribute(email)}" placeholder="nom@gmail.com" ${enabled ? "" : "disabled"} />
+      </label>
+      <label class="permissions-user-field">
+        <span class="permissions-field-label">Rol</span>
+        <select name="userRole" ${enabled ? "" : "disabled"}>${roleOptions}</select>
+      </label>
+      <label class="permissions-user-field">
+        <span class="permissions-field-label">Personatges assignats</span>
+        <input
+          name="userCharacterIds"
+          value="${escapeAttribute(characterValue)}"
+          placeholder="${escapeAttribute(state.characters.map((character) => character.id).join(", "))}"
+          ${enabled ? "" : "disabled"}
+        />
+      </label>
       <input type="hidden" name="userRow" value="${index}" />
     </div>
   `;
@@ -3182,28 +3244,47 @@ function scheduleCloudSave(delay = 900, options = {}) {
     return;
   }
 
-  if (options.cloudTarget) {
-    pendingCloudSaveTarget = options.cloudTarget;
-  }
+  const target = options.cloudTarget || inferCloudSaveTarget();
+  if (target) pendingCloudSaveTargets.enqueue(target);
 
   window.clearTimeout(cloudSaveTimer);
   cloudSaveTimer = window.setTimeout(() => {
-    const target = pendingCloudSaveTarget;
-    pendingCloudSaveTarget = null;
     cloudSaveTimer = null;
-    void pushStateToCloud(target ? { target } : {});
+    void drainCloudSaveQueue();
   }, delay);
 }
 
-async function pushStateToCloud(options = {}) {
-  if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) {
-    return;
+async function drainCloudSaveQueue() {
+  if (cloudSaveInFlight || !cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) return false;
+  window.clearTimeout(cloudSaveRetryTimer);
+  cloudSaveRetryTimer = null;
+  cloudSaveInFlight = true;
+  let allSaved = true;
+  try {
+    while (pendingCloudSaveTargets.size > 0) {
+      const target = pendingCloudSaveTargets.take();
+      if (!target) break;
+      if (!(await pushStateToCloud({ target }))) {
+        pendingCloudSaveTargets.prepend(target);
+        allSaved = false;
+        cloudSaveRetryTimer = window.setTimeout(() => {
+          cloudSaveRetryTimer = null;
+          void drainCloudSaveQueue();
+        }, 3000);
+        break;
+      }
+    }
+  } finally {
+    cloudSaveInFlight = false;
   }
+  return allSaved;
+}
+
+async function pushStateToCloud(options = {}) {
+  if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) return false;
 
   const target = resolveCloudSaveTarget(options.target || inferCloudSaveTarget());
-  if (!target) {
-    return;
-  }
+  if (!target) return false;
 
   cloudSession.saving = true;
   cloudSession.status = "Desant canvis a Drive...";
@@ -3251,9 +3332,11 @@ async function pushStateToCloud(options = {}) {
     cloudSession.status = response?.unverified
       ? "Canvis enviats a Drive; confirmacio no disponible per mida."
       : getConfirmedCloudSaveStatus(response?.driveFile);
+    return true;
   } catch (error) {
     cloudSession.lastError = error instanceof Error ? error.message : String(error);
     cloudSession.status = cloudSession.lastError;
+    return false;
   } finally {
     cloudSession.saving = false;
     render([RENDER_PARTS.notice, RENDER_PARTS.options]);
@@ -3265,16 +3348,17 @@ function getCloudCampaignRevision(campaign) {
 }
 
 async function publishCampaignToCloud() {
-  const pendingTarget = pendingCloudSaveTarget;
   if (cloudSaveTimer !== null) {
     window.clearTimeout(cloudSaveTimer);
     cloudSaveTimer = null;
   }
-  pendingCloudSaveTarget = null;
+  window.clearTimeout(cloudSaveRetryTimer);
+  cloudSaveRetryTimer = null;
 
-  if (pendingTarget && pendingTarget.type !== "campaign") {
-    await pushStateToCloud({ target: pendingTarget });
-  }
+  const queuedTargets = pendingCloudSaveTargets.snapshot().filter((target) => target.type !== "campaign");
+  pendingCloudSaveTargets.clear();
+  queuedTargets.forEach((target) => pendingCloudSaveTargets.enqueue(target));
+  if (!(await drainCloudSaveQueue())) return;
 
   await pushStateToCloud({ target: { type: "campaign" } });
 }
@@ -3418,6 +3502,7 @@ function openImageLightbox(image) {
   imageLightboxMedia.src = source;
   imageLightboxMedia.alt = image.alt || "";
   imageLightbox.hidden = false;
+  activateDialogFocus(imageLightbox, image);
   document.body.classList.add("lightbox-open");
   const closeButton = imageLightbox.querySelector(".image-lightbox-close");
   if (closeButton instanceof HTMLButtonElement) {
@@ -3430,6 +3515,7 @@ function closeImageLightbox() {
     return;
   }
 
+  deactivateDialogFocus(imageLightbox);
   imageLightbox.hidden = true;
   imageLightboxMedia.removeAttribute("src");
   imageLightboxMedia.alt = "";
@@ -3530,6 +3616,7 @@ function openQuickGlossaryModal(insertContext) {
     return;
   }
 
+  activateDialogFocus(quickGlossaryModal, document.activeElement);
   pendingQuickGlossaryInsert = insertContext;
   quickGlossaryModal.dataset.inputId = insertContext.textareaId || "";
   quickGlossaryModal.dataset.referenceLabel = insertContext.referenceLabel || "";
@@ -3538,6 +3625,7 @@ function openQuickGlossaryModal(insertContext) {
   const form = quickGlossaryModal.querySelector('form[data-form="quick-glossary"]');
   if (form instanceof HTMLFormElement) {
     form.reset();
+    setQuickGlossaryUploadStatus(form);
     const nameInput = form.elements.namedItem("quickGlossaryName");
     if (nameInput instanceof HTMLInputElement) {
       nameInput.value = String(insertContext.referenceLabel || "").trim();
@@ -3554,10 +3642,16 @@ function openQuickGlossaryModal(insertContext) {
   });
 }
 
+function isQuickGlossaryUploadBusy() {
+  const form = quickGlossaryModal?.querySelector('form[data-form="quick-glossary"]');
+  return form instanceof HTMLFormElement && form.hasAttribute("aria-busy");
+}
+
 function closeQuickGlossaryModal() {
   if (!quickGlossaryModal) {
     return;
   }
+  deactivateDialogFocus(quickGlossaryModal);
   quickGlossaryModal.hidden = true;
   document.body.classList.remove("quick-glossary-open");
   pendingQuickGlossaryInsert = null;
@@ -3596,6 +3690,18 @@ async function saveQuickGlossaryEntry(form, formData) {
   const imageFile = imageInput instanceof HTMLInputElement
     ? Array.from(imageInput.files || []).find((file) => file instanceof File)
     : null;
+  setQuickGlossaryUploadStatus(
+    form,
+    "processing",
+    imageFile ? `Processant ${imageFile.name || "la imatge"}...` : "Creant l'entrada...",
+  );
+
+  const assetToken = imageFile ? await storeQuickGlossaryImage(imageFile) : "";
+  if (imageFile && !assetToken) {
+    setQuickGlossaryUploadStatus(form, "error", "No s'ha pogut processar la imatge. Torna-ho a provar.");
+    return;
+  }
+
   const currentChronicle = getSelectedChronicle();
   const entry = {
     id: createGlossaryEntryId(name),
@@ -3606,7 +3712,7 @@ async function saveQuickGlossaryEntry(form, formData) {
     notes: "",
     latestStatus: "",
     lastSeenChronicleId: currentChronicle?.id || "",
-    imageAssets: [],
+    imageAssets: assetToken ? [assetToken] : [],
     playerNotes: [],
     characterIds: [],
     chronicleIds: currentChronicle?.id ? [currentChronicle.id] : [],
@@ -3624,18 +3730,37 @@ async function saveQuickGlossaryEntry(form, formData) {
     pendingInsert.referenceEnd || "",
   );
 
-  if (imageFile) {
-    const assetToken = await storeQuickGlossaryImage(imageFile);
-    if (assetToken) {
-      entry.imageAssets = [...(entry.imageAssets || []), assetToken];
-    }
-  }
-
   closeQuickGlossaryModal();
   showSaveNotice("Entrada creada i enllacada", {
     cloud: true,
     cloudTarget: { type: "glossary", entry },
   });
+}
+
+function setQuickGlossaryUploadStatus(form, status = "", message = "") {
+  const processing = status === "processing";
+  const statusElement = form.querySelector("[data-quick-glossary-status]");
+  const submitButton = form.querySelector('button[type="submit"]');
+
+  form.toggleAttribute("aria-busy", processing);
+  form.querySelectorAll("button").forEach((control) => {
+    if (control instanceof HTMLButtonElement) {
+      control.disabled = processing;
+    }
+  });
+
+  if (submitButton instanceof HTMLButtonElement) {
+    submitButton.textContent = processing ? "Processant imatge..." : "Crea i enllaça";
+  }
+  if (statusElement instanceof HTMLElement) {
+    statusElement.classList.remove("processing", "success", "error");
+    if (status) {
+      statusElement.classList.add(status);
+    }
+    statusElement.textContent = message;
+    statusElement.hidden = !message;
+    statusElement.setAttribute("role", status === "error" ? "alert" : "status");
+  }
 }
 
 async function storeQuickGlossaryImage(imageFile) {
@@ -3941,6 +4066,7 @@ function clearChronicleDraft(chronicleId) {
 function clearGlossaryDraft(glossaryId) {
   if (glossaryId) {
     delete state.ui.drafts.glossary[glossaryId];
+    glossaryImageUploadStates.delete(glossaryId);
   }
 }
 
@@ -3967,62 +4093,245 @@ function updateGlossaryDraftImageAssets(glossaryId, updater) {
 }
 
 async function handleGlossaryImageSelection(input) {
-  if (glossaryImageInputsProcessing.has(input)) {
-    return;
-  }
   const form = input.closest('form[data-form="glossary"]');
   const glossaryId = form?.querySelector('input[name="id"]')?.value || input.dataset.glossaryId || "";
   const files = Array.from(input.files || []).filter((file) => file instanceof File);
+  appendGlossaryUploadDebug(glossaryId, "gestor change", formatGlossaryUploadFiles(files));
 
-  if (!glossaryId || !files.length) {
+  if (!glossaryId || !files.length || glossaryImageUploadsInFlight.has(glossaryId)) {
+    appendGlossaryUploadDebug(glossaryId, "gestor descartat", !files.length ? "input.files esta buit" : "pujada duplicada o entrada sense id");
     input.value = "";
     return;
   }
   if (!canEditGlossaryEntry(glossaryId)) {
+    appendGlossaryUploadDebug(glossaryId, "permis denegat", "L'usuari no pot editar aquesta entrada.");
     denyPermission("No tens permisos per editar les imatges d'aquesta entrada.");
     input.value = "";
     return;
   }
 
-  glossaryImageInputsProcessing.add(input);
-  setGlossaryImagePickerStatus(input, `Processant ${files.length > 1 ? `${files.length} imatges` : "imatge"}...`, true);
+  updateDraftFromForm(form);
+  const invalidFile = files.find((file) => !String(file.type || "").startsWith("image/"));
+  if (invalidFile) {
+    appendGlossaryUploadDebug(glossaryId, "fitxer invalid", formatGlossaryUploadFiles([invalidFile]));
+    glossaryImageUploadStates.set(glossaryId, {
+      status: "error",
+      message: `${invalidFile.name || "El fitxer"} no es una imatge valida.`,
+    });
+    render([RENDER_PARTS.glossary]);
+    input.value = "";
+    return;
+  }
+
+  const uploadState = {
+    status: "processing",
+    message: `Processant ${files.length > 1 ? `${files.length} imatges` : files[0].name || "la imatge"}...`,
+  };
+  glossaryImageUploadsInFlight.add(glossaryId);
+  glossaryImageUploadStates.set(glossaryId, uploadState);
+  appendGlossaryUploadDebug(glossaryId, "processament iniciat", formatGlossaryUploadFiles(files));
+  render([RENDER_PARTS.glossary]);
+  await waitForNextPaint();
+
   try {
+    appendGlossaryUploadDebug(glossaryId, "IndexedDB inici", `Es desen ${files.length} fitxers.`);
     const assetTokens = (await Promise.all(files.map((file) => storeAssetFile(file)))).filter(Boolean);
-    if (assetTokens.length) {
-      updateGlossaryDraftImageAssets(glossaryId, (images) => [...images, ...assetTokens]);
+    if (glossaryImageUploadStates.get(glossaryId) !== uploadState) {
+      appendGlossaryUploadDebug(glossaryId, "resultat obsolet", "L'editor ja no espera aquesta pujada.");
       return;
     }
-    setGlossaryImagePickerStatus(input, "No s'ha pogut processar la imatge.", false);
+    if (!assetTokens.length) {
+      throw new Error("No asset token was generated");
+    }
+
+    glossaryImageUploadStates.set(glossaryId, {
+      status: "success",
+      message: `${assetTokens.length > 1 ? `${assetTokens.length} imatges preparades` : "Imatge preparada"}. Desa l'entrada per conservar-la.`,
+    });
+    appendGlossaryUploadDebug(glossaryId, "IndexedDB correcte", `${assetTokens.length} token(s) asset creats.`);
+    updateGlossaryDraftImageAssets(glossaryId, (images) => [...images, ...assetTokens]);
   } catch (error) {
     console.error("No s'ha pogut afegir la imatge del glossari.", error);
-    setGlossaryImagePickerStatus(input, "No s'ha pogut afegir la imatge. Torna-ho a provar.", false);
+    appendGlossaryUploadDebug(glossaryId, "error", formatGlossaryUploadError(error));
+    if (glossaryImageUploadStates.get(glossaryId) === uploadState) {
+      glossaryImageUploadStates.set(glossaryId, {
+        status: "error",
+        message: "No s'ha pogut afegir la imatge. Torna-ho a provar.",
+      });
+      render([RENDER_PARTS.glossary]);
+    }
   } finally {
-    glossaryImageInputsProcessing.delete(input);
+    glossaryImageUploadsInFlight.delete(glossaryId);
     input.value = "";
+    appendGlossaryUploadDebug(glossaryId, "gestor finalitzat", "El selector torna a estar disponible.");
   }
 }
 
-function setGlossaryImagePickerStatus(input, message, processing) {
-  const picker = input.closest(".glossary-image-picker");
-  const button = picker?.querySelector("[data-glossary-image-button]");
-  const label = picker?.querySelector("[data-glossary-image-button-label]");
-  const status = picker?.querySelector("[data-glossary-image-status]");
+function registerGlossaryFileDialogOpen(input) {
+  const glossaryId = input.dataset.glossaryId || "";
+  pendingGlossaryFileDialog = {
+    glossaryId,
+    inputId: input.id || "",
+    openedAt: Date.now(),
+  };
+  appendGlossaryUploadDebug(
+    glossaryId,
+    "clic selector",
+    `input connectat=${input.isConnected ? "si" : "no"}; id=${input.id || "sense id"}`,
+  );
+}
 
-  if (button instanceof HTMLElement) {
-    button.classList.toggle("is-processing", processing);
-    button.setAttribute("aria-disabled", processing ? "true" : "false");
+function handleGlossaryFileDialogFocusReturn() {
+  const pending = pendingGlossaryFileDialog;
+  if (!pending) {
+    return;
   }
-  if (input instanceof HTMLInputElement) {
-    input.disabled = processing;
+
+  const liveInput = pending.inputId ? document.getElementById(pending.inputId) : null;
+  const files = liveInput instanceof HTMLInputElement ? Array.from(liveInput.files || []) : [];
+  appendGlossaryUploadDebug(
+    pending.glossaryId,
+    "retorn focus",
+    `input connectat=${liveInput?.isConnected ? "si" : "no"}; ${formatGlossaryUploadFiles(files)}`,
+  );
+
+  window.setTimeout(() => {
+    if (pendingGlossaryFileDialog !== pending) {
+      return;
+    }
+    const currentInput = pending.inputId ? document.getElementById(pending.inputId) : null;
+    appendGlossaryUploadDebug(
+      pending.glossaryId,
+      "sense change",
+      `No ha arribat change 800 ms despres del retorn; input connectat=${currentInput?.isConnected ? "si" : "no"}.`,
+    );
+    pendingGlossaryFileDialog = null;
+  }, 800);
+}
+
+function logGlossaryImageNativeEvent(input, eventType) {
+  const glossaryId = input.dataset.glossaryId || "";
+  const files = Array.from(input.files || []).filter((file) => file instanceof File);
+  appendGlossaryUploadDebug(
+    glossaryId,
+    `event ${eventType}`,
+    `input connectat=${input.isConnected ? "si" : "no"}; ${formatGlossaryUploadFiles(files)}`,
+  );
+}
+
+function loadGlossaryUploadDebugEntries() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(GLOSSARY_UPLOAD_DEBUG_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.slice(-GLOSSARY_UPLOAD_DEBUG_LIMIT) : [];
+  } catch {
+    return [];
   }
-  if (label instanceof HTMLElement) {
-    label.textContent = processing ? "Processant imatge..." : "Afegeix imatge";
+}
+
+function appendGlossaryUploadDebug(glossaryId, stage, detail = "") {
+  const entry = {
+    at: new Date().toISOString(),
+    glossaryId: String(glossaryId || "sense-id"),
+    stage: String(stage || "event"),
+    detail: String(detail || ""),
+  };
+  glossaryUploadDebugEntries = [...glossaryUploadDebugEntries, entry].slice(-GLOSSARY_UPLOAD_DEBUG_LIMIT);
+  try {
+    localStorage.setItem(GLOSSARY_UPLOAD_DEBUG_STORAGE_KEY, JSON.stringify(glossaryUploadDebugEntries));
+  } catch {}
+  console.info("[Glossary upload]", entry.stage, entry.detail, { glossaryId: entry.glossaryId });
+  refreshGlossaryUploadDebugPanels();
+}
+
+function clearGlossaryUploadDebugEntries(glossaryId) {
+  glossaryUploadDebugEntries = glossaryUploadDebugEntries.filter((entry) => entry.glossaryId !== glossaryId);
+  try {
+    localStorage.setItem(GLOSSARY_UPLOAD_DEBUG_STORAGE_KEY, JSON.stringify(glossaryUploadDebugEntries));
+  } catch {}
+  refreshGlossaryUploadDebugPanels();
+}
+
+async function copyGlossaryUploadDebugEntries(glossaryId) {
+  const text = formatGlossaryUploadDebugText(glossaryId);
+  try {
+    await navigator.clipboard.writeText(text || "Sense registres.");
+    showSaveNotice("Registre de pujada copiat");
+  } catch (error) {
+    appendGlossaryUploadDebug(glossaryId, "copia fallida", formatGlossaryUploadError(error));
+    showSaveNotice("No s'ha pogut copiar el registre");
   }
-  if (status instanceof HTMLElement) {
-    status.textContent = message;
-    status.hidden = !message;
-    status.classList.toggle("error", !processing);
+}
+
+function refreshGlossaryUploadDebugPanels() {
+  document.querySelectorAll("[data-glossary-upload-debug-log]").forEach((container) => {
+    if (!(container instanceof HTMLElement)) {
+      return;
+    }
+    const glossaryId = container.dataset.glossaryUploadDebugLog || "";
+    const entries = glossaryUploadDebugEntries.filter((entry) => entry.glossaryId === glossaryId).slice(-24);
+    container.innerHTML = entries.length
+      ? entries.map((entry) => `
+          <div class="glossary-upload-debug-entry">
+            <time>${escapeHtml(formatGlossaryUploadDebugTime(entry.at))}</time>
+            <strong>${escapeHtml(entry.stage)}</strong>
+            ${entry.detail ? `<span>${escapeHtml(entry.detail)}</span>` : ""}
+          </div>
+        `).join("")
+      : '<p class="glossary-upload-debug-empty">Encara no hi ha events. Prem Afegeix imatge per iniciar el rastre.</p>';
+    container.scrollTop = container.scrollHeight;
+    const count = container.closest("details")?.querySelector("[data-glossary-upload-debug-count]");
+    if (count instanceof HTMLElement) {
+      count.textContent = String(entries.length);
+    }
+  });
+}
+
+function formatGlossaryUploadDebugText(glossaryId) {
+  return glossaryUploadDebugEntries
+    .filter((entry) => entry.glossaryId === glossaryId)
+    .map((entry) => `[${entry.at}] ${entry.stage}${entry.detail ? ` · ${entry.detail}` : ""}`)
+    .join("\n");
+}
+
+function formatGlossaryUploadDebugTime(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "--:--:--"
+    : date.toLocaleTimeString("ca-ES", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 });
+}
+
+function formatGlossaryUploadFiles(files) {
+  if (!files.length) {
+    return "fitxers=0";
   }
+  return `fitxers=${files.length}; ${files.map((file) => `${file.name || "sense-nom"} (${formatGlossaryUploadBytes(file.size)}, ${file.type || "tipus desconegut"})`).join("; ")}`;
+}
+
+function formatGlossaryUploadBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatGlossaryUploadError(error) {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error || "Error desconegut");
+}
+
+function waitForNextPaint() {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve();
+    };
+    const timeoutId = window.setTimeout(finish, 80);
+    window.requestAnimationFrame(finish);
+  });
 }
 
 function openRichMediaPicker(insertContext) {

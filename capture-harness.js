@@ -236,6 +236,9 @@ async function runScenario(context, scenarioName) {
       await context.type('form[data-form="character-tab"] textarea[name="abilities"]', "Catedral");
       await context.selectText('form[data-form="character-tab"] textarea[name="abilities"]', "Catedral");
     },
+    "chronicles-landing": async () => {
+      await context.click('[data-module-link="chronicles"]');
+    },
     "chronicles-character-return": async () => {
       await context.click('[data-module-link="chronicles"]');
       await openChronicle(context);
@@ -302,6 +305,21 @@ async function runScenario(context, scenarioName) {
       if (categorySelect instanceof context.win.HTMLSelectElement) {
         categorySelect.value = "Esdeveniments";
       }
+      const quickStatus = context.query("[data-quick-glossary-status]");
+      const quickSubmit = context.query('form[data-form="quick-glossary"] button[type="submit"]');
+      if (quickStatus instanceof context.win.HTMLElement) {
+        quickStatus.hidden = false;
+        quickStatus.classList.add("processing");
+        quickStatus.textContent = "Processant arxiu-nou.png...";
+      }
+      context.queryAll('form[data-form="quick-glossary"] button').forEach((button) => {
+        if (button instanceof context.win.HTMLButtonElement) {
+          button.disabled = true;
+        }
+      });
+      if (quickSubmit instanceof context.win.HTMLButtonElement) {
+        quickSubmit.textContent = "Processant imatge...";
+      }
       const modal = context.query("#quickGlossaryModal");
       if (modal instanceof context.win.HTMLElement) {
         modal.style.placeItems = "start center";
@@ -320,43 +338,18 @@ async function runScenario(context, scenarioName) {
     "chronicles-reference-tooltip": async () => {
       await context.click('[data-module-link="chronicles"]');
       await openChronicle(context);
-      const clone = context.doc.createElement("button");
-      clone.type = "button";
-      clone.className = "glossary-inline-link tooltip-capture-open";
-      clone.dataset.referenceJump = "acantilado-del-silencio";
-      clone.dataset.referenceTheme = "locations";
-      clone.dataset.referenceTooltip = "glossary";
-      clone.innerHTML = `
-        Acantilado del Silencio
-        <span class="glossary-reference-tooltip" aria-hidden="true">
-          <span class="glossary-reference-tooltip-media">
-            <span class="glossary-reference-tooltip-placeholder">A</span>
-          </span>
-          <span class="glossary-reference-tooltip-copy">
-            <span class="glossary-reference-tooltip-kicker">Llocs</span>
-            <strong>Acantilado del Silencio</strong>
-            <span>Ciutat de judicis, pedra i culte on la campanya comença empresonada.</span>
-          </span>
-        </span>
-      `;
-      const showcase = context.doc.createElement("div");
-      const isMobile = context.win.innerWidth < 720;
-      showcase.style.position = "fixed";
-      showcase.style.left = isMobile ? "42px" : "255px";
-      showcase.style.top = isMobile ? "610px" : "560px";
-      showcase.style.zIndex = "500";
-      clone.style.display = "none";
-      showcase.style.display = "grid";
-      showcase.style.gridTemplateColumns = isMobile ? "1fr" : "repeat(2, max-content)";
-      showcase.style.gap = "16rem";
-      const tooltipExamples = isMobile
-        ? [await cloneOpenReferenceTooltip(context, "reina-elisabeth", "Reina Elisabeth")]
-        : [
-          await cloneOpenReferenceTooltip(context, "reina-elisabeth", "Reina Elisabeth"),
-          await cloneOpenReferenceTooltip(context, "kaelor", "Kaelor"),
-        ];
-      showcase.append(clone, ...tooltipExamples);
-      context.doc.body.append(showcase);
+      const reference = context.query(
+        '.book-page .glossary-inline-link[data-reference-tooltip="glossary"]',
+      );
+      if (!(reference instanceof context.win.HTMLElement)) {
+        throw new Error("No s'ha trobat cap referencia de glossari a la cronica.");
+      }
+      reference.classList.add("tooltip-capture-open");
+      reference.scrollIntoView({ block: "center", inline: "nearest" });
+      if (context.win.innerWidth < 720) {
+        context.win.scrollBy(0, -72);
+      }
+      await waitForTooltipImageLayout(reference);
       await delay(220);
     },
     "glossary-detail": async () => {
@@ -391,6 +384,7 @@ async function runScenario(context, scenarioName) {
       const imageButton = context.query("[data-glossary-image-button]");
       const imageButtonLabel = context.query("[data-glossary-image-button-label]");
       const imageStatus = context.query("[data-glossary-image-status]");
+      const imageDebugLog = context.query("[data-glossary-upload-debug-log]");
       if (imageButton instanceof context.win.HTMLElement) {
         imageButton.classList.add("is-processing");
         imageButton.setAttribute("aria-disabled", "true");
@@ -400,7 +394,43 @@ async function runScenario(context, scenarioName) {
       }
       if (imageStatus instanceof context.win.HTMLElement) {
         imageStatus.hidden = false;
+        imageStatus.classList.add("processing");
         imageStatus.textContent = "Processant imatge...";
+      }
+      if (imageDebugLog instanceof context.win.HTMLElement) {
+        imageDebugLog.innerHTML = '<div class="glossary-upload-debug-entry"><time>12:31:04.112</time><strong>clic selector</strong><span>input connectat=si</span></div><div class="glossary-upload-debug-entry"><time>12:31:05.420</time><strong>event change</strong><span>fitxers=1; ciutat.png (2.77 MB, image/png)</span></div><div class="glossary-upload-debug-entry"><time>12:31:05.424</time><strong>IndexedDB inici</strong><span>Es desa 1 fitxer.</span></div>';
+        imageDebugLog.closest("details")?.querySelector("[data-glossary-upload-debug-count]")?.replaceChildren("3");
+      }
+      if (imageButton instanceof context.win.HTMLElement) {
+        if (context.win.innerWidth >= 900) {
+          const showcase = context.doc.createElement("section");
+          showcase.className = "module-surface";
+          showcase.style.cssText = "position:fixed;z-index:200;top:80px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 40px));padding:24px;";
+          showcase.innerHTML = "<h3>Imatges</h3>";
+          showcase.append(imageButton.closest(".glossary-image-picker")?.cloneNode(true));
+          context.doc.body.append(showcase);
+        } else {
+          const imageButtonTop = imageButton.getBoundingClientRect().top + context.win.scrollY;
+          context.win.scrollTo(0, Math.max(0, imageButtonTop - (context.win.innerHeight / 2)));
+        }
+      }
+    },
+    "glossary-image-ready": async () => {
+      await context.click('[data-module-link="glossary"]');
+      await context.click('[data-glossary-filter="Faccions"]');
+      await context.click('[data-glossary-id="portadores-del-velo"]');
+      await context.click("[data-edit-glossary-card]");
+      const imageButton = context.query("[data-glossary-image-button]");
+      const imageStatus = context.query("[data-glossary-image-status]");
+      const imageDebugLog = context.query("[data-glossary-upload-debug-log]");
+      if (imageStatus instanceof context.win.HTMLElement) {
+        imageStatus.hidden = false;
+        imageStatus.classList.add("success");
+        imageStatus.textContent = "Imatge preparada. Desa l'entrada per conservar-la.";
+      }
+      if (imageDebugLog instanceof context.win.HTMLElement) {
+        imageDebugLog.innerHTML = '<div class="glossary-upload-debug-entry"><time>12:31:04.112</time><strong>clic selector</strong><span>input connectat=si</span></div><div class="glossary-upload-debug-entry"><time>12:31:05.420</time><strong>event change</strong><span>fitxers=1; ciutat.png (2.77 MB, image/png)</span></div><div class="glossary-upload-debug-entry"><time>12:31:05.611</time><strong>IndexedDB correcte</strong><span>1 token asset creat.</span></div>';
+        imageDebugLog.closest("details")?.querySelector("[data-glossary-upload-debug-count]")?.replaceChildren("3");
       }
       if (imageButton instanceof context.win.HTMLElement) {
         if (context.win.innerWidth >= 900) {

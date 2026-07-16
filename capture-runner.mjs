@@ -91,6 +91,7 @@ function buildScenarios() {
     { name: "character-detail-tabs", ...desktop, fileName: "character-detail-tabs-desktop.png" },
     { name: "character-detail-sheet", ...desktop, fileName: "character-detail-sheet-desktop.png" },
     { name: "character-editor", ...desktop, fileName: "character-editor-desktop.png" },
+    { name: "chronicles-landing", ...desktop, fileName: "chronicles-landing-desktop.png" },
     { name: "chronicles-character-return", ...desktop, fileName: "chronicles-character-return-desktop.png" },
     { name: "chronicles-read", ...desktop, fileName: "chronicles-read-desktop.png" },
     { name: "chronicles-read-session-3", ...desktop, fileName: "chronicles-read-session-3-desktop.png" },
@@ -104,6 +105,7 @@ function buildScenarios() {
     { name: "glossary-filter-empty", ...desktop, fileName: "glossary-filter-empty-desktop.png" },
     { name: "glossary-return", ...desktop, fileName: "glossary-return-desktop.png" },
     { name: "glossary-edit", ...desktop, fileName: "glossary-edit-desktop.png" },
+    { name: "glossary-image-ready", ...desktop, fileName: "glossary-image-ready-desktop.png" },
     { name: "auth-landing", ...mobile, fileName: "auth-landing-mobile.png" },
     { name: "auth-waiting", ...mobile, fileName: "auth-waiting-mobile.png" },
     { name: "auth-campaign-select", ...mobile, fileName: "auth-campaign-select-mobile.png" },
@@ -127,6 +129,7 @@ function buildScenarios() {
     { name: "character-detail-tabs", ...mobile, fileName: "character-detail-tabs-mobile.png" },
     { name: "character-detail-sheet", ...mobile, fileName: "character-detail-sheet-mobile.png" },
     { name: "character-editor", ...mobile, fileName: "character-editor-mobile.png" },
+    { name: "chronicles-landing", ...mobile, fileName: "chronicles-landing-mobile.png" },
     { name: "chronicles-character-return", ...mobile, fileName: "chronicles-character-return-mobile.png" },
     { name: "chronicles-read", ...mobile, fileName: "chronicles-read-mobile.png" },
     { name: "chronicles-read-session-3", ...mobile, fileName: "chronicles-read-session-3-mobile.png" },
@@ -140,6 +143,7 @@ function buildScenarios() {
     { name: "glossary-filter-empty", ...mobile, fileName: "glossary-filter-empty-mobile.png" },
     { name: "glossary-return", ...mobile, fileName: "glossary-return-mobile.png" },
     { name: "glossary-edit", ...mobile, fileName: "glossary-edit-mobile.png" },
+    { name: "glossary-image-ready", ...mobile, fileName: "glossary-image-ready-mobile.png" },
   ];
 }
 

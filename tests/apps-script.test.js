@@ -67,6 +67,7 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
   let campaignContent = JSON.stringify(initialCampaign);
   const events = [];
   const backups = [];
+  const cacheValues = new Map();
   let locked = false;
 
   const campaignFile = {
@@ -105,7 +106,14 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
   const context = {
     console,
     MimeType: { PLAIN_TEXT: "text/plain" },
-    Utilities: { formatDate: () => "20260715-120000" },
+    Utilities: { formatDate: () => "20260715-120000", getUuid: () => "server-session-token" },
+    CacheService: {
+      getScriptCache: () => ({
+        put: (key, value) => cacheValues.set(key, String(value)),
+        get: (key) => cacheValues.get(key) || null,
+        remove: (key) => cacheValues.delete(key),
+      }),
+    },
     DriveApp: { getFolderById: () => folder },
     LockService: {
       getScriptLock: () => ({
@@ -146,6 +154,18 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
     backups,
   };
 }
+
+test("Apps Script exchanges the Google token for an opaque one-time claimed session", () => {
+  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
+  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
+  const created = harness.handleRequest({ action: "createSession", idToken: "admin", operationId: "claim-1" });
+  const claimed = harness.handleRequest({ action: "claimSession", operationId: "claim-1" });
+  const loaded = harness.handleRequest({ action: "loadCampaign", sessionToken: claimed.sessionToken });
+  assert.equal(created.ok, true);
+  assert.equal(claimed.sessionToken, "server-session-token");
+  assert.equal(loaded.ok, true);
+  assert.equal(harness.handleRequest({ action: "claimSession", operationId: "claim-1" }).ok, false);
+});
 
 test("Apps Script rejects a valid Google user without campaign access", () => {
   const harness = createAppsScriptHarness(createCampaignLibrary(), { stranger: "stranger@example.com" });
@@ -191,6 +211,23 @@ test("Apps Script holds the lock across read, mutation, backup and write", () =>
   assert.equal(harness.readCampaign().serverSync.operationId, "operation-1");
   assert.ok(harness.events.indexOf("lock") < harness.events.indexOf("read"));
   assert.ok(harness.events.indexOf("write") < harness.events.lastIndexOf("unlock"));
+  assert.equal(harness.backups.length, 1);
+});
+
+test("Apps Script throttles item-level backups between revision milestones", () => {
+  const campaign = createCampaignLibrary({
+    usersB: { "player@example.com": { role: "player", characterIds: ["hero-b"] } },
+  });
+  const harness = createAppsScriptHarness(campaign, { player: "player@example.com" });
+  for (const name of ["Hero 1", "Hero 2"]) {
+    const response = harness.handleRequest({
+      action: "saveCharacter",
+      idToken: "player",
+      campaignId: "campaign-b",
+      character: { id: "hero-b", name },
+    });
+    assert.equal(response.ok, true);
+  }
   assert.equal(harness.backups.length, 1);
 });
 
