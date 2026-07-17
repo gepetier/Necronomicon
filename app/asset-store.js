@@ -6,6 +6,7 @@ import {
   getAssetIdFromToken,
   inferAssetKindFromMimeType,
   isAssetToken,
+  isDriveAssetToken,
   replaceAssetTokensInValue,
   replaceDriveAssetTokensInValue,
 } from "./assets.js";
@@ -15,6 +16,11 @@ const DB_VERSION = 1;
 const STORE_NAME = "assets";
 
 const objectUrlCache = new Map();
+let driveAssetLoader = null;
+
+export function setDriveAssetLoader(loader) {
+  driveAssetLoader = typeof loader === "function" ? loader : null;
+}
 
 export async function storeAssetFile(file) {
   const id = createAssetId();
@@ -60,7 +66,24 @@ export async function getAssetObjectUrl(token) {
     return objectUrlCache.get(token);
   }
 
-  const record = await readRecord(getAssetIdFromToken(token));
+  const recordId = getCacheRecordId(token);
+  let record = await readRecord(recordId);
+  if (!record?.blob && isDriveAssetToken(token) && driveAssetLoader) {
+    const asset = await driveAssetLoader(token);
+    if (asset?.dataUrl) {
+      const response = await fetch(asset.dataUrl);
+      const blob = await response.blob();
+      record = {
+        id: recordId,
+        blob,
+        name: asset.name || `drive-${getAssetIdFromToken(token)}`,
+        mimeType: asset.mimeType || blob.type || "application/octet-stream",
+        kind: inferAssetKindFromMimeType(asset.mimeType || blob.type),
+        savedAt: new Date().toISOString(),
+      };
+      await writeRecord(record);
+    }
+  }
   if (!record?.blob) {
     return "";
   }
@@ -130,6 +153,11 @@ export async function exportAssetBundle(tokens) {
   }
 
   return bundle;
+}
+
+function getCacheRecordId(token) {
+  const id = getAssetIdFromToken(token);
+  return isDriveAssetToken(token) ? `drive-${id}` : id;
 }
 
 export async function materializeAssetTokens(value) {

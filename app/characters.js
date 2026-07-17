@@ -15,6 +15,7 @@ import {
   renderTextCard,
   shortText,
 } from "./utils.js";
+import { isAssetToken } from "./assets.js";
 
 const ABILITY_DEFINITIONS = [
   { key: "for", source: "For", label: "Força", shortLabel: "FOR", skills: ["Atletisme"] },
@@ -26,6 +27,12 @@ const ABILITY_DEFINITIONS = [
 ];
 
 const CHARACTER_TABS = ["sheet", "inventory", "history"];
+
+function renderCharacterAssetAttribute(source) {
+  return isAssetToken(source)
+    ? `data-asset-src="${escapeAttribute(source)}"`
+    : `src="${escapeAttribute(source)}"`;
+}
 
 const SAVAGE_ATTRIBUTE_DEFINITIONS = [
   { key: "agilitat", label: "Agilitat" },
@@ -111,7 +118,31 @@ const SAVAGE_CONCEPTS = {
     summary: "Distancia operativa de l'arma o accio quan esta escrita a les notes.",
     tip: "Es detecta automaticament si la linia conte 'Rang 12/24/48'.",
   },
+  conditions: {
+    title: "Condicions",
+    summary: "Estats temporals que alteren les opcions del personatge durant l'escena.",
+    tip: "Marca-les i neteja-les directament des de la fitxa.",
+  },
+  conviction: {
+    title: "Conviccio",
+    summary: "Recurs excepcional que pot reforcar una tirada important.",
+    tip: "El Director decideix quan entra en joc segons la campanya.",
+  },
+  powerPoints: {
+    title: "Punts de poder",
+    summary: "Reserva disponible per activar poders arcans.",
+    tip: "Deixa el maxim a zero si el personatge no utilitza poders.",
+  },
 };
+
+const SAVAGE_CONDITION_DEFINITIONS = [
+  { key: "distracted", label: "Distret" },
+  { key: "vulnerable", label: "Vulnerable" },
+  { key: "stunned", label: "Estabornit" },
+  { key: "bound", label: "Lligat" },
+  { key: "entangled", label: "Enredat" },
+  { key: "prone", label: "Caigut" },
+];
 export function renderCharactersModule({
   state,
   rootEl,
@@ -189,7 +220,7 @@ export function renderCharactersModule({
       <div class="detail-grid">
         <div class="detail-portrait ${character.portrait ? "has-image" : "no-image"}" style="${paletteStyle(character.palette)}">
           ${character.portrait
-            ? `<img class="detail-portrait-media" src="${escapeAttribute(character.portrait)}" alt="${escapeAttribute(`Retrat de ${character.name}`)}" loading="lazy" />`
+            ? `<img class="detail-portrait-media" ${renderCharacterAssetAttribute(character.portrait)} alt="${escapeAttribute(`Retrat de ${character.name}`)}" loading="lazy" />`
             : ""}
           <div class="detail-portrait-inner">
             <p class="eyebrow">${escapeHtml(character.lineage)} · ${escapeHtml(character.className)}</p>
@@ -305,10 +336,23 @@ export function saveCharacterTab(formData, { getSelectedCharacter, showSaveNotic
     character.sheet.proficiency = readString(formData, "proficiency");
     character.sheet.abilities = readString(formData, "abilities");
     character.sheet.features = readString(formData, "features");
+    if (formData.has("savageMaxPowerPoints")) {
+      const nextMax = clampNumber(readString(formData, "savageMaxPowerPoints"), 0, 99, 0);
+      character.sheet.savageState = character.sheet.savageState || {};
+      character.sheet.savageState.maxPowerPoints = nextMax;
+      character.sheet.savageState.powerPoints = clampNumber(character.sheet.savageState.powerPoints, 0, nextMax, nextMax);
+    }
   }
 
   if (tab === "inventory") {
-    character.inventory.items = readString(formData, "items");
+    const nextItems = readString(formData, "items");
+    if (nextItems !== character.inventory.items) {
+      character.sheet.savageLoadout = { equippedWeaponIds: [], equippedArmorIds: [] };
+      if (character.sheet.savageState) {
+        character.sheet.savageState.ammo = {};
+      }
+    }
+    character.inventory.items = nextItems;
     character.inventory.currency = readString(formData, "currency");
     character.inventory.artifacts = readString(formData, "artifacts");
     character.inventory.notes = readString(formData, "notes");
@@ -346,7 +390,7 @@ function renderCharacterCard(character, state) {
       ${renderStatusPills(statusPills)}
       <div class="card-portrait ${character.portrait ? "has-image" : ""}" data-mark="${escapeHtml(character.sigil)}">
         ${character.portrait
-          ? `<img class="portrait-media" src="${escapeAttribute(character.portrait)}" alt="${escapeAttribute(`Retrat de ${character.name}`)}" loading="lazy" />`
+          ? `<img class="portrait-media" ${renderCharacterAssetAttribute(character.portrait)} alt="${escapeAttribute(`Retrat de ${character.name}`)}" loading="lazy" />`
           : ""}
         <div class="portrait-badge">${escapeHtml(character.sigil)}</div>
       </div>
@@ -515,7 +559,7 @@ function renderSavageWorldsSheetTab(character) {
         </div>
         <div class="dnd-sheet-identity">
           <span>${escapeHtml(character.className)}</span>
-          <span>Avenc ${escapeHtml(String(character.level))}</span>
+          <span>Avanc ${escapeHtml(String(character.level))}</span>
           <span>${escapeHtml(character.lineage)}</span>
         </div>
       </header>
@@ -527,6 +571,22 @@ function renderSavageWorldsSheetTab(character) {
         ${renderSavageCounter("Fatiga", "fatigue", savageState.fatigue, 0, 2, "-1 per fatiga")}
         ${renderSavageStaticStat("Penal.", "penalty", derived.penaltyLabel, "Ferides + fatiga")}
         ${renderSavageStaticStat("Pas", "pace", derived.pace, "Moviment")}
+      </section>
+
+      <section class="savage-command-deck" aria-label="Comandaments de ronda">
+        ${renderSavageCounter("Conviccio", "conviction", savageState.conviction, 0, 5, "Reserva heroica")}
+        ${renderSavageResourceCounter("Punts de poder", "powerPoints", savageState.powerPoints, savageState.maxPowerPoints)}
+        <button type="button" class="savage-incapacitated-toggle ${savageState.incapacitated ? "active" : ""}" data-savage-state="incapacitated" data-savage-toggle="true">
+          <span>Incapacitat</span>
+          <strong>${savageState.incapacitated ? "Si" : "No"}</strong>
+        </button>
+      </section>
+
+      <section class="savage-condition-bar" aria-label="Condicions actives">
+        <span>Condicions ${renderSavageConceptHint("conditions")}</span>
+        <div>
+          ${SAVAGE_CONDITION_DEFINITIONS.map((condition) => renderSavageCondition(condition, savageState.conditions)).join("")}
+        </div>
       </section>
 
       <div class="dnd-sheet-grid savage-sheet-grid">
@@ -570,7 +630,7 @@ function renderSavageWorldsSheetTab(character) {
           <h4>Armes i accions ${renderSavageConceptHint("damage")} ${renderSavageConceptHint("range")}</h4>
           <div class="savage-attack-list">
             ${attacks.length
-              ? attacks.map((attack) => renderSavageAttackCard(attack, derived.penalty)).join("")
+              ? attacks.map((attack) => renderSavageAttackCard(attack, derived.penalty, savageState)).join("")
               : `<p class="empty-state">Afegeix armes a Equipament amb format "Rifle | Disparar d8 | 2d6 | Rang 12/24/48".</p>`}
           </div>
         </section>
@@ -653,6 +713,30 @@ function renderSavageStaticStat(label, key, value, helper) {
   `;
 }
 
+function renderSavageResourceCounter(label, key, value, max) {
+  const enabled = Number(max) > 0;
+  return `
+    <div class="savage-live-control savage-resource-control ${enabled ? "" : "disabled"}" data-savage-control="${escapeAttribute(key)}">
+      <span>${escapeHtml(label)} ${renderSavageConceptHint("powerPoints")}</span>
+      <strong>${enabled ? `${escapeHtml(String(value))}/${escapeHtml(String(max))}` : "-"}</strong>
+      <small>${enabled ? "Reserva arcana" : "Sense poders"}</small>
+      ${enabled ? `<div class="savage-live-buttons">
+        <button type="button" class="secondary" data-savage-state="${escapeAttribute(key)}" data-savage-delta="-1" ${value <= 0 ? "disabled" : ""}>-</button>
+        <button type="button" class="secondary" data-savage-state="${escapeAttribute(key)}" data-savage-delta="1" ${value >= max ? "disabled" : ""}>+</button>
+      </div>` : ""}
+    </div>
+  `;
+}
+
+function renderSavageCondition(condition, activeConditions) {
+  const active = activeConditions.includes(condition.key);
+  return `
+    <button type="button" class="savage-condition ${active ? "active" : ""}" data-savage-condition="${escapeAttribute(condition.key)}" aria-pressed="${active ? "true" : "false"}">
+      ${escapeHtml(condition.label)}
+    </button>
+  `;
+}
+
 function renderSavageCombatStat(label, conceptKey, value, helper) {
   return `
     <div class="dnd-combat-stat">
@@ -698,13 +782,22 @@ function formatSavageStatus(savageState) {
   return parts.length ? parts.join(" / ") : "Sa";
 }
 
-function renderSavageAttackCard(attack, penalty = 0) {
+function renderSavageAttackCard(attack, penalty = 0, savageState = {}) {
+  const ammo = savageState.ammo?.[attack.id];
+  const ammoValue = Number.isFinite(Number(ammo)) ? Number(ammo) : attack.ammoCurrent;
   return `
     <article class="savage-attack-card ${attack.equipped ? "equipped" : ""}">
-      <strong>${escapeHtml(attack.name)}</strong>
-      <span>${escapeHtml(formatSavageAttackTrait(attack.trait, penalty))}</span>
-      <span>${escapeHtml(attack.damage || "Dany pendent")}</span>
-      <small>${escapeHtml([attack.range, attack.notes].filter(Boolean).join(" · ") || "Sense notes")}</small>
+      <div class="savage-attack-summary">
+        <strong>${escapeHtml(attack.name)}</strong>
+        <span>${escapeHtml(formatSavageAttackTrait(attack.trait, penalty))}</span>
+        <span>${escapeHtml(attack.damage || "Dany pendent")}</span>
+        <small>${escapeHtml([attack.range, attack.notes].filter(Boolean).join(" · ") || "Sense notes")}</small>
+      </div>
+      ${attack.ammoMax ? `<div class="savage-ammo-control">
+        <span>Municio <strong>${escapeHtml(String(ammoValue))}/${escapeHtml(String(attack.ammoMax))}</strong></span>
+        <button type="button" class="secondary" data-savage-ammo="${escapeAttribute(attack.id)}" data-savage-ammo-max="${escapeAttribute(String(attack.ammoMax))}" data-savage-ammo-current="${escapeAttribute(String(ammoValue))}" data-savage-ammo-delta="-1" ${ammoValue <= 0 ? "disabled" : ""}>-</button>
+        <button type="button" class="secondary" data-savage-ammo="${escapeAttribute(attack.id)}" data-savage-ammo-max="${escapeAttribute(String(attack.ammoMax))}" data-savage-ammo-current="${escapeAttribute(String(ammoValue))}" data-savage-ammo-delta="1" ${ammoValue >= attack.ammoMax ? "disabled" : ""}>+</button>
+      </div>` : ""}
     </article>
   `;
 }
@@ -828,11 +921,20 @@ function parseSavageSheetData(value) {
 function normalizeSavageState(candidate, fallbackBennies) {
   const source = candidate && typeof candidate === "object" ? candidate : {};
   const defaultBennies = parseSignedNumber(fallbackBennies) || 3;
+  const maxPowerPoints = clampNumber(source.maxPowerPoints, 0, 99, 0);
   return {
     bennies: clampNumber(source.bennies, 0, 9, defaultBennies),
     wounds: clampNumber(source.wounds, 0, 3, 0),
     fatigue: clampNumber(source.fatigue, 0, 2, 0),
     shaken: Boolean(source.shaken),
+    incapacitated: Boolean(source.incapacitated),
+    conviction: clampNumber(source.conviction, 0, 5, 0),
+    powerPoints: clampNumber(source.powerPoints, 0, maxPowerPoints, maxPowerPoints),
+    maxPowerPoints,
+    conditions: Array.isArray(source.conditions)
+      ? source.conditions.map(String).filter((key) => SAVAGE_CONDITION_DEFINITIONS.some((condition) => condition.key === key))
+      : [],
+    ammo: source.ammo && typeof source.ammo === "object" ? { ...source.ammo } : {},
   };
 }
 
@@ -849,6 +951,11 @@ function parseSavagePace(value) {
 function calculateSavageDerivedStats(character, sheetData, savageState, equipment) {
   const rawParry = parseSavageNumberWithArmor(character.sheet.ac);
   const rawToughness = parseSavageNumberWithArmor(character.sheet.hp);
+  const fighting = sheetData.skills.find((skill) => ["lluitar", "fighting"].includes(normalizeTraitName(skill.name)));
+  const parryBase = fighting ? calculateSavageDefenseFromDie(fighting.die) : rawParry.base;
+  const toughnessBase = sheetData.attributes.vigor
+    ? calculateSavageDefenseFromDie(sheetData.attributes.vigor)
+    : rawToughness.base;
   const armorBonus = equipment.armors
     .filter((armor) => armor.equipped)
     .reduce((total, armor) => total + armor.armorBonus, 0);
@@ -866,21 +973,29 @@ function calculateSavageDerivedStats(character, sheetData, savageState, equipmen
     penaltyLabel: penalty ? `-${penalty}` : "0",
     pace: Math.max(0, paceBase + pacePenalty),
     parry: {
-      base: rawParry.base,
-      total: rawParry.base + parryBonus,
-      helper: parryBonus ? `Base ${rawParry.base} + equip ${parryBonus}` : "Base sense bonus actiu",
+      base: parryBase,
+      total: parryBase + parryBonus,
+      helper: parryBonus
+        ? `Base ${parryBase} + equip ${parryBonus}`
+        : fighting ? `Calculada amb ${fighting.name} ${fighting.die}` : "Base manual sense bonus actiu",
     },
     toughness: {
-      base: rawToughness.base,
+      base: toughnessBase,
       armorBonus: armorBonus || rawToughness.inlineArmor,
-      total: rawToughness.base + armorBonus + (!equipment.armors.length ? rawToughness.inlineArmor : 0),
+      total: toughnessBase + armorBonus + (!equipment.armors.length ? rawToughness.inlineArmor : 0),
       helper: armorBonus
-        ? `Base ${rawToughness.base} + armadura ${armorBonus}`
+        ? `Base ${toughnessBase} + armadura ${armorBonus}`
         : rawToughness.inlineArmor
-          ? `Base ${rawToughness.base} + armadura manual ${rawToughness.inlineArmor}`
-          : "Base sense armadura activa",
+          ? `Base ${toughnessBase} + armadura manual ${rawToughness.inlineArmor}`
+          : sheetData.attributes.vigor ? `Calculada amb Vigor ${sheetData.attributes.vigor}` : "Base manual sense armadura activa",
     },
   };
+}
+
+function calculateSavageDefenseFromDie(value) {
+  const match = String(value || "").match(/d(4|6|8|10|12)(?:\+(\d+))?/i);
+  if (!match) return 2;
+  return 2 + Math.floor(Number(match[1]) / 2) + Number(match[2] || 0);
 }
 
 function parseSavageNumberWithArmor(value) {
@@ -982,13 +1097,20 @@ function isSavageArmorLine(line, parts) {
 function parseSavageWeaponLine(line, parts, id, skillByName) {
   if (parts.length >= 2) {
     const notes = parts.slice(3).join(" | ");
+    const ammo = parseSavageAmmo(notes);
     return {
       id,
       name: parts[0],
       trait: parts[1],
       damage: parts[2] || "",
       range: extractSavageRange(notes),
-      notes: notes.replace(/\bRang\s+[\d/]+\b/i, "").trim(),
+      ammoCurrent: ammo.current,
+      ammoMax: ammo.max,
+      notes: notes
+        .replace(/\bRang\s+[\d/]+\b/i, "")
+        .replace(/\bMunici[oó]\s+\d+(?:\s*\/\s*\d+)?\b/i, "")
+        .replace(/^\s*\|\s*|\s*\|\s*$/g, "")
+        .trim(),
       equipped: false,
     };
   }
@@ -1003,9 +1125,21 @@ function parseSavageWeaponLine(line, parts, id, skillByName) {
     trait,
     damage: "",
     range: "",
+    ammoCurrent: 0,
+    ammoMax: 0,
     notes: "Completa dany/rang a Equipament.",
     equipped: false,
   };
+}
+
+function parseSavageAmmo(value) {
+  const match = String(value || "").match(/\bMunici[oó]\s+(\d+)(?:\s*\/\s*(\d+))?/i);
+  if (!match) {
+    return { current: 0, max: 0 };
+  }
+  const current = Math.max(0, Number(match[1]));
+  const max = Math.max(current, Number(match[2] || match[1]));
+  return { current, max };
 }
 
 function parseSavageArmorLine(line, parts, id) {
@@ -1295,13 +1429,7 @@ function renderCharacterEditor(character, tab, state) {
 function renderCharacterTabEditor(character, tab, draft, state) {
   if (tab === "sheet") {
     if (isSavageWorldsCampaign(state)) {
-      return `
-        ${renderInputField("ac", "Parada", readDraftValue(draft.ac, character.sheet.ac))}
-        ${renderInputField("hp", "Duresa", readDraftValue(draft.hp, character.sheet.hp))}
-        ${renderInputField("proficiency", "Bennies", readDraftValue(draft.proficiency, character.sheet.proficiency))}
-        ${renderRichTextareaField("abilities", "Atributs i habilitats", readDraftValue(draft.abilities, character.sheet.abilities), 5)}
-        ${renderRichTextareaField("features", "Avantatges, complicacions i trets", readDraftValue(draft.features, character.sheet.features), 5)}
-      `;
+      return renderSavageSheetEditor(character, draft);
     }
 
     return `
@@ -1315,15 +1443,7 @@ function renderCharacterTabEditor(character, tab, draft, state) {
 
   if (tab === "inventory") {
     if (isSavageWorldsCampaign(state)) {
-      return `
-        <p class="field-help savage-editor-help">
-          Formats intel·ligents: arma com "Rifle | Disparar d8 | 2d6 | Rang 12/24/48"; armadura com "Abric reforcat | Armadura +2 | equipada | impermeable"; escut com "Escut | Parada +1 | equipada".
-        </p>
-        ${renderRichTextareaField("items", "Equip, armes i armadures", readDraftValue(draft.items, character.inventory.items), 7)}
-        ${renderInputField("currency", "Moneda", readDraftValue(draft.currency, character.inventory.currency))}
-        ${renderRichTextareaField("artifacts", "Artefactes", readDraftValue(draft.artifacts, character.inventory.artifacts), 4)}
-        ${renderRichTextareaField("notes", "Notes", readDraftValue(draft.notes, character.inventory.notes), 4)}
-      `;
+      return renderSavageInventoryEditor(character, draft);
     }
 
     return `
@@ -1335,6 +1455,136 @@ function renderCharacterTabEditor(character, tab, draft, state) {
   }
 
   return renderRichTextareaField("history", "Història personal", readDraftValue(draft.history, character.history), 6);
+}
+
+function renderSavageSheetEditor(character, draft) {
+  const abilitiesValue = readDraftValue(draft.abilities, character.sheet.abilities);
+  const featuresValue = readDraftValue(draft.features, character.sheet.features);
+  const sheetData = parseSavageSheetData(abilitiesValue);
+  const features = parseSavageFeatures(featuresValue);
+  const savageState = normalizeSavageState(character.sheet.savageState, character.sheet.proficiency);
+  const skillRows = [...sheetData.skills, { name: "", die: "d6" }, { name: "", die: "d6" }];
+  return `
+    ${renderInputField("ac", "Parada base", readDraftValue(draft.ac, String(parseSavageNumberWithArmor(character.sheet.ac).base)))}
+    ${renderInputField("hp", "Duresa base", readDraftValue(draft.hp, String(parseSavageNumberWithArmor(character.sheet.hp).base)))}
+    ${renderInputField("proficiency", "Bennies inicials", readDraftValue(draft.proficiency, String(parseSignedNumber(character.sheet.proficiency) || 3)))}
+    <label class="field">
+      <span>Punts de poder màxims</span>
+      <input name="savageMaxPowerPoints" type="number" min="0" max="99" value="${escapeAttribute(readDraftValue(draft.savageMaxPowerPoints, String(savageState.maxPowerPoints)))}" />
+    </label>
+    <input type="hidden" name="abilities" value="${escapeAttribute(abilitiesValue)}" data-savage-serialized="abilities" />
+    <input type="hidden" name="features" value="${escapeAttribute(featuresValue)}" data-savage-serialized="features" />
+    <section class="savage-structured-editor" data-savage-editor="sheet">
+      <div class="savage-editor-heading">
+        <div><span>Atributs i pas</span><small>Els valors alimenten defenses i càlculs.</small></div>
+        <label>Pas <input type="number" min="0" max="99" value="${escapeAttribute(parseSavagePace(abilitiesValue))}" data-savage-pace /></label>
+      </div>
+      <div class="savage-editor-traits">
+        ${SAVAGE_ATTRIBUTE_DEFINITIONS.map((attribute) => `
+          <label>
+            <span>${escapeHtml(attribute.label)}</span>
+            ${renderSavageDieSelect(sheetData.attributes[attribute.key] || "d4", `data-savage-attribute="${escapeAttribute(attribute.label)}"`)}
+          </label>
+        `).join("")}
+      </div>
+      <div class="savage-editor-heading"><div><span>Habilitats</span><small>Deixa el nom buit per eliminar una fila.</small></div></div>
+      <div class="savage-editor-rows">
+        ${skillRows.map((skill) => renderSavageSkillEditorRow(skill)).join("")}
+      </div>
+      <div class="savage-editor-features">
+        ${renderSavageListEditor("Avantatges", "edges", features.edges)}
+        ${renderSavageListEditor("Complicacions", "hindrances", features.hindrances)}
+        <label class="field savage-feature-notes-field">
+          <span>Notes i poders</span>
+          <textarea rows="4" data-savage-feature-notes>${escapeHtml(features.notes || "")}</textarea>
+        </label>
+      </div>
+    </section>
+  `;
+}
+
+function renderSavageInventoryEditor(character, draft) {
+  const itemsValue = readDraftValue(draft.items, character.inventory.items);
+  const sheetData = parseSavageSheetData(character.sheet.abilities);
+  const equipment = parseSavageEquipment(itemsValue, sheetData.skills, character.sheet.savageLoadout);
+  const weaponRows = [...equipment.weapons, {}, {}];
+  const armorRows = [...equipment.armors, {}];
+  const gearRows = [...equipment.gear, {}, {}];
+  return `
+    <input type="hidden" name="items" value="${escapeAttribute(itemsValue)}" data-savage-serialized="items" />
+    <section class="savage-structured-editor" data-savage-editor="inventory">
+      <div class="savage-editor-heading"><div><span>Armes</span><small>Nom, tret, dany, rang i munició.</small></div></div>
+      <div class="savage-editor-rows savage-weapon-editor-rows">
+        ${weaponRows.map((weapon) => renderSavageWeaponEditorRow(weapon)).join("")}
+      </div>
+      <div class="savage-editor-heading"><div><span>Armadures i escuts</span><small>Els bonus equipats modifiquen el nucli.</small></div></div>
+      <div class="savage-editor-rows">
+        ${armorRows.map((armor) => renderSavageArmorEditorRow(armor)).join("")}
+      </div>
+      <div class="savage-editor-heading"><div><span>Altres objectes</span><small>Una fila per objecte o grup de consumibles.</small></div></div>
+      <div class="savage-editor-rows">
+        ${gearRows.map((gear) => renderSavageGearEditorRow(gear)).join("")}
+      </div>
+    </section>
+    ${renderInputField("currency", "Moneda", readDraftValue(draft.currency, character.inventory.currency))}
+    ${renderRichTextareaField("artifacts", "Artefactes", readDraftValue(draft.artifacts, character.inventory.artifacts), 4)}
+    ${renderRichTextareaField("notes", "Notes", readDraftValue(draft.notes, character.inventory.notes), 4)}
+  `;
+}
+
+function renderSavageDieSelect(value, attributes = "") {
+  const options = ["d4", "d6", "d8", "d10", "d12", "d12+1", "d12+2"];
+  return `<select ${attributes}>${options.map((option) => `<option value="${option}" ${option === value ? "selected" : ""}>${option}</option>`).join("")}</select>`;
+}
+
+function renderSavageSkillEditorRow(skill = {}) {
+  return `
+    <div class="savage-editor-row" data-savage-skill-row>
+      <input value="${escapeAttribute(skill.name || "")}" placeholder="Habilitat" data-savage-skill-name />
+      ${renderSavageDieSelect(skill.die || "d6", "data-savage-skill-die")}
+    </div>
+  `;
+}
+
+function renderSavageListEditor(label, group, values) {
+  const rows = [...values, "", ""];
+  return `
+    <section>
+      <h5>${escapeHtml(label)}</h5>
+      ${rows.map((value) => `<input value="${escapeAttribute(value)}" placeholder="${escapeAttribute(label.slice(0, -1))}" data-savage-feature="${escapeAttribute(group)}" />`).join("")}
+    </section>
+  `;
+}
+
+function renderSavageWeaponEditorRow(weapon = {}) {
+  return `
+    <div class="savage-editor-row savage-weapon-editor-row" data-savage-weapon-row>
+      <input value="${escapeAttribute(weapon.name || "")}" placeholder="Arma" data-savage-weapon-name />
+      <input value="${escapeAttribute(weapon.trait || "")}" placeholder="Disparar d8" data-savage-weapon-trait />
+      <input value="${escapeAttribute(weapon.damage || "")}" placeholder="2d6+1" data-savage-weapon-damage />
+      <input value="${escapeAttribute(weapon.range || "")}" placeholder="12/24/48" data-savage-weapon-range />
+      <input type="number" min="0" max="999" value="${escapeAttribute(String(weapon.ammoMax || ""))}" placeholder="Mun." data-savage-weapon-ammo />
+      <input value="${escapeAttribute(weapon.notes || "")}" placeholder="Notes" data-savage-weapon-notes />
+      <label class="savage-editor-check"><input type="checkbox" ${weapon.equipped ? "checked" : ""} data-savage-weapon-equipped /> Preparada</label>
+    </div>
+  `;
+}
+
+function renderSavageArmorEditorRow(armor = {}) {
+  return `
+    <div class="savage-editor-row savage-armor-editor-row" data-savage-armor-row>
+      <input value="${escapeAttribute(armor.name || "")}" placeholder="Armadura o escut" data-savage-armor-name />
+      <input type="number" min="0" max="20" value="${escapeAttribute(String(armor.armorBonus || ""))}" placeholder="Duresa" data-savage-armor-toughness />
+      <input type="number" min="0" max="20" value="${escapeAttribute(String(armor.parryBonus || ""))}" placeholder="Parada" data-savage-armor-parry />
+      <input type="number" min="-20" max="0" value="${escapeAttribute(String(armor.pacePenalty || ""))}" placeholder="Pas" data-savage-armor-pace />
+      <input value="${escapeAttribute(armor.notes || "")}" placeholder="Notes" data-savage-armor-notes />
+      <label class="savage-editor-check"><input type="checkbox" ${armor.equipped ? "checked" : ""} data-savage-armor-equipped /> Equipat</label>
+    </div>
+  `;
+}
+
+function renderSavageGearEditorRow(gear = {}) {
+  return `<div class="savage-editor-row" data-savage-gear-row><input value="${escapeAttribute(gear.name || "")}" placeholder="Objecte" data-savage-gear-name /></div>`;
 }
 
 function readDraftValue(draftValue, fallback) {

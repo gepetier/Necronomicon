@@ -479,6 +479,46 @@ async function runFunctionalSuite(context) {
     "El mode oficina es pot desactivar",
   );
 
+  context.click('[data-module-link="campaigns"]');
+  await delay(120);
+  const inviteDisclosure = context.q("[data-campaign-invite-panel]");
+  if (inviteDisclosure instanceof context.win.HTMLDetailsElement) inviteDisclosure.open = true;
+  context.type('input[name="inviteEmail"]', "jugador.damakos@gmail.com");
+  const inviteCharacter = context.q('select[name="inviteCharacterId"]');
+  if (inviteCharacter instanceof context.win.HTMLSelectElement) {
+    inviteCharacter.value = "damakos";
+    inviteCharacter.dispatchEvent(new context.win.Event("change", { bubbles: true }));
+  }
+  context.submit('form[data-form="campaign-invite"]');
+  await delay(180);
+  const inviteReady = context.q(".campaign-invite-ready");
+  const inviteLink = context.q('.campaign-invite-ready input')?.value || "";
+  const normalizedInviteLink = inviteLink.replaceAll("&amp;", "&");
+  const inviteParams = normalizedInviteLink ? new URL(normalizedInviteLink).searchParams : new URLSearchParams();
+  record(
+    steps,
+    Boolean(inviteReady)
+      && inviteParams.get("inviteCampaign") === "meledar"
+      && inviteParams.get("inviteCharacter") === "damakos",
+    "La campanya permet preparar una invitacio vinculada al correu i a Damakos",
+    { inviteLink },
+  );
+
+  context.click('[data-module-link="options"]');
+  await delay(120);
+  const invitedUserDelete = context.q('button[data-delete-permission-user="jugador.damakos@gmail.com"]');
+  const previousConfirm = context.win.confirm;
+  context.win.confirm = () => true;
+  invitedUserDelete?.click();
+  context.win.confirm = previousConfirm;
+  await delay(180);
+  record(
+    steps,
+    Boolean(invitedUserDelete)
+      && context.q('input[name="userEmail"][value="jugador.damakos@gmail.com"]') === null,
+    "Opcions permet eliminar un correu dels permisos de la campanya",
+  );
+
   return {
     ok: steps.every((step) => step.ok),
     suite: context.suite,

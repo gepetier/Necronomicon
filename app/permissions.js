@@ -73,8 +73,10 @@ export function normalizeAccessShape(access) {
       .map(([email, user]) => [
         email.toLowerCase(),
         {
+          ...(user && typeof user === "object" ? user : {}),
           role: normalizeRoleId(user?.role || "player"),
           characterIds: Array.isArray(user?.characterIds) ? user.characterIds.map(String) : [],
+          invitedAt: typeof user?.invitedAt === "string" ? user.invitedAt : "",
         },
       ]),
   );

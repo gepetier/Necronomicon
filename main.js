@@ -41,10 +41,12 @@ import {
 } from "./app/utils.js";
 import {
   collectAssetTokensFromState,
+  collectAssetTokensFromValue,
   collectEmbeddedDataUrlsFromState,
   inferAssetKindFromMimeType,
   isAssetToken,
   replaceAssetSourcesInState,
+  replaceAssetTokensInValue,
 } from "./app/assets.js";
 import {
   clearAssetStore,
@@ -53,6 +55,7 @@ import {
   importAssetBundle,
   localizeDriveAssetBundle,
   materializeAssetTokens,
+  setDriveAssetLoader,
   storeAssetDataUrl,
   storeAssetFile,
 } from "./app/asset-store.js";
@@ -85,10 +88,12 @@ import {
   getStoredCredential,
   isCredentialUsable,
   loadCampaignFromCloud,
+  loadAssetFromCloud,
   loadGoogleIdentity,
   promptGoogleSignIn,
   renderGoogleButton,
   saveCampaignToCloud,
+  saveAssetToCloud,
   saveCharacterToCloud,
   saveChronicleToCloud,
   saveGlossaryEntryToCloud,
@@ -113,10 +118,14 @@ const pendingCloudSaveTargets = createCloudSaveQueue();
 const referenceSuggestionTimers = new WeakMap();
 const glossaryImageUploadsInFlight = new Set();
 const glossaryImageUploadStates = new Map();
+const cloudAssetUploadReplacements = new Map();
 const GLOSSARY_UPLOAD_DEBUG_STORAGE_KEY = "necronomicon-glossary-upload-debug-v1";
 const GLOSSARY_UPLOAD_DEBUG_LIMIT = 80;
+const PLAYER_WELCOME_STORAGE_PREFIX = "necronomicon-player-welcome-v1";
 let glossaryUploadDebugEntries = loadGlossaryUploadDebugEntries();
 let pendingGlossaryFileDialog = null;
+let playerWelcomeState = null;
+let lastCreatedPlayerInvite = null;
 const richPreviewTimers = new WeakMap();
 
 const saveNoticeEl = document.querySelector("#saveNotice");
@@ -138,6 +147,8 @@ const authGate = document.querySelector("#authGate");
 const googleSignInButton = document.querySelector("#googleSignInButton");
 const authStatus = document.querySelector("[data-auth-status]");
 const authCampaignSelect = document.querySelector("[data-auth-campaign-select]");
+const playerWelcome = document.querySelector("#playerWelcome");
+const playerWelcomeContent = document.querySelector("[data-player-welcome-content]");
 
 let lastLightboxTrigger = null;
 let pendingRichMediaInsert = null;
@@ -210,6 +221,15 @@ const cloudSession = {
   revision: 0,
 };
 
+setDriveAssetLoader(async (assetRef) => {
+  if (!cloudSession.ready || !cloudSession.idToken) return null;
+  return loadAssetFromCloud(
+    cloudSession.idToken,
+    assetRef,
+    storageGetActiveCampaignMeta().id,
+  );
+});
+
 const RENDER_PARTS = {
   sidebar: "sidebar",
   notice: "notice",
@@ -280,7 +300,8 @@ function applyCaptureUserOverride() {
 
   const role = normalizeRoleId(runtimeParams.get("captureUserRole") || "player");
   const email = String(runtimeParams.get("captureUserEmail") || `${role}@preview.local`).toLowerCase();
-  const characterIds = role === "player" ? [state.characters[0]?.id].filter(Boolean) : [];
+  const captureCharacterId = runtimeParams.get("captureCharacterId") || state.characters[0]?.id || "";
+  const characterIds = role === "player" ? [captureCharacterId].filter(Boolean) : [];
   state.access = normalizeAccessShape({
     ...(state.access || {}),
     users: {
@@ -303,6 +324,9 @@ function applyCaptureUserOverride() {
     permissions: getAccessState().roles[role],
     characterIds,
   };
+  if (runtimeParams.has("playerWelcomePreview")) {
+    openAssignedPlayerLanding({ forceWelcome: true });
+  }
 }
 
 function handleClick(event) {
@@ -334,6 +358,7 @@ function handleClick(event) {
     clickedImage instanceof HTMLImageElement
     && !clickedImage.closest("#imageLightbox")
     && !clickedImage.closest(".chronicle-atlas-card")
+    && !clickedImage.closest(".player-welcome")
   ) {
     event.preventDefault();
     event.stopPropagation();
@@ -390,6 +415,28 @@ function handleClick(event) {
     cloudSession.selectingCampaign = false;
     updateCloudStatus("Sessio tancada. Torna a iniciar sessio per sincronitzar.", { renderOptions: false });
     void initializeCloudSession();
+    return;
+  }
+
+  if (event.target.closest("[data-enter-player-character]")) {
+    completePlayerWelcome("character");
+    return;
+  }
+
+  if (event.target.closest("[data-open-player-chronicle]")) {
+    completePlayerWelcome("chronicle");
+    return;
+  }
+
+  const copyInvite = event.target.closest("[data-copy-player-invite]");
+  if (copyInvite) {
+    void copyPlayerInviteLink(copyInvite.dataset.copyPlayerInvite || "");
+    return;
+  }
+
+  const permissionUserDelete = event.target.closest("[data-delete-permission-user]");
+  if (permissionUserDelete) {
+    deletePermissionUser(permissionUserDelete.dataset.deletePermissionUser || "");
     return;
   }
 
@@ -707,6 +754,19 @@ function handleClick(event) {
     updateSavageCharacterState(savageStateButton);
     return;
   }
+
+  const savageConditionButton = event.target.closest("[data-savage-condition]");
+  if (savageConditionButton) {
+    updateSavageCondition(savageConditionButton);
+    return;
+  }
+
+  const savageAmmoButton = event.target.closest("[data-savage-ammo]");
+  if (savageAmmoButton) {
+    updateSavageAmmo(savageAmmoButton);
+    return;
+  }
+
 
   const savageEquipButton = event.target.closest("[data-savage-equip]");
   if (savageEquipButton) {
@@ -1051,8 +1111,98 @@ function handleInput(event) {
 
   const form = event.target instanceof HTMLElement ? event.target.closest("form[data-form]") : null;
   if (form instanceof HTMLFormElement && form.dataset.form !== "quick-glossary") {
+    if (event.target instanceof HTMLElement && event.target.closest("[data-savage-editor]")) {
+      syncSavageStructuredEditor(form);
+    }
     updateDraftFromForm(form);
   }
+}
+
+function syncSavageStructuredEditor(form) {
+  const sheetEditor = form.querySelector('[data-savage-editor="sheet"]');
+  if (sheetEditor) {
+    const abilityLines = [];
+    const pace = readElementValue(sheetEditor.querySelector("[data-savage-pace]"));
+    if (pace) {
+      abilityLines.push(`Pas ${pace}`);
+    }
+    const attributes = Array.from(sheetEditor.querySelectorAll("[data-savage-attribute]"))
+      .map((element) => `${element.dataset.savageAttribute} ${readElementValue(element)}`)
+      .filter(Boolean);
+    if (attributes.length) {
+      abilityLines.push(attributes.join(", "));
+    }
+    const skills = Array.from(sheetEditor.querySelectorAll("[data-savage-skill-row]"))
+      .map((row) => {
+        const name = readElementValue(row.querySelector("[data-savage-skill-name]")).trim();
+        const die = readElementValue(row.querySelector("[data-savage-skill-die]")).trim();
+        return name ? `${name} ${die || "d4"}` : "";
+      })
+      .filter(Boolean);
+    if (skills.length) {
+      abilityLines.push(skills.join(", "));
+    }
+    const abilitiesTarget = form.querySelector('[data-savage-serialized="abilities"]');
+    if (abilitiesTarget instanceof HTMLInputElement) {
+      abilitiesTarget.value = abilityLines.join("\n");
+    }
+
+    const edgeValues = readSavageEditorList(sheetEditor, "edges");
+    const hindranceValues = readSavageEditorList(sheetEditor, "hindrances");
+    const notes = readElementValue(sheetEditor.querySelector("[data-savage-feature-notes]")).trim();
+    const featureLines = [];
+    if (edgeValues.length) featureLines.push(`Avantatges: ${edgeValues.join(", ")}.`);
+    if (hindranceValues.length) featureLines.push(`Complicacions: ${hindranceValues.join(", ")}.`);
+    if (notes) featureLines.push(`Notes: ${notes}`);
+    const featuresTarget = form.querySelector('[data-savage-serialized="features"]');
+    if (featuresTarget instanceof HTMLInputElement) {
+      featuresTarget.value = featureLines.join("\n");
+    }
+  }
+
+  const inventoryEditor = form.querySelector('[data-savage-editor="inventory"]');
+  if (inventoryEditor) {
+    const lines = [];
+    inventoryEditor.querySelectorAll("[data-savage-weapon-row]").forEach((row) => {
+      const name = readElementValue(row.querySelector("[data-savage-weapon-name]")).trim();
+      if (!name) return;
+      const trait = readElementValue(row.querySelector("[data-savage-weapon-trait]")).trim() || "Tret d4";
+      const damage = readElementValue(row.querySelector("[data-savage-weapon-damage]")).trim() || "Dany pendent";
+      const range = readElementValue(row.querySelector("[data-savage-weapon-range]")).trim();
+      const ammo = readElementValue(row.querySelector("[data-savage-weapon-ammo]")).trim();
+      const notes = readElementValue(row.querySelector("[data-savage-weapon-notes]")).trim();
+      const equipped = row.querySelector("[data-savage-weapon-equipped]")?.checked;
+      lines.push([name, trait, damage, range ? `Rang ${range}` : "", ammo ? `Municio ${ammo}/${ammo}` : "", equipped ? "preparada" : "", notes].filter(Boolean).join(" | "));
+    });
+    inventoryEditor.querySelectorAll("[data-savage-armor-row]").forEach((row) => {
+      const name = readElementValue(row.querySelector("[data-savage-armor-name]")).trim();
+      if (!name) return;
+      const toughness = readElementValue(row.querySelector("[data-savage-armor-toughness]")).trim();
+      const parry = readElementValue(row.querySelector("[data-savage-armor-parry]")).trim();
+      const pace = readElementValue(row.querySelector("[data-savage-armor-pace]")).trim();
+      const notes = readElementValue(row.querySelector("[data-savage-armor-notes]")).trim();
+      const equipped = row.querySelector("[data-savage-armor-equipped]")?.checked;
+      lines.push([name, toughness ? `Armadura +${toughness}` : "", parry ? `Parada +${parry}` : "", pace ? `Pas ${pace}` : "", equipped ? "equipada" : "", notes].filter(Boolean).join(" | "));
+    });
+    inventoryEditor.querySelectorAll("[data-savage-gear-row]").forEach((row) => {
+      const name = readElementValue(row.querySelector("[data-savage-gear-name]")).trim();
+      if (name) lines.push(name);
+    });
+    const itemsTarget = form.querySelector('[data-savage-serialized="items"]');
+    if (itemsTarget instanceof HTMLInputElement) {
+      itemsTarget.value = lines.join("\n");
+    }
+  }
+}
+
+function readSavageEditorList(editor, group) {
+  return Array.from(editor.querySelectorAll(`[data-savage-feature="${group}"]`))
+    .map((element) => readElementValue(element).trim())
+    .filter(Boolean);
+}
+
+function readElementValue(element) {
+  return element && "value" in element ? String(element.value || "") : "";
 }
 
 function handleKeyup(event) {
@@ -1128,6 +1278,11 @@ function handleSubmit(event) {
     return;
   }
 
+  if (form.dataset.form === "campaign-invite") {
+    createPlayerInvitation(formData);
+    return;
+  }
+
   if (form.dataset.form === "quick-glossary") {
     void saveQuickGlossaryEntry(form, formData);
     return;
@@ -1147,6 +1302,7 @@ function render(parts = FULL_RENDER_PARTS) {
   const renderSet = new Set(parts);
   applyOfficeMode();
   updateAuthGate();
+  renderPlayerWelcome();
 
   if (renderSet.has(RENDER_PARTS.sidebar)) {
     updateSidebar();
@@ -1324,7 +1480,10 @@ async function initializeCloudSession() {
     promptGoogleSignIn();
   } catch (error) {
     cloudSession.ready = false;
-    updateCloudStatus(error instanceof Error ? error.message : String(error), { error: true });
+    const message = runtimeParams.has("inviteCampaign")
+      ? "Aquesta invitacio no correspon al compte de Google o ja no esta activa. Prova amb el correu convidat."
+      : error instanceof Error ? error.message : String(error);
+    updateCloudStatus(message, { error: true });
   }
 }
 
@@ -1385,9 +1544,10 @@ async function handleGoogleCredential(credential, options = {}) {
     cloudSession.lastError = "";
     ensureUiStateShape();
     persistStateImmediately({ skipCloud: true });
+    const migratedEmbeddedAssets = await migrateEmbeddedAssets({ announce: false });
     updateAuthFeedback(shouldSeedCloud ? "firstPublish" : "campaignReady");
     prepareCampaignSelectionAfterLogin();
-    if (shouldSeedCloud && canPublishCampaign()) {
+    if ((shouldSeedCloud || migratedEmbeddedAssets) && canPublishCampaign()) {
       await pushStateToCloud({ target: { type: "campaign" } });
       cloudSession.pendingInitialPublish = false;
     }
@@ -1437,13 +1597,32 @@ function prepareCampaignSelectionAfterLogin() {
     return;
   }
 
+  const invitedCampaignId = runtimeParams.get("inviteCampaign") || "";
+  const invitedCampaign = invitedCampaignId
+    ? accessibleCampaigns.find((campaign) => campaign.id === invitedCampaignId)
+    : null;
+  if (invitedCampaignId && !invitedCampaign) {
+    cloudSession.selectingCampaign = true;
+    cloudSession.status = "Aquesta invitacio no esta disponible per al compte de Google connectat.";
+    renderAuthCampaignSelection(accessibleCampaigns);
+    updateAuthGate();
+    return;
+  }
+  const onlyCampaign = accessibleCampaigns.length === 1 ? accessibleCampaigns[0] : null;
+  const directCampaign = invitedCampaign
+    || (onlyCampaign?.userAccess?.role === "player" ? onlyCampaign : null);
+  if (directCampaign) {
+    selectLoginCampaign(directCampaign.id, { forceWelcome: Boolean(invitedCampaign) });
+    return;
+  }
+
   cloudSession.selectingCampaign = true;
   cloudSession.status = "Tria una campanya per obrir el compendi.";
   renderAuthCampaignSelection(accessibleCampaigns);
   updateAuthGate();
 }
 
-function selectLoginCampaign(campaignId) {
+function selectLoginCampaign(campaignId, options = {}) {
   const accessibleCampaigns = getAccessibleCampaignsForCurrentUser();
   const target = accessibleCampaigns.find((campaign) => campaign.id === campaignId);
   if (!target) {
@@ -1458,14 +1637,14 @@ function selectLoginCampaign(campaignId) {
   cloudSession.ready = true;
   cloudSession.awaitingServer = false;
   cloudSession.status = `Campanya oberta: ${target.name}.`;
-  openCharactersAfterLogin();
+  openCharactersAfterLogin({ forceWelcome: options.forceWelcome });
   persistStateImmediately({ skipCloud: true });
   renderAuthCampaignSelection([]);
   updateAuthGate();
   render();
 }
 
-function openCharactersAfterLogin() {
+function openCharactersAfterLogin(options = {}) {
   state.ui.currentModule = "characters";
   state.ui.showCharacterGrid = true;
   state.ui.editModes = {
@@ -1475,6 +1654,140 @@ function openCharactersAfterLogin() {
     glossary: false,
   };
   clearChronicleReturn();
+  openAssignedPlayerLanding(options);
+}
+
+function openAssignedPlayerLanding(options = {}) {
+  const userAccess = getCurrentUserAccess();
+  if (userAccess.role !== "player") {
+    playerWelcomeState = null;
+    return;
+  }
+
+  const assignedIds = Array.isArray(userAccess.characterIds) ? userAccess.characterIds : [];
+  const requestedCharacterId = runtimeParams.get("inviteCharacter") || "";
+  const assignedCharacters = assignedIds
+    .map((characterId) => state.characters.find((character) => character.id === characterId))
+    .filter(Boolean);
+  const character = assignedCharacters.find((item) => item.id === requestedCharacterId)
+    || (assignedCharacters.length === 1 ? assignedCharacters[0] : null);
+  if (!character) {
+    playerWelcomeState = null;
+    return;
+  }
+
+  state.ui.currentModule = "characters";
+  state.ui.selectedCharacterId = character.id;
+  state.ui.selectedCharacterTab = "sheet";
+  state.ui.showCharacterGrid = false;
+
+  const campaign = storageGetActiveCampaignMeta();
+  const welcomeKey = getPlayerWelcomeStorageKey(userAccess.email, campaign.id, character.id);
+  const shouldWelcome = options.forceWelcome
+    || runtimeParams.has("playerWelcomePreview")
+    || !hasCompletedPlayerWelcome(welcomeKey);
+  if (!shouldWelcome) {
+    playerWelcomeState = null;
+    return;
+  }
+
+  const relatedChronicles = state.chronicles.filter((chronicle) => (
+    Array.isArray(chronicle.characterIds) && chronicle.characterIds.includes(character.id)
+  ));
+  playerWelcomeState = {
+    campaign,
+    character,
+    latestChronicle: relatedChronicles.at(-1) || state.chronicles.at(-1) || null,
+    welcomeKey,
+  };
+}
+
+function getPlayerWelcomeStorageKey(email, campaignId, characterId) {
+  return [PLAYER_WELCOME_STORAGE_PREFIX, email || "player", campaignId, characterId]
+    .map((part) => encodeURIComponent(String(part || "")))
+    .join(":");
+}
+
+function hasCompletedPlayerWelcome(key) {
+  try {
+    return window.localStorage.getItem(key) === "done";
+  } catch {
+    return false;
+  }
+}
+
+function renderPlayerWelcome() {
+  if (!playerWelcome || !playerWelcomeContent) return;
+  if (!playerWelcomeState || cloudSession.selectingCampaign || !cloudSession.ready) {
+    if (!playerWelcome.hidden) deactivateDialogFocus(playerWelcome);
+    playerWelcome.hidden = true;
+    playerWelcomeContent.innerHTML = "";
+    document.body.classList.remove("player-welcome-open");
+    return;
+  }
+
+  const wasHidden = playerWelcome.hidden;
+  const { campaign, character, latestChronicle } = playerWelcomeState;
+  const portrait = String(character.portrait || "");
+  const characterNameLength = Array.from(character.name || "").length;
+  const characterNameSize = characterNameLength > 18 ? "4.4rem" : characterNameLength > 12 ? "5.2rem" : "6rem";
+  const portraitMedia = portrait
+    ? `<img class="player-welcome-portrait" ${isAssetToken(portrait)
+        ? `data-asset-src="${escapeAttribute(portrait)}"`
+        : `src="${escapeAttribute(portrait)}"`} alt="Retrat de ${escapeAttribute(character.name)}" />`
+    : `<div class="player-welcome-monogram" aria-hidden="true">${escapeHtml(character.sigil || character.name.slice(0, 2))}</div>`;
+  playerWelcomeContent.innerHTML = `
+    ${portraitMedia}
+    <div class="player-welcome-shade" aria-hidden="true"></div>
+    <div class="player-welcome-copy">
+      <p class="eyebrow">Benvingut a ${escapeHtml(campaign.name)}</p>
+      <h2 id="playerWelcomeTitle" style="--welcome-name-size:${characterNameSize}">${escapeHtml(character.name)}</h2>
+      <p class="player-welcome-role">${escapeHtml([character.lineage, character.className].filter(Boolean).join(" · "))}</p>
+      <p class="player-welcome-summary">${escapeHtml(character.summary || character.quickNotes || "La teva historia comenca aqui.")}</p>
+    </div>
+    <div class="player-welcome-footer">
+      ${latestChronicle ? `
+        <div class="player-welcome-context">
+          <span>Darrera crònica relacionada</span>
+          <strong>${escapeHtml(latestChronicle.chapter || latestChronicle.title)}</strong>
+          <small>${escapeHtml(latestChronicle.title || latestChronicle.summary || "")}</small>
+        </div>
+      ` : `<div class="player-welcome-context"><span>La teva campanya</span><strong>${escapeHtml(campaign.name)}</strong></div>`}
+      <div class="player-welcome-actions">
+        ${latestChronicle ? `<button type="button" class="secondary" data-open-player-chronicle>Repassa la crònica</button>` : ""}
+        <button type="button" class="primary" data-enter-player-character>Entra com ${escapeHtml(character.name)}</button>
+      </div>
+    </div>
+  `;
+  playerWelcome.hidden = false;
+  document.body.classList.add("player-welcome-open");
+  void hydrateAssetReferences(playerWelcomeContent);
+  if (wasHidden) {
+    activateDialogFocus(playerWelcome, document.activeElement);
+    requestAnimationFrame(() => playerWelcomeContent.querySelector("[data-enter-player-character]")?.focus());
+  }
+}
+
+function completePlayerWelcome(destination) {
+  if (!playerWelcomeState) return;
+  const { character, latestChronicle, welcomeKey } = playerWelcomeState;
+  try {
+    window.localStorage.setItem(welcomeKey, "done");
+  } catch {
+    // The welcome preference is optional and must never block entry.
+  }
+  playerWelcomeState = null;
+  if (destination === "chronicle" && latestChronicle) {
+    state.ui.currentModule = "chronicles";
+    state.ui.selectedChronicleId = latestChronicle.id;
+    state.ui.showChronicleLanding = false;
+  } else {
+    state.ui.currentModule = "characters";
+    state.ui.selectedCharacterId = character.id;
+    state.ui.selectedCharacterTab = "sheet";
+    state.ui.showCharacterGrid = false;
+  }
+  persistAndRender();
 }
 
 function updateAuthGate() {
@@ -1484,7 +1797,7 @@ function updateAuthGate() {
 
   const shouldShowAuthGate = cloudSession.enabled && (!cloudSession.ready || cloudSession.selectingCampaign);
   authGate.hidden = !shouldShowAuthGate;
-  setAuthPageInert(shouldShowAuthGate);
+  setAuthPageInert(shouldShowAuthGate || Boolean(playerWelcomeState));
   document.body.classList.toggle("auth-required", shouldShowAuthGate);
   document.body.classList.toggle("auth-selecting-campaign", cloudSession.selectingCampaign);
   document.body.classList.toggle(
@@ -1913,6 +2226,7 @@ function renderCampaignsModule() {
                 activeCampaignId: activeMeta.id,
                 canEdit: campaignsEditable,
                 canDelete: campaignsEditable && catalog.campaigns.length > 1,
+                canInvite: campaign.id === activeMeta.id && canManagePermissions(),
               })).join("")
             : renderNoAccessibleCampaigns(currentUserAccess)}
         </section>
@@ -1998,7 +2312,59 @@ function renderCampaignCard(campaign, options = {}) {
           </form>
         </details>
       ` : ""}
+      ${options.canInvite ? renderCampaignInvitePanel(campaign) : ""}
     </article>
+  `;
+}
+
+function renderCampaignInvitePanel(campaign) {
+  const createdInvite = lastCreatedPlayerInvite?.campaignId === campaign.id
+    ? lastCreatedPlayerInvite
+    : null;
+  const characterOptions = state.characters.map((character) => `
+    <option value="${escapeAttribute(character.id)}" ${createdInvite?.characterId === character.id ? "selected" : ""}>
+      ${escapeHtml(character.name)} · ${escapeHtml(character.className || character.title || "Personatge")}
+    </option>
+  `).join("");
+
+  return `
+    <details class="campaign-invite-disclosure" data-campaign-invite-panel ${createdInvite ? "open" : ""}>
+      <summary>Convida un jugador</summary>
+      <div class="campaign-invite-panel">
+        <div class="campaign-invite-copy">
+          <p class="eyebrow">Nova incorporacio</p>
+          <h5>Assigna-li un personatge</h5>
+          <p>El correu dona acces a ${escapeHtml(campaign.name)}. L'enllac nomes prepara una arribada directa i no substitueix la validacio de Google.</p>
+        </div>
+        <form data-form="campaign-invite" class="campaign-invite-form">
+          <input type="hidden" name="campaignId" value="${escapeAttribute(campaign.id)}" />
+          <label class="field">
+            <span>Correu de Google</span>
+            <input name="inviteEmail" type="email" autocomplete="off" placeholder="jugador@gmail.com" value="${escapeAttribute(createdInvite?.email || "")}" required />
+          </label>
+          <label class="field">
+            <span>Personatge</span>
+            <select name="inviteCharacterId" required>
+              <option value="">Tria una fitxa</option>
+              ${characterOptions}
+            </select>
+          </label>
+          <button type="submit" class="primary">Prepara invitacio</button>
+        </form>
+        ${createdInvite ? `
+          <div class="campaign-invite-ready" role="status">
+            <div>
+              <span>Invitacio preparada</span>
+              <strong>${escapeHtml(createdInvite.characterName)} per a ${escapeHtml(createdInvite.email)}</strong>
+            </div>
+            <div class="campaign-invite-link-row">
+              <input value="${escapeAttribute(createdInvite.url)}" readonly aria-label="Enllac d'invitacio" />
+              <button type="button" class="secondary" data-copy-player-invite="${escapeAttribute(createdInvite.url)}">Copia enllac</button>
+            </div>
+          </div>
+        ` : ""}
+      </div>
+    </details>
   `;
 }
 
@@ -2361,6 +2727,7 @@ function renderPermissionsForm(canManagePermissions) {
           <span>Correu</span>
           <span>Rol</span>
           <span>Personatges assignats</span>
+          <span aria-hidden="true"></span>
         </div>
         ${renderedUsers}
       </div>
@@ -2392,6 +2759,9 @@ function renderPermissionUserRow(email, user, index, access, enabled) {
     `)
     .join("");
   const characterValue = Array.isArray(user.characterIds) ? user.characterIds.join(", ") : "";
+  const currentEmail = String(cloudSession.user?.email || "").trim().toLowerCase();
+  const isCurrentUser = Boolean(email) && email.toLowerCase() === currentEmail;
+  const canDeleteUser = enabled && Boolean(email) && !isCurrentUser;
 
   return `
     <div class="permissions-user-row">
@@ -2413,6 +2783,18 @@ function renderPermissionUserRow(email, user, index, access, enabled) {
         />
       </label>
       <input type="hidden" name="userRow" value="${index}" />
+      ${email ? `
+        <button
+          type="button"
+          class="permissions-remove-user"
+          data-delete-permission-user="${escapeAttribute(email)}"
+          aria-label="Elimina ${escapeAttribute(email)} dels permisos"
+          title="${escapeAttribute(isCurrentUser ? "No pots eliminar el compte amb la sessio oberta" : `Elimina ${email}`)}"
+          ${canDeleteUser ? "" : "disabled"}
+        >
+          <span aria-hidden="true">&times;</span>
+        </button>
+      ` : "<span class=\"permissions-user-action-placeholder\" aria-hidden=\"true\"></span>"}
     </div>
   `;
 }
@@ -2584,6 +2966,12 @@ function applyCharacterTabDrafts(character) {
       formData.set("proficiency", draft.proficiency !== undefined ? String(draft.proficiency) : character.sheet.proficiency || "");
       formData.set("abilities", draft.abilities !== undefined ? String(draft.abilities) : character.sheet.abilities || "");
       formData.set("features", draft.features !== undefined ? String(draft.features) : character.sheet.features || "");
+      formData.set(
+        "savageMaxPowerPoints",
+        draft.savageMaxPowerPoints !== undefined
+          ? String(draft.savageMaxPowerPoints)
+          : String(character.sheet.savageState?.maxPowerPoints || 0),
+      );
     }
 
     if (tab === "inventory") {
@@ -2618,12 +3006,55 @@ function updateSavageCharacterState(button) {
     current[key] = !current[key];
   } else {
     const delta = Number(button.dataset.savageDelta || 0);
-    current[key] = clampRuntimeNumber(Number(current[key] || 0) + delta, getSavageRuntimeLimits(key));
+    current[key] = clampRuntimeNumber(Number(current[key] || 0) + delta, getSavageRuntimeLimits(key, current));
   }
 
   character.sheet.savageState = current;
   showSaveNotice("Estat Savage actualitzat", {
     cloud: true,
+    renderParts: [RENDER_PARTS.notice, RENDER_PARTS.characters, RENDER_PARTS.themes, RENDER_PARTS.assets],
+  });
+}
+
+function updateSavageCondition(button) {
+  const character = getEditableSavageCharacter();
+  if (!character) return;
+  const current = normalizeSavageRuntimeState(character.sheet.savageState, character.sheet.proficiency);
+  const condition = String(button.dataset.savageCondition || "");
+  const active = new Set(current.conditions);
+  if (active.has(condition)) active.delete(condition);
+  else active.add(condition);
+  current.conditions = Array.from(active);
+  character.sheet.savageState = current;
+  commitSavageRuntime("Condicions actualitzades");
+}
+
+function updateSavageAmmo(button) {
+  const character = getEditableSavageCharacter();
+  if (!character) return;
+  const current = normalizeSavageRuntimeState(character.sheet.savageState, character.sheet.proficiency);
+  const itemId = String(button.dataset.savageAmmo || "");
+  const max = Math.max(0, Number(button.dataset.savageAmmoMax || 0));
+  const fallback = Math.max(0, Number(button.dataset.savageAmmoCurrent || max));
+  const delta = Number(button.dataset.savageAmmoDelta || 0);
+  current.ammo[itemId] = clampRuntimeNumber(Number(current.ammo[itemId] ?? fallback) + delta, { min: 0, max });
+  character.sheet.savageState = current;
+  commitSavageRuntime("Municio actualitzada");
+}
+
+function getEditableSavageCharacter() {
+  const character = getSelectedCharacter();
+  if (!character || !canEditCharacter(character)) {
+    denyPermission("No tens permisos per modificar l'estat d'aquesta fitxa.");
+    return null;
+  }
+  character.sheet = character.sheet || {};
+  return character;
+}
+
+function commitSavageRuntime(message, cloud = true) {
+  showSaveNotice(message, {
+    cloud,
     renderParts: [RENDER_PARTS.notice, RENDER_PARTS.characters, RENDER_PARTS.themes, RENDER_PARTS.assets],
   });
 }
@@ -2669,11 +3100,18 @@ function normalizeSavageLoadout(candidate) {
 function normalizeSavageRuntimeState(candidate, fallbackBennies) {
   const source = candidate && typeof candidate === "object" ? candidate : {};
   const fallbackBennyCount = parseRuntimeSignedNumber(fallbackBennies) || 3;
+  const maxPowerPoints = clampRuntimeNumber(source.maxPowerPoints, { min: 0, max: 99 });
   return {
     bennies: clampRuntimeNumber(source.bennies ?? fallbackBennyCount, { min: 0, max: 9 }),
     wounds: clampRuntimeNumber(source.wounds, { min: 0, max: 3 }),
     fatigue: clampRuntimeNumber(source.fatigue, { min: 0, max: 2 }),
     shaken: Boolean(source.shaken),
+    incapacitated: Boolean(source.incapacitated),
+    conviction: clampRuntimeNumber(source.conviction, { min: 0, max: 5 }),
+    powerPoints: clampRuntimeNumber(source.powerPoints ?? maxPowerPoints, { min: 0, max: maxPowerPoints }),
+    maxPowerPoints,
+    conditions: Array.isArray(source.conditions) ? source.conditions.map(String) : [],
+    ammo: source.ammo && typeof source.ammo === "object" ? { ...source.ammo } : {},
   };
 }
 
@@ -2682,9 +3120,15 @@ function parseRuntimeSignedNumber(value) {
   return match ? Number(match[0]) : 0;
 }
 
-function getSavageRuntimeLimits(key) {
+function getSavageRuntimeLimits(key, current = {}) {
   if (key === "bennies") {
     return { min: 0, max: 9 };
+  }
+  if (key === "conviction") {
+    return { min: 0, max: 5 };
+  }
+  if (key === "powerPoints") {
+    return { min: 0, max: Number(current.maxPowerPoints || 0) };
   }
   if (key === "fatigue") {
     return { min: 0, max: 2 };
@@ -2913,7 +3357,9 @@ function savePermissions(formData) {
     if (!email) {
       return;
     }
+    const existingUser = currentAccess.users[email] || {};
     users[email] = {
+      ...existingUser,
       role: roles[userRoles[index]] ? userRoles[index] : "player",
       characterIds: userCharacterIds[index]
         .split(",")
@@ -2924,6 +3370,108 @@ function savePermissions(formData) {
 
   state.access = { roles, users };
   showSaveNotice("Permisos desats", { cloud: true });
+}
+
+function deletePermissionUser(rawEmail) {
+  if (!canManagePermissions()) {
+    denyPermission("No tens permisos per eliminar usuaris.");
+    return;
+  }
+
+  const email = String(rawEmail || "").trim().toLowerCase();
+  const currentEmail = String(cloudSession.user?.email || "").trim().toLowerCase();
+  const access = normalizeAccessShape(state.access);
+  if (!email || !access.users[email]) {
+    return;
+  }
+  if (email === currentEmail) {
+    showSaveNotice("No pots eliminar el compte amb la sessio oberta.");
+    return;
+  }
+  if (!window.confirm(`Vols retirar l'acces de ${email}?`)) {
+    return;
+  }
+
+  const users = { ...access.users };
+  delete users[email];
+  state.access = normalizeAccessShape({ ...access, users });
+  showSaveNotice("Acces eliminat", {
+    cloud: true,
+    cloudTarget: { type: "campaign" },
+    renderParts: [RENDER_PARTS.sidebar, RENDER_PARTS.notice, RENDER_PARTS.options],
+  });
+}
+
+function createPlayerInvitation(formData) {
+  if (!canManagePermissions()) {
+    denyPermission("No tens permisos per convidar jugadors.");
+    return;
+  }
+
+  const campaignId = readString(formData, "campaignId");
+  const activeCampaign = storageGetActiveCampaignMeta();
+  const email = readString(formData, "inviteEmail").trim().toLowerCase();
+  const characterId = readString(formData, "inviteCharacterId");
+  const character = state.characters.find((item) => item.id === characterId);
+  if (campaignId !== activeCampaign.id || !email.includes("@") || !character) {
+    showSaveNotice("Revisa el correu i el personatge de la invitacio.");
+    return;
+  }
+
+  const access = normalizeAccessShape(state.access);
+  const previous = access.users[email] || {};
+  state.access = normalizeAccessShape({
+    ...access,
+    users: {
+      ...access.users,
+      [email]: {
+        ...previous,
+        role: previous.role || "player",
+        characterIds: [...new Set([...(previous.characterIds || []), character.id])],
+        invitedAt: new Date().toISOString(),
+      },
+    },
+  });
+
+  const inviteUrl = new URL(window.location.pathname, window.location.origin);
+  inviteUrl.searchParams.set("inviteCampaign", activeCampaign.id);
+  inviteUrl.searchParams.set("inviteCharacter", character.id);
+  lastCreatedPlayerInvite = {
+    campaignId: activeCampaign.id,
+    characterId: character.id,
+    characterName: character.name,
+    email,
+    url: inviteUrl.toString(),
+  };
+  showSaveNotice(`Invitacio preparada per a ${character.name}`, {
+    cloud: true,
+    renderParts: [RENDER_PARTS.campaigns, RENDER_PARTS.notice],
+  });
+}
+
+async function copyPlayerInviteLink(url) {
+  if (!url) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+    } else {
+      const input = document.createElement("textarea");
+      input.value = url;
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.append(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
+    }
+    showSaveNotice("Enllac d'invitacio copiat", {
+      renderParts: [RENDER_PARTS.campaigns, RENDER_PARTS.notice],
+    });
+  } catch {
+    showSaveNotice("No s'ha pogut copiar. Selecciona l'enllac manualment.", {
+      renderParts: [RENDER_PARTS.campaigns, RENDER_PARTS.notice],
+    });
+  }
 }
 
 function switchCampaign(campaignId) {
@@ -3294,27 +3842,49 @@ async function pushStateToCloud(options = {}) {
   try {
     const campaignId = storageGetActiveCampaignMeta().id;
     let response = null;
+    let assetReplacements = new Map();
     if (target.type === "campaign") {
-      const campaignPayload = await materializeAssetTokens(
+      const prepared = await prepareCloudAssetPayload(
         storageCreateCloudCampaignPayload(stripTransientUiState(state)),
+        { campaignId, targetType: "campaign" },
       );
+      const campaignPayload = prepared.payload;
+      assetReplacements = prepared.replacements;
       response = await saveCampaignToCloud(
         cloudSession.idToken,
         campaignPayload,
         { expectedRevision: cloudSession.revision },
       );
     } else if (target.type === "character") {
-      const characterPayload = await materializeAssetTokens(target.character);
+      const prepared = await prepareCloudAssetPayload(target.character, {
+        campaignId,
+        targetType: "character",
+        targetId: target.character?.id,
+      });
+      const characterPayload = prepared.payload;
+      assetReplacements = prepared.replacements;
       response = await saveCharacterToCloud(cloudSession.idToken, characterPayload, campaignId, {
         preserveExistingPortrait:
           target.preserveExistingPortrait === true
           && cloudSession.capabilities?.preserveExistingCharacterPortrait === true,
       });
     } else if (target.type === "chronicle") {
-      const chroniclePayload = await materializeAssetTokens(target.chronicle);
+      const prepared = await prepareCloudAssetPayload(target.chronicle, {
+        campaignId,
+        targetType: "chronicle",
+        targetId: target.chronicle?.id,
+      });
+      const chroniclePayload = prepared.payload;
+      assetReplacements = prepared.replacements;
       response = await saveChronicleToCloud(cloudSession.idToken, chroniclePayload, campaignId);
     } else if (target.type === "glossary") {
-      const glossaryPayload = await materializeAssetTokens(target.entry);
+      const prepared = await prepareCloudAssetPayload(target.entry, {
+        campaignId,
+        targetType: "glossary",
+        targetId: target.entry?.id,
+      });
+      const glossaryPayload = prepared.payload;
+      assetReplacements = prepared.replacements;
       response = await saveGlossaryEntryToCloud(cloudSession.idToken, glossaryPayload, campaignId, {
         preserveExistingImageAssets:
           target.preserveExistingImageAssets === true
@@ -3334,6 +3904,7 @@ async function pushStateToCloud(options = {}) {
     cloudSession.status = response?.unverified
       ? "Canvis enviats a Drive; confirmacio no disponible per mida."
       : getConfirmedCloudSaveStatus(response?.driveFile);
+    applyCloudAssetReplacements(assetReplacements);
     return true;
   } catch (error) {
     cloudSession.lastError = error instanceof Error ? error.message : String(error);
@@ -3343,6 +3914,44 @@ async function pushStateToCloud(options = {}) {
     cloudSession.saving = false;
     render([RENDER_PARTS.notice, RENDER_PARTS.options]);
   }
+}
+
+async function prepareCloudAssetPayload(value, context) {
+  const tokens = collectAssetTokensFromValue(value);
+  if (!tokens.length) return { payload: value, replacements: new Map() };
+  if (cloudSession.capabilities?.driveAssetFiles !== true) {
+    return { payload: await materializeAssetTokens(value), replacements: new Map() };
+  }
+
+  const bundle = await exportAssetBundle(tokens);
+  const replacements = new Map();
+  for (const asset of bundle) {
+    const token = `asset://${asset.id}`;
+    let assetRef = cloudAssetUploadReplacements.get(token) || "";
+    if (!assetRef) {
+      const response = await saveAssetToCloud(cloudSession.idToken, asset, context);
+      assetRef = String(response?.assetRef || "");
+      if (!assetRef.startsWith("drive-asset://")) {
+        throw new Error("Drive no ha retornat una referencia valida per a la imatge.");
+      }
+      cloudAssetUploadReplacements.set(token, assetRef);
+    }
+    replacements.set(token, assetRef);
+  }
+
+  return {
+    payload: replaceAssetTokensInValue(value, replacements),
+    replacements,
+  };
+}
+
+function applyCloudAssetReplacements(replacements) {
+  if (!replacements?.size) return;
+  const migrated = replaceAssetSourcesInState(state, (source) => replacements.get(source) || source);
+  if (!migrated.changed) return;
+  state = migrated.state;
+  ensureUiStateShape();
+  persistStateImmediately({ skipCloud: true });
 }
 
 function getCloudCampaignRevision(campaign) {
@@ -5485,6 +6094,7 @@ function applyChronicleReferenceTooltip(referenceButton, referenceId) {
 
   referenceButton.dataset.referenceTooltip = "glossary";
   referenceButton.append(createGlossaryReferenceTooltip(entry));
+  void hydrateAssetReferences(referenceButton);
 }
 
 function createGlossaryReferenceTooltip(entry) {

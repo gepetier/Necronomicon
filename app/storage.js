@@ -76,15 +76,11 @@ export function loadState() {
 
 export function persistState(state) {
   updateActiveCampaignState(state);
-  try {
-    writeCampaignLibrary();
+  const result = tryWriteCampaignLibrary();
+  if (result.ok) {
     LEGACY_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
-    lastPersistenceError = null;
-    return { ok: true, error: null };
-  } catch (error) {
-    lastPersistenceError = error instanceof Error ? error : new Error(String(error));
-    return { ok: false, error: lastPersistenceError };
   }
+  return result;
 }
 
 export function getLastPersistenceError() {
@@ -199,7 +195,7 @@ export function activateCampaign(campaignId, currentState) {
   }
 
   campaignLibrary.activeCampaignId = target.id;
-  writeCampaignLibrary();
+  tryWriteCampaignLibrary();
   return getActiveCampaignState();
 }
 
@@ -228,7 +224,7 @@ export function createCampaign({ name, system } = {}, currentState) {
     state: newState,
   });
   campaignLibrary.activeCampaignId = campaignId;
-  writeCampaignLibrary();
+  tryWriteCampaignLibrary();
   return getActiveCampaignState();
 }
 
@@ -260,7 +256,7 @@ export function updateCampaign(campaignId, { name, system } = {}, currentState) 
     },
   });
   target.version = DATA_VERSION;
-  writeCampaignLibrary();
+  tryWriteCampaignLibrary();
   return getActiveCampaignState();
 }
 
@@ -279,7 +275,7 @@ export function deleteCampaign(campaignId, currentState) {
       || campaignLibrary.campaigns[0].id;
   }
 
-  writeCampaignLibrary();
+  tryWriteCampaignLibrary();
   return getActiveCampaignState();
 }
 
@@ -478,6 +474,17 @@ function updateActiveCampaignState(state) {
 
 function writeCampaignLibrary() {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(createCampaignLibraryPayload()));
+}
+
+function tryWriteCampaignLibrary() {
+  try {
+    writeCampaignLibrary();
+    lastPersistenceError = null;
+    return { ok: true, error: null };
+  } catch (error) {
+    lastPersistenceError = error instanceof Error ? error : new Error(String(error));
+    return { ok: false, error: lastPersistenceError };
+  }
 }
 
 function createCampaignLibraryPayload() {
@@ -1021,6 +1028,12 @@ function enrichBaskinsSeedCharacter(character) {
         wounds: 0,
         fatigue: 0,
         shaken: false,
+        incapacitated: false,
+        conviction: 0,
+        powerPoints: 0,
+        maxPowerPoints: 0,
+        conditions: [],
+        ammo: {},
         ...(character.sheet?.savageState || {}),
       },
     },
@@ -1078,11 +1091,17 @@ function createBaskinsSeedCharacter() {
         wounds: 0,
         fatigue: 0,
         shaken: false,
+        incapacitated: false,
+        conviction: 0,
+        powerPoints: 0,
+        maxPowerPoints: 0,
+        conditions: [],
+        ammo: {},
       },
     },
     inventory: {
       items:
-        "Rifle curt | Disparar d8 | 2d6 | Rang 12/24/48\nRevolver gastat | Disparar d8 | 2d6+1 | Rang 12/24/48\nGanivet de bota | Atletisme d6 | For+d4 | Cos a cos\nAbric reforcat | Armadura +2 | equipada | Proteccio discreta, impermeable fosc\nLlibreta de deutes, xiulet d'os, tres bales marcades amb inicials.",
+        "Rifle curt | Disparar d8 | 2d6 | Rang 12/24/48 | Municio 6/6 | preparada\nRevolver gastat | Disparar d8 | 2d6+1 | Rang 12/24/48 | Municio 6/6 | preparada\nGanivet de bota | Atletisme d6 | For+d4 | Cos a cos\nAbric reforcat | Armadura +2 | equipada | Proteccio discreta, impermeable fosc\nLlibreta de deutes, xiulet d'os, tres bales marcades amb inicials.",
       currency: "14 dòlars, dues monedes antigues i un favor cobrat a mitges.",
       artifacts:
         "Xiulet d'os: els corbs responen quan el vent bufa de nord. Ruth encara no sap si els crida o si només els avisa.",
@@ -1144,8 +1163,10 @@ function sanitizeAccess(access) {
         .map(([email, user]) => [
           email.toLowerCase(),
           {
+            ...(user && typeof user === "object" ? user : {}),
             role: normalizeRoleId(typeof user?.role === "string" ? user.role : "player"),
             characterIds: Array.isArray(user?.characterIds) ? user.characterIds.map(String) : [],
+            invitedAt: typeof user?.invitedAt === "string" ? user.invitedAt : "",
           },
         ]),
     ),

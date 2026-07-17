@@ -308,6 +308,44 @@ test("storage persistence reports quota failures without throwing", () => {
   }
 });
 
+test("campaign activation continues when the local cache quota is full", () => {
+  const previousWindow = globalThis.window;
+  const meledar = structuredClone(seedData);
+  const apolion = structuredClone(seedData);
+  apolion.meta = {
+    ...apolion.meta,
+    id: "apolion",
+    name: "Apolion",
+    system: "Savage Worlds",
+  };
+  const storedCatalog = JSON.stringify({
+    kind: "necronomicon-campaign-library",
+    version: DATA_VERSION,
+    activeCampaignId: "meledar",
+    campaigns: [
+      { id: "meledar", name: "Meledar", system: "D&D 5e", state: meledar },
+      { id: "apolion", name: "Apolion", system: "Savage Worlds", state: apolion },
+    ],
+  });
+  globalThis.window = {
+    localStorage: {
+      getItem: () => storedCatalog,
+      setItem: () => { throw new DOMException("Quota plena", "QuotaExceededError"); },
+      removeItem: () => {},
+    },
+  };
+
+  try {
+    const current = loadState();
+    const activated = activateCampaign("apolion", current);
+    assert.equal(activated.meta.id, "apolion");
+    assert.equal(getCampaignCatalog().activeCampaignId, "apolion");
+    assert.equal(getLastPersistenceError()?.name, "QuotaExceededError");
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
 test("storage migration classifies supporting glossary characters separately", () => {
   const legacy = structuredClone(seedData);
   legacy.glossary = legacy.glossary.map((entry) => (

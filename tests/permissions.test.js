@@ -26,6 +26,24 @@ const access = normalizeAccessShape({
   },
 });
 
+test("player invitation metadata survives access normalization", () => {
+  const invitedAt = "2026-07-17T18:00:00.000Z";
+  const normalized = normalizeAccessShape({
+    users: {
+      "Damakos@Example.com": {
+        role: "player",
+        characterIds: ["damakos"],
+        invitedAt,
+      },
+    },
+  });
+  assert.deepEqual(normalized.users["damakos@example.com"], {
+    role: "player",
+    characterIds: ["damakos"],
+    invitedAt,
+  });
+});
+
 const campaign = { access };
 const assignedChronicle = { id: "session-1", editableByUserEmails: ["player@example.com"] };
 const unassignedChronicle = { id: "session-2", editableByUserEmails: [] };

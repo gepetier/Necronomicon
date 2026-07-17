@@ -132,6 +132,32 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
       backups.push({ name: nameOrBlob, content });
       return campaignFile;
     },
+    getFoldersByName(name) {
+      let available = name === "assets";
+      return {
+        hasNext: () => available,
+        next() {
+          available = false;
+          return assetFolder;
+        },
+      };
+    },
+    createFolder: () => assetFolder,
+  };
+
+  const assetFolder = {
+    createFile(blob) {
+      const id = `asset-file-${++assetCounter}`;
+      const name = String(blob.getName ? blob.getName() : `asset-${assetCounter}`);
+      const file = {
+        getId: () => id,
+        getName: () => name,
+        getBlob: () => blob,
+      };
+      assetFilesById.set(id, file);
+      assetFilesByName.set(name, file);
+      return file;
+    },
   };
 
   const context = {
@@ -207,6 +233,55 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
     assetFiles: assetFilesById,
   };
 }
+
+test("Apps Script stores glossary images as separate Drive files and serves authorized references", () => {
+  const campaign = createCampaignLibrary({
+    usersB: { "player@example.com": { role: "player" } },
+  });
+  const harness = createAppsScriptHarness(campaign, { player: "player@example.com" });
+  const upload = harness.handleRequest({
+    action: "saveAsset",
+    idToken: "player",
+    operationId: "asset-operation-1",
+    campaignId: "campaign-b",
+    targetType: "glossary",
+    targetId: "entry-assigned",
+    asset: {
+      name: "apolion.png",
+      mimeType: "image/png",
+      dataUrl: "data:image/png;base64,aW1hdGdl",
+    },
+  });
+  const claimed = harness.handleRequest({ action: "claimAssetUpload", operationId: "asset-operation-1" });
+
+  assert.equal(upload.ok, true);
+  assert.equal(claimed.assetRef, "drive-asset://asset-file-1");
+  assert.equal(harness.assetFiles.size, 1);
+
+  const saved = harness.handleRequest({
+    action: "saveGlossaryEntry",
+    idToken: "player",
+    campaignId: "campaign-b",
+    operationId: "glossary-operation-1",
+    entry: {
+      id: "entry-assigned",
+      name: "Assigned",
+      editableByUserEmails: ["player@example.com"],
+      imageAssets: [claimed.assetRef],
+    },
+  });
+  const loaded = harness.handleRequest({
+    action: "loadAsset",
+    idToken: "player",
+    campaignId: "campaign-b",
+    assetRef: claimed.assetRef,
+  });
+
+  assert.equal(saved.ok, true);
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.mimeType, "image/png");
+  assert.equal(loaded.dataUrl, "data:image/png;base64,aW1hdGdl");
+});
 
 test("Apps Script exchanges the Google token for an opaque one-time claimed session", () => {
   const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });

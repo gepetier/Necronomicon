@@ -9,20 +9,26 @@ export function createAssetToken(id) {
   return `${ASSET_TOKEN_PREFIX}${String(id || "").trim()}`;
 }
 
-export function isAssetToken(value) {
-  return typeof value === "string" && value.startsWith(ASSET_TOKEN_PREFIX);
-}
-
-export function getAssetIdFromToken(token) {
-  return isAssetToken(token) ? token.slice(ASSET_TOKEN_PREFIX.length) : "";
-}
-
 export function createDriveAssetToken(id) {
   return `${DRIVE_ASSET_TOKEN_PREFIX}${String(id || "").trim()}`;
 }
 
+export function isAssetToken(value) {
+  return isLocalAssetToken(value) || isDriveAssetToken(value);
+}
+
+export function isLocalAssetToken(value) {
+  return typeof value === "string" && value.startsWith(ASSET_TOKEN_PREFIX);
+}
+
 export function isDriveAssetToken(value) {
   return typeof value === "string" && value.startsWith(DRIVE_ASSET_TOKEN_PREFIX);
+}
+
+export function getAssetIdFromToken(token) {
+  if (isLocalAssetToken(token)) return token.slice(ASSET_TOKEN_PREFIX.length);
+  if (isDriveAssetToken(token)) return token.slice(DRIVE_ASSET_TOKEN_PREFIX.length);
+  return "";
 }
 
 export function getDriveAssetIdFromToken(token) {
@@ -36,7 +42,7 @@ export function isDataUrl(value) {
 export function collectAssetTokensFromValue(value) {
   const tokens = new Set();
   visitAssetValue(value, (source) => {
-    if (isAssetToken(source)) {
+    if (isLocalAssetToken(source)) {
       tokens.add(source);
     }
   });
@@ -76,7 +82,7 @@ export function inferAssetKindFromMimeType(mimeType) {
 export function collectAssetTokensFromState(state) {
   const tokens = new Set();
   collectAssetSourcesFromState(state, (source) => {
-    if (isAssetToken(source)) {
+    if (isLocalAssetToken(source)) {
       tokens.add(source);
     }
   });

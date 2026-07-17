@@ -29,6 +29,12 @@ async function bootstrap() {
     appParams.set("captureUserRole", "player");
     appParams.set("captureUserEmail", "player@preview.local");
   }
+  if (scenario === "player-welcome") {
+    appParams.set("captureUserRole", "player");
+    appParams.set("captureUserEmail", "damakos@preview.local");
+    appParams.set("captureCharacterId", "damakos");
+    appParams.set("playerWelcomePreview", "1");
+  }
   if (scenario === "auth-landing") {
     appParams.set("authPreview", "1");
     appParams.set("authStatus", "Ofrenes pendents.");
@@ -116,6 +122,7 @@ async function runScenario(context, scenarioName) {
     "auth-landing": async () => {},
     "auth-waiting": async () => {},
     "auth-campaign-select": async () => {},
+    "player-welcome": async () => {},
     "characters-grid": async () => {},
     "sidebar-preview": async () => {
       const toggle = context.query("[data-sidebar-toggle]");
@@ -160,6 +167,34 @@ async function runScenario(context, scenarioName) {
     "options-player-access": async () => {
       await context.click('[data-module-link="options"]');
     },
+    "options-permission-users": async () => {
+      await context.click('[data-module-link="campaigns"]');
+      const disclosure = context.query("[data-campaign-invite-panel]");
+      if (!(disclosure instanceof context.win.HTMLDetailsElement)) {
+        throw new Error("No s'ha trobat el panell d'invitacio.");
+      }
+      disclosure.open = true;
+      await context.type('input[name="inviteEmail"]', "jugador.damakos@gmail.com");
+      const characterSelect = context.query('select[name="inviteCharacterId"]');
+      if (!(characterSelect instanceof context.win.HTMLSelectElement)) {
+        throw new Error("No s'ha trobat el selector de personatge.");
+      }
+      characterSelect.value = "damakos";
+      characterSelect.dispatchEvent(new context.win.Event("change", { bubbles: true }));
+      context.query('form[data-form="campaign-invite"]')?.requestSubmit();
+      await delay(260);
+      await context.click('[data-module-link="options"]');
+      const userRow = context.query('button[data-delete-permission-user="jugador.damakos@gmail.com"]')?.closest(".permissions-user-row");
+      if (!(userRow instanceof context.win.HTMLElement)) {
+        throw new Error("No s'ha trobat la fila de permisos del jugador.");
+      }
+      if (context.win.innerWidth > 720) {
+        context.queryAll(".options-grid > .options-card:not(.options-permissions-card)")
+          .forEach((card) => { card.style.display = "none"; });
+      }
+      userRow.scrollIntoView({ block: "center" });
+      await delay(180);
+    },
     "campaigns-dashboard": async () => {
       await context.click('[data-module-link="campaigns"]');
     },
@@ -171,6 +206,27 @@ async function runScenario(context, scenarioName) {
       }
       editor.open = true;
       await delay(180);
+    },
+    "campaign-player-invite": async () => {
+      await context.click('[data-module-link="campaigns"]');
+      const disclosure = context.query("[data-campaign-invite-panel]");
+      if (!(disclosure instanceof context.win.HTMLDetailsElement)) {
+        throw new Error("No s'ha trobat el panell d'invitacio.");
+      }
+      disclosure.open = true;
+      await context.type('input[name="inviteEmail"]', "jugador.damakos@gmail.com");
+      const characterSelect = context.query('select[name="inviteCharacterId"]');
+      if (!(characterSelect instanceof context.win.HTMLSelectElement)) {
+        throw new Error("No s'ha trobat el selector de personatge.");
+      }
+      characterSelect.value = "damakos";
+      characterSelect.dispatchEvent(new context.win.Event("change", { bubbles: true }));
+      const form = context.query('form[data-form="campaign-invite"]');
+      if (!(form instanceof context.win.HTMLFormElement)) {
+        throw new Error("No s'ha trobat el formulari d'invitacio.");
+      }
+      form.requestSubmit();
+      await delay(350);
     },
     "baskins-character-sheet": async () => {
       await scrollCharacterSheetIntoView(context);
@@ -199,8 +255,33 @@ async function runScenario(context, scenarioName) {
     "baskins-character-penalty": async () => {
       await scrollCharacterSheetIntoView(context);
       await context.click('[data-savage-state="wounds"][data-savage-delta="1"]');
+      await delay(180);
       await context.click('[data-savage-state="fatigue"][data-savage-delta="1"]');
-      await delay(220);
+      await delay(180);
+      await context.click('[data-savage-condition="distracted"]');
+      await delay(180);
+      await context.click('[data-savage-state="incapacitated"]');
+      await delay(700);
+    },
+    "baskins-character-editor": async () => {
+      await scrollCharacterSheetIntoView(context);
+      await context.click('[data-toggle-edit="characters"]');
+      await delay(350);
+      const preview = context.query(".detail-tab-panel");
+      if (preview instanceof context.win.HTMLElement) {
+        preview.hidden = true;
+      }
+      const editor = context.win.innerWidth >= 900
+        ? context.query(".editor-workspace-character")
+        : context.query('[data-savage-editor="sheet"]');
+      if (editor instanceof context.win.HTMLElement) {
+        const editorY = context.win.scrollY + editor.getBoundingClientRect().top - 24;
+        context.win.scrollTo(0, Math.max(0, editorY));
+        if (context.doc.scrollingElement) {
+          context.doc.scrollingElement.scrollTop = Math.max(0, editorY);
+        }
+      }
+      await delay(500);
     },
     "characters-grid-lightbox": async () => {
       await context.click(".portrait-media");

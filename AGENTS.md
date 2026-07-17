@@ -83,6 +83,8 @@
 - The default capture catalog is intentionally focused instead of exhaustive; use aliases such as `changed`, `characters`, `chronicles`, `glossary`, `options`, `desktop`, or `mobile` for targeted review.
 - Persistence now supports a local/Drive campaign catalog; the app still renders one active campaign at a time, while `Opcions` can switch campaigns or create a new starter campaign such as `Savage Worlds`.
 - Campaign access now has three canonical roles (`superadmin`, `gm`, `player`), login opens a campaign picker for active accessible campaigns, and the sidebar exposes an accessible-campaign dropdown when more than one campaign is available to the current user.
+- Player invitations grant access by Google email and bind one or more character ids; invitation links only route to the intended campaign/character and never replace server-side authorization. A player with one accessible campaign enters it directly and receives a local one-time character welcome before reaching the sheet or latest related chronicle.
+- Permission managers can revoke a campaign user's access directly from `Opcions`; revocations require confirmation, publish the full campaign permission change to Drive, and the currently signed-in account cannot remove itself.
 - Permission decisions live in `app/permissions.js` with unit coverage for the role matrix; full JSON import is restricted to campaign managers, while full JSON export/publish remains limited to users with campaign publish authority.
 - Campaign creation, editing, deletion, and active-focus switching now live in the dedicated `Campanyes` sidebar module; `Opcions` only links back to that module instead of hosting campaign management.
 - Meledar seed character portraits are repaired during storage sanitization when persisted data contains empty or stale packaged Vite asset paths for `ilu`, `nelthan`, `damakos`, or `elatoris`.
@@ -90,6 +92,7 @@
 - Savage Worlds character sheets now support live table state (`bennies`, `shaken`, `wounds`, `fatigue`) inside `character.sheet.savageState`, and weapon rows can be entered in inventory as `Name | Trait | Damage | Notes`.
 - Savage Worlds concept help uses a local curated tooltip dictionary rather than an external rules API, avoiding licensing/API availability risk while keeping the interface explainable at the table.
 - Savage Worlds sheets are moving toward an assisted-sheet model: wounds/fatigue calculate a visible penalty, armor/equipment lines can be equipped, and equipped armor recalculates derived combat stats.
+- Savage Worlds assistance includes conditions, incapacitation, Conviction, power points, ammunition tracking, derived defenses, and structured editing; it intentionally excludes dice rolls and initiative cards.
 - The Baskins Savage Worlds campaign auto-seeds Ruth Baskin (`ruth-baskin`) when missing.
 - Office mode is a local UI preference (`state.ui.officeMode`) that keeps the same app workflows but applies a neutral document/spreadsheet skin, hides visible media/ornaments, and relabels navigation/UI copy for workplace-safe use.
 - Chronicle editor previews should mirror read-mode auto-linking for known character/glossary names, while the textarea still preserves the source text unless the user explicitly inserts a `[[id|label]]` reference.
@@ -100,6 +103,8 @@
 - Google ID credentials are session-scoped in the client; legacy persistent credentials are removed from `localStorage`.
 - Bundled photographic and painted assets use JPEG while PNG is reserved for transparency/UI; `Glossary/images/` remains the unbundled source archive, and stored packaged glossary URLs are repaired to the current seed asset during sanitization.
 - Role changes must stay covered both by client permission-unit tests and by Apps Script integration tests with virtual authenticated users for `superadmin`, `gm`, `player`, and unassigned access.
+- User-uploaded images are canonical Drive files inside the campaign folder's `assets` subfolder; campaign JSON stores `drive-asset://<fileId>` references and IndexedDB is only the browser cache.
+- Local cache quota failures must remain non-blocking: an authenticated user can open and switch Drive campaigns even when the full campaign catalog no longer fits in `localStorage`.
 - Cloud saves use a target-aware queue so rapid edits to different records are retained; a queued full-campaign publish supersedes earlier item saves.
 - Google ID credentials are exchanged for short-lived opaque Apps Script session tokens through a one-time claim; subsequent JSONP URLs must never carry the Google credential.
 - Apps Script item saves create a Drive backup every 20 server revisions, full publications always back up, and only the 40 newest campaign backups are retained.
@@ -125,6 +130,10 @@
 - Keep future task reports compact: changed files, validation run, and only the most relevant caveats or next steps.
 
 ## Last session
+- 2026-07-17: added confirmed user removal to `Opcions > Permisos`, with immediate Drive synchronization, active-account protection, functional QA coverage, and focused desktop/mobile captures of a real invited-player row.
+- 2026-07-17: added the Meledar player invitation and first-entry journey: managers can grant a Google account player access tied to a character, copy a direct campaign/character link, and newly arriving players skip unnecessary selection screens for a cinematic character welcome with routes to their sheet or latest related chronicle; added desktop/mobile captures and permission/functional coverage.
+- 2026-07-16: moved uploaded media toward separate authenticated Drive files with `drive-asset://` references, automatic IndexedDB caching, legacy embedded-image migration on login, and Apps Script integration coverage; the Apps Script revision still requires deployment by the account that owns the existing Web App.
+- 2026-07-16: made campaign catalog mutations tolerate `localStorage` quota failures so the authenticated campaign picker cannot remain blocked by image-heavy Drive data; added quota regression coverage and confirmed build, unit, and functional QA pass.
 - 2026-04-18: created this project memory file and added persistent restart context.
 - 2026-04-18: confirmed the dev server runs with `npm.cmd run dev` on `http://localhost:5173/`.
 - 2026-04-21: established mandatory screenshot-based validation for every UI change, with iteration required if the visual result is not satisfactory.
@@ -226,5 +235,5 @@
 - 2026-07-16: added a dedicated supporting-character glossary category, migrated known supporting NPCs out of `Altres`, and added unit, functional, and desktop/mobile visual coverage.
 
 - 2026-07-16: renamed the supporting glossary category to `Personatges` and changed hero reference labels from `Personatge` to `Protagonistes`, with a version-11 storage migration.
-
 - 2026-07-17: moved uploaded campaign media out of `campaign.json` into deduplicated Drive files referenced by opaque ids, added authorized download-to-IndexedDB caching, orphan-local-token rejection, file type/size checks, folder-bound access validation, and Apps Script integration tests.
+- 2026-07-16: expanded Savage Worlds sheets with conditions, incapacitation, Conviction, power points, ammunition, derived defenses, and structured editors; explicitly removed dice-roll and initiative-card mechanics, then validated build, unit, edit, UI, and focused desktop/mobile captures.

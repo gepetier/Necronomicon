@@ -7,6 +7,7 @@ Aquest backend fa de pont entre la pagina estatica i Google Drive. La UI no escr
 - OAuth client id: `386167885974-voguggv8fbvmqioec1p38vu3qf1fj33f.apps.googleusercontent.com`
 - Carpeta Drive: `1zyOcMrfnJ88RJ7PKWesT16ciS3MrlQI6`
 - Fitxer de dades: `campaign.json`
+- Carpeta d'imatges: `assets` (es crea automaticament dins la carpeta Drive)
 
 ## Pas 1: crear el projecte Apps Script
 
@@ -44,6 +45,7 @@ Amb aquesta URL el client pot:
 ## Notes de funcionament
 
 - El `campaign.json` de Drive es sempre la font canonica; `data.js` i localStorage no l'han de substituir automaticament.
+- Les imatges pujades es desen com a fitxers separats dins `assets`; el JSON nomes conserva referencies `drive-asset://...`.
 - El primer usuari DM surt de `BOOTSTRAP_ADMIN_EMAILS`.
 - Les lectures només retornen les campanyes accessibles per a l'usuari autenticat.
 - Les escriptures mantenen el bloqueig durant tota la transacció i fan control de revisió per evitar sobreescriure canvis simultanis.

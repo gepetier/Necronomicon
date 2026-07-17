@@ -162,6 +162,31 @@ export async function saveGlossaryEntryToCloud(idToken, entry, campaignId = "", 
   return saveItemToCloud(payload, compactPayload, idToken);
 }
 
+export async function saveAssetToCloud(idToken, asset, context = {}) {
+  await establishServerSession(idToken);
+  const operationId = createOperationId();
+  await postWithoutCors({
+    action: "saveAsset",
+    ...createAuthPayload(idToken),
+    operationId,
+    campaignId: context.campaignId || "",
+    targetType: context.targetType || "campaign",
+    targetId: context.targetId || "",
+    asset,
+  });
+  return jsonpRequest({ action: "claimAssetUpload", operationId });
+}
+
+export async function loadAssetFromCloud(idToken, assetRef, campaignId = "") {
+  await establishServerSession(idToken);
+  return jsonpRequest({
+    action: "loadAsset",
+    ...createAuthPayload(idToken),
+    campaignId,
+    assetRef,
+  }, 30000);
+}
+
 export function createGlossaryEntryPayloadWithoutImages(payload) {
   const entry = payload?.entry && typeof payload.entry === "object"
     ? { ...payload.entry }
@@ -261,14 +286,14 @@ function createAuthPayload(idToken) {
   return serverSessionToken ? { sessionToken: serverSessionToken } : { idToken };
 }
 
-function jsonpRequest(payload) {
+function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const callbackName = `__necronomiconCloudCallback${Date.now()}${jsonpCounter++}`;
     const script = document.createElement("script");
     const timeout = window.setTimeout(() => {
       cleanup();
       reject(new Error("Google Drive no ha respost a temps."));
-    }, JSONP_TIMEOUT_MS);
+    }, timeoutMs);
 
     window[callbackName] = (response) => {
       cleanup();

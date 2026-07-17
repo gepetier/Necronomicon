@@ -2,6 +2,7 @@
       CLIENT_ID: "386167885974-voguggv8fbvmqioec1p38vu3qf1fj33f.apps.googleusercontent.com",
       DRIVE_FOLDER_ID: "1zyOcMrfnJ88RJ7PKWesT16ciS3MrlQI6",
       CAMPAIGN_FILE_NAME: "campaign.json",
+      ASSET_FOLDER_NAME: "assets",
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
@@ -88,10 +89,40 @@
       try {
         if (request.action === "createSession") return createServerSession(request);
         if (request.action === "claimSession") return claimServerSession(request);
+        if (request.action === "claimAssetUpload") return claimAssetUpload(request);
 
         const user = resolveRequestUser(request);
         if (!user.email) {
           throw new Error("Usuari Google no validat.");
+        }
+
+        if (request.action === "saveAsset") {
+          const current = loadCampaign();
+          const campaignId = normalizeCampaignId(request.campaignId);
+          const targetState = getCampaignStateForId(current, campaignId);
+          const actor = decorateUser(user, targetState.access || current.access);
+          assertCanUploadAsset(actor, current, campaignId, request.targetType, request.targetId);
+          const savedAsset = persistDriveAsset(request.asset, campaignId, request.targetType, request.targetId);
+          const operationId = String(request.operationId || "");
+          CacheService.getScriptCache().put(
+            `asset-claim:${operationId}`,
+            JSON.stringify(savedAsset),
+            SESSION_CLAIM_TTL_SECONDS,
+          );
+          return ok({ operationId });
+        }
+
+        if (request.action === "loadAsset") {
+          const current = loadCampaign();
+          const campaignId = normalizeCampaignId(request.campaignId);
+          const targetState = getCampaignStateForId(current, campaignId);
+          const actor = decorateUser(user, targetState.access || current.access);
+          if (!actor.hasAccess) throw new Error("No tens acces a aquesta campanya.");
+          const assetRef = String(request.assetRef || "");
+          if (!campaignContainsAssetReference(targetState, assetRef)) {
+            throw new Error("Aquesta imatge no pertany a la campanya activa.");
+          }
+          return ok(readDriveAsset(assetRef));
         }
 
         if (request.action === "loadCampaign") {
@@ -298,6 +329,75 @@
       if (!sessionToken) throw new Error("La sessio segura no esta preparada.");
       cache.remove(claimKey);
       return ok({ sessionToken, expiresIn: SESSION_TTL_SECONDS });
+    }
+
+    function claimAssetUpload(request) {
+      const cache = CacheService.getScriptCache();
+      const claimKey = `asset-claim:${String(request.operationId || "")}`;
+      const value = cache.get(claimKey) || "";
+      if (!value) throw new Error("La pujada de la imatge no s'ha pogut confirmar.");
+      cache.remove(claimKey);
+      return ok(JSON.parse(value));
+    }
+
+    function assertCanUploadAsset(actor, campaign, campaignId, targetType, targetId) {
+      const type = String(targetType || "campaign");
+      const id = String(targetId || "");
+      if (type === "campaign" && canManageCampaign(actor)) return;
+      if (type === "character") {
+        const item = findCampaignItem(campaign, campaignId, "characters", id);
+        if (item && canEditCharacter(actor, id)) return;
+      }
+      if (type === "chronicle") {
+        const item = findCampaignItem(campaign, campaignId, "chronicles", id);
+        if (item && canEditChronicle(actor, item)) return;
+      }
+      if (type === "glossary") {
+        const item = findCampaignItem(campaign, campaignId, "glossary", id);
+        if ((item && canEditGlossaryEntry(actor, item)) || (!item && actor.permissions.editGlossary)) return;
+      }
+      throw new Error("No tens permisos per pujar imatges a aquest element.");
+    }
+
+    function persistDriveAsset(asset, campaignId, targetType, targetId) {
+      const dataUrl = String(asset && asset.dataUrl || "");
+      const match = dataUrl.match(/^data:([^;,]+);base64,([\s\S]+)$/);
+      if (!match) throw new Error("El contingut de la imatge no es valid.");
+      const mimeType = String(asset.mimeType || match[1] || "application/octet-stream");
+      if (mimeType.indexOf("image/") !== 0) throw new Error("El fitxer pujat no es una imatge.");
+      const safeName = String(asset.name || "imatge")
+        .replace(/[^a-zA-Z0-9_.-]/g, "_")
+        .slice(0, 120) || "imatge";
+      const prefix = [campaignId, targetType || "campaign", targetId || "general"]
+        .map((part) => String(part).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 50))
+        .join("__");
+      const blob = Utilities.newBlob(Utilities.base64Decode(match[2]), mimeType, `${prefix}__${safeName}`);
+      const file = getAssetFolder().createFile(blob);
+      return {
+        assetRef: `drive-asset://${file.getId()}`,
+        id: file.getId(),
+        name: file.getName(),
+        mimeType,
+      };
+    }
+
+    function readDriveAsset(assetRef) {
+      const fileId = String(assetRef || "").replace(/^drive-asset:\/\//, "");
+      if (!fileId) throw new Error("Referencia d'imatge no valida.");
+      const file = DriveApp.getFileById(fileId);
+      const blob = file.getBlob();
+      const mimeType = String(blob.getContentType ? blob.getContentType() : "image/jpeg");
+      return {
+        assetRef: `drive-asset://${fileId}`,
+        name: file.getName(),
+        mimeType,
+        dataUrl: `data:${mimeType};base64,${Utilities.base64Encode(blob.getBytes())}`,
+      };
+    }
+
+    function campaignContainsAssetReference(state, assetRef) {
+      return /^drive-asset:\/\/[a-zA-Z0-9_-]+$/.test(assetRef)
+        && JSON.stringify(state || {}).includes(assetRef);
     }
 
     function resolveRequestUser(request) {
@@ -1035,6 +1135,12 @@
           `No es pot accedir a la carpeta Drive ${folderId}. Comprova que l'id no inclogui '?hl=es' i que el compte que desplega l'Apps Script tingui permisos sobre la carpeta.`,
         );
       }
+    }
+
+    function getAssetFolder() {
+      const parent = getCampaignFolder();
+      const folders = parent.getFoldersByName(CONFIG.ASSET_FOLDER_NAME);
+      return folders.hasNext() ? folders.next() : parent.createFolder(CONFIG.ASSET_FOLDER_NAME);
     }
 
     function extractDriveId(value) {
