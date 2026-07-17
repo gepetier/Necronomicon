@@ -51,6 +51,7 @@ import {
   exportAssetBundle,
   hydrateAssetReferences,
   importAssetBundle,
+  localizeDriveAssetBundle,
   materializeAssetTokens,
   storeAssetDataUrl,
   storeAssetFile,
@@ -96,7 +97,7 @@ import {
 import { createCloudSaveQueue } from "./app/cloud-save-queue.js";
 import { activateDialogFocus, deactivateDialogFocus, setAuthPageInert, trapDialogFocus } from "./app/dialog-focus.js";
 
-const SYNC_CLIENT_VERSION = "2026-07-07-character-sync-diagnostics";
+const SYNC_CLIENT_VERSION = "2026-07-17-drive-asset-files";
 
 let state = loadStoredState();
 let bookTurnTimer = null;
@@ -1350,10 +1351,11 @@ async function handleGoogleCredential(credential, options = {}) {
     const response = await loadCampaignFromCloud(credential);
     const localBeforeCloud = state;
     const localCatalogBeforeCloud = storageGetCampaignCatalog();
-    const cloudHasCampaignCatalog = Array.isArray(response.campaign?.campaigns);
+    const localizedCampaign = await localizeDriveAssetBundle(response.campaign, response.assetBundle);
+    const cloudHasCampaignCatalog = Array.isArray(localizedCampaign?.campaigns);
     const cloudState = storageMigrateStoredState({
       version: response.version || 0,
-      state: response.campaign,
+      state: localizedCampaign,
     });
     const shouldPreserveLocalCatalog =
       !cloudHasCampaignCatalog

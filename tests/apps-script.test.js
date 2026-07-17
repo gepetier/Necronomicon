@@ -68,6 +68,9 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
   const events = [];
   const backups = [];
   const cacheValues = new Map();
+  const assetFilesById = new Map();
+  const assetFilesByName = new Map();
+  let assetCounter = 0;
   let locked = false;
 
   const campaignFile = {
@@ -88,17 +91,45 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
 
   const folder = {
     getFilesByName(name) {
-      let available = name === "campaign.json";
+      const matched = name === "campaign.json"
+        ? campaignFile
+        : assetFilesByName.get(String(name || "")) || null;
+      let available = Boolean(matched);
       return {
         hasNext: () => available,
         next() {
           available = false;
-          return campaignFile;
+          return matched;
         },
       };
     },
-    createFile(name, content) {
-      backups.push({ name, content });
+    createFile(nameOrBlob, content) {
+      if (nameOrBlob && typeof nameOrBlob === "object" && typeof nameOrBlob.getBytes === "function") {
+        const blob = nameOrBlob;
+        const id = `asset-file-${++assetCounter}`;
+        const name = String(blob.getName ? blob.getName() : `asset-${assetCounter}`);
+        const file = {
+          getId: () => id,
+          getName: () => name,
+          getBlob: () => blob,
+          getParents: () => {
+            let available = true;
+            return {
+              hasNext: () => available,
+              next() {
+                available = false;
+                return { getId: () => "1zyOcMrfnJ88RJ7PKWesT16ciS3MrlQI6" };
+              },
+            };
+          },
+          getLastUpdated: () => new Date("2026-07-15T12:00:00.000Z"),
+          getUrl: () => `https://drive.google.com/file/d/${id}/view`,
+        };
+        assetFilesById.set(id, file);
+        assetFilesByName.set(name, file);
+        return file;
+      }
+      backups.push({ name: nameOrBlob, content });
       return campaignFile;
     },
   };
@@ -106,7 +137,20 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
   const context = {
     console,
     MimeType: { PLAIN_TEXT: "text/plain" },
-    Utilities: { formatDate: () => "20260715-120000", getUuid: () => "server-session-token" },
+    Utilities: {
+      formatDate: () => "20260715-120000",
+      getUuid: () => "server-session-token",
+      base64Decode: (value) => [...Buffer.from(String(value || ""), "base64")],
+      base64Encode: (bytes) => Buffer.from(bytes).toString("base64"),
+      newBlob(bytes, mimeType, name) {
+        const content = [...bytes];
+        return {
+          getBytes: () => content,
+          getContentType: () => String(mimeType || "application/octet-stream"),
+          getName: () => String(name || "asset.bin"),
+        };
+      },
+    },
     CacheService: {
       getScriptCache: () => ({
         put: (key, value) => cacheValues.set(key, String(value)),
@@ -114,7 +158,15 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
         remove: (key) => cacheValues.delete(key),
       }),
     },
-    DriveApp: { getFolderById: () => folder },
+    DriveApp: {
+      getFolderById: () => folder,
+      getFileById: (id) => {
+        if (id === "campaign-file-id") return campaignFile;
+        const file = assetFilesById.get(String(id || ""));
+        if (!file) throw new Error(`Missing Drive file ${id}`);
+        return file;
+      },
+    },
     LockService: {
       getScriptLock: () => ({
         waitLock() {
@@ -152,6 +204,7 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
     readCampaign: () => JSON.parse(campaignContent),
     events,
     backups,
+    assetFiles: assetFilesById,
   };
 }
 
@@ -165,6 +218,47 @@ test("Apps Script exchanges the Google token for an opaque one-time claimed sess
   assert.equal(claimed.sessionToken, "server-session-token");
   assert.equal(loaded.ok, true);
   assert.equal(harness.handleRequest({ action: "claimSession", operationId: "claim-1" }).ok, false);
+});
+
+test("Apps Script stores glossary images as Drive files and returns an authorized bundle", () => {
+  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
+  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
+  const dataUrl = "data:image/png;base64,YWJj";
+  const saved = harness.handleRequest({
+    action: "saveGlossaryEntry",
+    idToken: "admin",
+    campaignId: "campaign-a",
+    operationId: "asset-save-1",
+    entry: { id: "apolion", name: "Apolion", imageAssets: [dataUrl] },
+  });
+
+  assert.equal(saved.ok, true);
+  const remoteSource = harness.readCampaign().campaigns[0].state.glossary[0].imageAssets[0];
+  assert.match(remoteSource, /^drive-asset:\/\/asset-file-/);
+  assert.equal(harness.assetFiles.size, 1);
+
+  const loaded = harness.handleRequest({ action: "loadCampaign", idToken: "admin" });
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.assetBundle.length, 1);
+  assert.equal(loaded.assetBundle[0].token, remoteSource);
+  assert.equal(loaded.assetBundle[0].dataUrl, dataUrl);
+  assert.equal(loaded.capabilities.driveAssetFiles, true);
+});
+
+test("Apps Script rejects orphan local asset tokens before writing campaign JSON", () => {
+  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
+  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
+  const response = harness.handleRequest({
+    action: "saveGlossaryEntry",
+    idToken: "admin",
+    campaignId: "campaign-a",
+    entry: { id: "broken", name: "Broken", imageAssets: ["asset://missing-local-file"] },
+  });
+
+  assert.equal(response.ok, false);
+  assert.match(response.error, /actiu local sense fitxer/i);
+  assert.equal(harness.readCampaign().campaigns[0].state.glossary.length, 0);
+  assert.equal(harness.assetFiles.size, 0);
 });
 
 test("Apps Script rejects a valid Google user without campaign access", () => {

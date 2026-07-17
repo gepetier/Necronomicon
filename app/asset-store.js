@@ -1,10 +1,13 @@
 import {
   createAssetToken,
   collectAssetTokensFromValue,
+  collectDriveAssetTokensFromValue,
+  createDriveAssetToken,
   getAssetIdFromToken,
   inferAssetKindFromMimeType,
   isAssetToken,
   replaceAssetTokensInValue,
+  replaceDriveAssetTokensInValue,
 } from "./assets.js";
 
 const DB_NAME = "campaign-compendium-assets";
@@ -136,6 +139,11 @@ export async function materializeAssetTokens(value) {
   }
 
   const bundle = await exportAssetBundle(tokens);
+  const foundIds = new Set(bundle.map((entry) => String(entry?.id || "")));
+  const missingTokens = tokens.filter((token) => !foundIds.has(getAssetIdFromToken(token)));
+  if (missingTokens.length) {
+    throw new Error("Falta el fitxer local d'una imatge. Torna-la a seleccionar abans de sincronitzar.");
+  }
   const replacements = new Map(
     bundle
       .filter((entry) => entry?.id && entry?.dataUrl)
@@ -143,6 +151,34 @@ export async function materializeAssetTokens(value) {
   );
 
   return replacements.size ? replaceAssetTokensInValue(value, replacements) : value;
+}
+
+export async function localizeDriveAssetBundle(value, bundle) {
+  const driveTokens = collectDriveAssetTokensFromValue(value);
+  if (!driveTokens.length) return value;
+
+  const expectedTokens = new Set(driveTokens);
+  const replacements = new Map();
+  for (const entry of Array.isArray(bundle) ? bundle : []) {
+    const remoteId = String(entry?.id || "").trim();
+    const remoteToken = String(entry?.token || createDriveAssetToken(remoteId));
+    if (!remoteId || !entry?.dataUrl || !expectedTokens.has(remoteToken)) continue;
+    const localId = `drive-${remoteId}`;
+    const response = await fetch(entry.dataUrl);
+    const blob = await response.blob();
+    await writeRecord({
+      id: localId,
+      blob,
+      name: String(entry.name || `asset-${remoteId}`),
+      mimeType: String(entry.mimeType || blob.type || "application/octet-stream"),
+      kind: String(entry.kind || inferAssetKindFromMimeType(entry.mimeType || blob.type)),
+      savedAt: new Date().toISOString(),
+      remoteToken,
+    });
+    replacements.set(remoteToken, createAssetToken(localId));
+  }
+
+  return replaceDriveAssetTokensInValue(value, replacements);
 }
 
 export async function importAssetBundle(bundle) {

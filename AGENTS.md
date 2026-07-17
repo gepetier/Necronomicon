@@ -108,12 +108,13 @@
 - Glossary file inputs must be excluded from the generic glossary-card click handler so the native picker input stays connected; upload diagnostics persist a bounded local event log and expose copy/clear controls in the editor.
 
 - Glossary supporting cast uses the `Personatges` category; hero-sheet references are labelled `Protagonistes`, while hostile figures remain under `Antagonistes`.
+- Cloud media is stored as real files in the configured Drive campaign folder; canonical JSON stores only `drive-asset://<fileId>` references, while authorized loads materialize those files into local IndexedDB `asset://` cache entries.
 
 ## Pending
 - Before deploying sync changes, back up the canonical Drive `campaign.json`; never seed or replace it from `data.js`/localStorage without an explicit reviewed import or merge.
 - Clean up or commit the pending visual artifacts and code changes once the current restyle is considered stable.
 - Validate the Google Apps Script deployment from a real browser session after the OAuth client origins and the bootstrap DM email are confirmed.
-- Deploy the 2026-07-16 Apps Script revision before relying on ephemeral server sessions, queued sync confirmation, and bounded/throttled Drive backups in production.
+- Deploy the 2026-07-17 Apps Script revision before relying on Drive-backed media files, ephemeral server sessions, queued sync confirmation, and bounded/throttled backups in production.
 
 ## Next steps
 - On next session start, read this file before inspecting code.
@@ -225,3 +226,5 @@
 - 2026-07-16: added a dedicated supporting-character glossary category, migrated known supporting NPCs out of `Altres`, and added unit, functional, and desktop/mobile visual coverage.
 
 - 2026-07-16: renamed the supporting glossary category to `Personatges` and changed hero reference labels from `Personatge` to `Protagonistes`, with a version-11 storage migration.
+
+- 2026-07-17: moved uploaded campaign media out of `campaign.json` into deduplicated Drive files referenced by opaque ids, added authorized download-to-IndexedDB caching, orphan-local-token rejection, file type/size checks, folder-bound access validation, and Apps Script integration tests.

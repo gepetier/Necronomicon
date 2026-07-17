@@ -14,9 +14,12 @@ import {
   collectAssetTokensFromState,
   collectAssetTokensFromValue,
   collectEmbeddedDataUrlsFromState,
+  collectDriveAssetTokensFromValue,
   createAssetToken,
+  createDriveAssetToken,
   replaceAssetSourcesInState,
   replaceAssetTokensInValue,
+  replaceDriveAssetTokensInValue,
 } from "../app/assets.js";
 import {
   activateCampaign,
@@ -106,6 +109,20 @@ test("asset helpers collect and replace embedded asset sources", () => {
   assert.equal(replaced.changed, true);
   assert.deepEqual(replaced.state.glossary[0].imageAssets, [createAssetToken("img-1")]);
   assert.match(replaced.state.chronicles[0].content, /\{\{media:image\|Mapa\|asset:\/\/img-2\}\}/);
+});
+
+test("Drive asset helpers preserve remote identifiers separately from local tokens", () => {
+  const token = createDriveAssetToken("drive-file-1");
+  const value = { imageAssets: [token], notes: `{{media:file|Mapa|${token}}}` };
+  assert.deepEqual(collectDriveAssetTokensFromValue(value), [token]);
+  assert.deepEqual(
+    replaceDriveAssetTokensInValue(value, new Map([[token, createAssetToken("drive-drive-file-1")]])),
+    { imageAssets: ["asset://drive-drive-file-1"], notes: "{{media:file|Mapa|asset://drive-drive-file-1}}" },
+  );
+  assert.deepEqual(
+    replaceDriveAssetTokensInValue(value, new Map([[token, ""]])),
+    { imageAssets: [""], notes: "{{media:file|Mapa|}}" },
+  );
 });
 
 test("cloud glossary compact payload preserves existing remote images", () => {

@@ -1,8 +1,9 @@
 const ASSET_TOKEN_PREFIX = "asset://";
+const DRIVE_ASSET_TOKEN_PREFIX = "drive-asset://";
 const DATA_URL_PATTERN = /^data:/i;
 const RICH_MEDIA_TOKEN_PATTERN = /\{\{media:(image|audio|video|file)\|([^|{}]+)\|([^{}]+)\}\}/g;
 
-export { ASSET_TOKEN_PREFIX };
+export { ASSET_TOKEN_PREFIX, DRIVE_ASSET_TOKEN_PREFIX };
 
 export function createAssetToken(id) {
   return `${ASSET_TOKEN_PREFIX}${String(id || "").trim()}`;
@@ -14,6 +15,18 @@ export function isAssetToken(value) {
 
 export function getAssetIdFromToken(token) {
   return isAssetToken(token) ? token.slice(ASSET_TOKEN_PREFIX.length) : "";
+}
+
+export function createDriveAssetToken(id) {
+  return `${DRIVE_ASSET_TOKEN_PREFIX}${String(id || "").trim()}`;
+}
+
+export function isDriveAssetToken(value) {
+  return typeof value === "string" && value.startsWith(DRIVE_ASSET_TOKEN_PREFIX);
+}
+
+export function getDriveAssetIdFromToken(token) {
+  return isDriveAssetToken(token) ? token.slice(DRIVE_ASSET_TOKEN_PREFIX.length) : "";
 }
 
 export function isDataUrl(value) {
@@ -31,8 +44,19 @@ export function collectAssetTokensFromValue(value) {
 }
 
 export function replaceAssetTokensInValue(value, replacements) {
-  const replaceSource = (source) => replacements.get(source) || source;
+  const replaceSource = (source) => replacements.has(source) ? replacements.get(source) : source;
   return mapAssetValue(value, replaceSource);
+}
+
+export function collectDriveAssetTokensFromValue(value) {
+  const tokens = new Set();
+  visitDriveAssetValue(value, (source) => tokens.add(source));
+  return [...tokens];
+}
+
+export function replaceDriveAssetTokensInValue(value, replacements) {
+  const replaceSource = (source) => replacements.has(source) ? replacements.get(source) : source;
+  return mapDriveAssetValue(value, replaceSource);
 }
 
 export function inferAssetKindFromMimeType(mimeType) {
@@ -78,6 +102,40 @@ function visitAssetValue(value, onSource) {
   if (value && typeof value === "object") {
     Object.values(value).forEach((item) => visitAssetValue(item, onSource));
   }
+}
+
+function visitDriveAssetValue(value, onSource) {
+  if (typeof value === "string") {
+    if (isDriveAssetToken(value)) onSource(value);
+    for (const match of value.matchAll(RICH_MEDIA_TOKEN_PATTERN)) {
+      if (isDriveAssetToken(match[3])) onSource(match[3]);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => visitDriveAssetValue(item, onSource));
+    return;
+  }
+  if (value && typeof value === "object") {
+    Object.values(value).forEach((item) => visitDriveAssetValue(item, onSource));
+  }
+}
+
+function mapDriveAssetValue(value, replaceSource) {
+  if (typeof value === "string") {
+    if (isDriveAssetToken(value)) return replaceSource(value);
+    return value.replaceAll(
+      RICH_MEDIA_TOKEN_PATTERN,
+      (_full, kind, label, source) => `{{media:${kind}|${label}|${isDriveAssetToken(source) ? replaceSource(source) : source}}}`,
+    );
+  }
+  if (Array.isArray(value)) return value.map((item) => mapDriveAssetValue(item, replaceSource));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, mapDriveAssetValue(item, replaceSource)]),
+    );
+  }
+  return value;
 }
 
 function mapAssetValue(value, replaceSource) {

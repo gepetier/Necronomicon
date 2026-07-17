@@ -5,11 +5,33 @@
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
-    const BACKEND_VERSION = "2026-07-16-queued-sync-bounded-backups";
+    const BACKEND_VERSION = "2026-07-17-drive-asset-files";
     const BACKUP_EVERY_REVISIONS = 20;
     const MAX_BACKUP_FILES = 40;
     const SESSION_TTL_SECONDS = 3600;
     const SESSION_CLAIM_TTL_SECONDS = 60;
+    const DRIVE_ASSET_PREFIX = "drive-asset://";
+    const LOCAL_ASSET_PREFIX = "asset://";
+    const MAX_DRIVE_ASSET_BYTES = 12 * 1024 * 1024;
+    const ALLOWED_DRIVE_ASSET_MIME_TYPES = new Set([
+      "image/avif",
+      "image/gif",
+      "image/jpeg",
+      "image/png",
+      "image/svg+xml",
+      "image/webp",
+      "audio/aac",
+      "audio/mpeg",
+      "audio/mp4",
+      "audio/ogg",
+      "audio/wav",
+      "audio/webm",
+      "video/mp4",
+      "video/ogg",
+      "video/quicktime",
+      "video/webm",
+      "application/pdf",
+    ]);
 
     const DEFAULT_ACCESS = {
       roles: {
@@ -79,6 +101,7 @@
             return ok({
               user: authorized.user,
               campaign: authorized.campaign,
+              assetBundle: createDriveAssetBundle(authorized.campaign),
               capabilities: getClientCapabilities(),
               driveFile: getCurrentCampaignFileInfo(),
             });
@@ -95,7 +118,8 @@
               throw new Error("No tens permisos per publicar tota la campanya.");
             }
             assertExpectedRevision(current, request.expectedRevision);
-            const mergedCampaign = mergeCampaignPublication(current, campaign, user, actor);
+            const campaignWithDriveAssets = normalizeCampaign(externalizeDriveAssets(campaign, campaign.activeCampaignId));
+            const mergedCampaign = mergeCampaignPublication(current, campaignWithDriveAssets, user, actor);
 
             const driveFile = persistCampaignUnlocked(
               mergedCampaign,
@@ -138,7 +162,7 @@
                 ...character,
                 portrait: currentCharacter.portrait,
               }
-              : character;
+              : externalizeDriveAssets(character, campaignId);
             updateCampaignItem(current, campaignId, "characters", nextCharacter);
             const driveFile = persistCampaignUnlocked(
               current,
@@ -174,7 +198,7 @@
               throw new Error("No tens permisos per editar aquesta cronica.");
             }
 
-            updateCampaignItem(current, campaignId, "chronicles", chronicle);
+            updateCampaignItem(current, campaignId, "chronicles", externalizeDriveAssets(chronicle, campaignId));
             const driveFile = persistCampaignUnlocked(
               current,
               user.email,
@@ -215,7 +239,7 @@
                 ...entry,
                 imageAssets: currentEntry.imageAssets,
               }
-              : entry;
+              : externalizeDriveAssets(entry, campaignId);
             updateCampaignItem(current, campaignId, "glossary", nextEntry);
             const driveFile = persistCampaignUnlocked(
               current,
@@ -777,6 +801,152 @@
       );
     }
 
+    function externalizeDriveAssets(value, campaignId) {
+      if (typeof value === "string") {
+        const text = String(value || "");
+        if (text.indexOf(LOCAL_ASSET_PREFIX) === 0 || text.indexOf("|asset://") >= 0) {
+          throw new Error("Hi ha un actiu local sense fitxer. Torna a seleccionar la imatge abans de sincronitzar.");
+        }
+        if (text.indexOf("data:") === 0) {
+          return storeDriveAssetDataUrl(text, campaignId);
+        }
+        return text.replace(/data:[^}\s]+/g, (dataUrl) => storeDriveAssetDataUrl(dataUrl, campaignId));
+      }
+      if (Array.isArray(value)) {
+        return value.map((item) => externalizeDriveAssets(item, campaignId));
+      }
+      if (value && typeof value === "object") {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [key, externalizeDriveAssets(item, campaignId)]),
+        );
+      }
+      return value;
+    }
+
+    function storeDriveAssetDataUrl(dataUrl, campaignId) {
+      const parsed = parseAssetDataUrl(dataUrl);
+      if (!ALLOWED_DRIVE_ASSET_MIME_TYPES.has(parsed.mimeType)) {
+        throw new Error("El tipus de fitxer no es compatible amb Drive.");
+      }
+      if (estimateBase64Bytes(parsed.base64) > MAX_DRIVE_ASSET_BYTES) {
+        throw new Error("El fitxer supera el limit de 12 MB.");
+      }
+      const extension = getAssetExtension(parsed.mimeType);
+      const safeCampaignId = String(campaignId || "campaign").replace(/[^a-zA-Z0-9_-]/g, "-");
+      const fileName = `asset-${safeCampaignId}-${hashAssetContent(parsed.base64)}.${extension}`;
+      const folder = getCampaignFolder();
+      const existing = folder.getFilesByName(fileName);
+      const file = existing.hasNext()
+        ? existing.next()
+        : folder.createFile(Utilities.newBlob(Utilities.base64Decode(parsed.base64), parsed.mimeType, fileName));
+      return `${DRIVE_ASSET_PREFIX}${file.getId()}`;
+    }
+
+    function parseAssetDataUrl(dataUrl) {
+      const match = String(dataUrl || "").match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=]+)$/);
+      if (!match) throw new Error("Format d'actiu no compatible amb Drive.");
+      return { mimeType: String(match[1] || "application/octet-stream"), base64: String(match[2] || "") };
+    }
+
+    function estimateBase64Bytes(value) {
+      const text = String(value || "");
+      const padding = text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0;
+      return Math.max(0, Math.floor(text.length * 3 / 4) - padding);
+    }
+
+    function hashAssetContent(value) {
+      let hash = 2166136261;
+      const text = String(value || "");
+      for (let index = 0; index < text.length; index += 1) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+      return (hash >>> 0).toString(16).padStart(8, "0");
+    }
+
+    function getAssetExtension(mimeType) {
+      return {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/gif": "gif",
+        "image/svg+xml": "svg",
+        "audio/mpeg": "mp3",
+        "audio/ogg": "ogg",
+        "video/mp4": "mp4",
+        "application/pdf": "pdf",
+      }[String(mimeType || "").toLowerCase()] || "bin";
+    }
+
+    function createDriveAssetBundle(value) {
+      const tokens = collectDriveAssetTokens(value);
+      const bundle = [];
+      tokens.forEach((token) => {
+        const fileId = token.slice(DRIVE_ASSET_PREFIX.length);
+        try {
+          const file = DriveApp.getFileById(fileId);
+          if (!isCampaignAssetFile(file)) {
+            throw new Error("El fitxer no pertany a la carpeta de la campanya.");
+          }
+          const blob = file.getBlob();
+          const mimeType = String(blob.getContentType ? blob.getContentType() : "application/octet-stream");
+          bundle.push({
+            token,
+            id: fileId,
+            name: String(file.getName ? file.getName() : `asset-${fileId}`),
+            mimeType,
+            kind: getAssetKind(mimeType),
+            dataUrl: `data:${mimeType};base64,${Utilities.base64Encode(blob.getBytes())}`,
+          });
+        } catch (error) {
+          console.warn(`No s'ha pogut carregar l'actiu Drive ${fileId}: ${error}`);
+        }
+      });
+      return bundle;
+    }
+
+    function isCampaignAssetFile(file) {
+      if (!file || !String(file.getName ? file.getName() : "").startsWith("asset-")) return false;
+      const expectedFolderId = extractDriveId(CONFIG.DRIVE_FOLDER_ID);
+      const parents = file.getParents();
+      while (parents.hasNext()) {
+        if (String(parents.next().getId()) === expectedFolderId) return true;
+      }
+      return false;
+    }
+
+    function collectDriveAssetTokens(value) {
+      const tokens = new Set();
+      visit(value);
+      return [...tokens];
+
+      function visit(item) {
+        if (typeof item === "string") {
+          if (item.indexOf(DRIVE_ASSET_PREFIX) === 0) tokens.add(item);
+          const pattern = /drive-asset:\/\/[a-zA-Z0-9_-]+/g;
+          let match = pattern.exec(item);
+          while (match) {
+            tokens.add(match[0]);
+            match = pattern.exec(item);
+          }
+          return;
+        }
+        if (Array.isArray(item)) {
+          item.forEach(visit);
+          return;
+        }
+        if (item && typeof item === "object") Object.values(item).forEach(visit);
+      }
+    }
+
+    function getAssetKind(mimeType) {
+      const normalized = String(mimeType || "").toLowerCase();
+      if (normalized.indexOf("image/") === 0) return "image";
+      if (normalized.indexOf("audio/") === 0) return "audio";
+      if (normalized.indexOf("video/") === 0) return "video";
+      return "file";
+    }
+
     function getCampaignFile() {
       const folder = getCampaignFolder();
       const files = folder.getFilesByName(CONFIG.CAMPAIGN_FILE_NAME);
@@ -893,6 +1063,7 @@
         ephemeralServerSessions: true,
         preserveExistingCharacterPortrait: true,
         preserveExistingImageAssets: true,
+        driveAssetFiles: true,
       };
     }
 
