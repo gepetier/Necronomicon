@@ -37,6 +37,14 @@ Fitxers principals: `main.js` (orquestració/UI), `styles.css` (estils), `data.j
 
 - La fitxa D&D manté l'estat temporal dins de la mateixa fitxa: HP i recursos són ajustables en lloc, mentre que les condicions viuen en una franja horitzontal inicial amb resum per ordre de finalització i menú desplegable.
 
+- L'editor d'estats D&D és transaccional: obrir crea un esborrany local; tancar amb el segell el descarta i només Confirma estats el desa i el sincronitza.
+
+- El bocadillo d'estats D&D ha de mantenir una graella de selecció i una columna de controls amb amplades explícites; en mòbil s'ancora dins del viewport i els modes Temporal/Infinit tenen la mateixa mida.
+
+- A la fitxa D&D, els PV temporals no tenen marcador propi: s'integren al total com a total(temporal)/màxim en blau cel i només deixen els controls +/− blaus.
+
+- El comptador de PV D&D té esquerdes CSS progressives segons el percentatge de PV actual (75%, 50%, 25% i 0%), sense canviar la lògica ni el recompte temporal.
+
 ## Estat actual
 
 - Backend/client de sync: `2026-07-21-drive-asset-repair`.
@@ -45,6 +53,18 @@ Fitxers principals: `main.js` (orquestració/UI), `styles.css` (estils), `data.j
 - Vegeu `CURRENT-DEBUG.md` per bloquejants reals i `DEBUG-RUNBOOK.md` per triatge.
 
 ## Darrera sessio
+
+- 2026-07-21: afegides esquerdes progressives al comptador de PV D&D en funció de la vida restant; provat de 31 a 15 PV i restaurat a 31/31.
+
+
+- 2026-07-21: compactat el bloc de combat D&D: retirats els textos auxiliars de CA/Inic./Vel. i integrats els PV temporals al recompte principal amb controls blaus.
+
+
+- 2026-07-21: redissenyat el bocadillo d'estats amb segell CSS propi, controls de duració sense desbordament i modes Temporal/Infinit equilibrats; validat geomètricament i visualment en mòbil i escriptori.
+
+
+- 2026-07-21: compactat el retrat de personatge en mòbil i verificat que no queda sticky durant el scroll; el menú d'estats ara confirma explícitament o descarta en tancar.
+
 
 - 2026-07-21: integrada la franja d'estats D&D a la fitxa, amb resum temporal, les 15 condicions oficials, esgotament 1–6, controls de duració i atles d'icones WebP; revisada visualment en escriptori i mòbil.
 

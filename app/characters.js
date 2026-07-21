@@ -466,7 +466,7 @@ function renderDndSheetTab(character, state) {
   const wisdomMod = getAbilityModifier(abilities.sav);
   const proficiency = parseSignedNumber(character.sheet.proficiency);
   const skillProficiencies = new Set(normalizeDndSkillProficiencies(character.sheet.skillProficiencies));
-  const dndState = normalizeDndRuntimeState(character.sheet.dndState, character.sheet.hp, character.level);
+  const dndState = getDndRenderedRuntimeState(character, state);
   const spellcasting = resolveSpellcasting(character, abilities);
 
   return `
@@ -483,7 +483,7 @@ function renderDndSheetTab(character, state) {
         </div>
       </header>
 
-      ${renderDndStatusStrip(dndState, state)}
+      ${renderDndStatusStrip(character, dndState, state)}
 
 
       <div class="dnd-sheet-grid">
@@ -511,9 +511,9 @@ function renderDndSheetTab(character, state) {
 
         <section class="dnd-panel dnd-combat-panel">
           <div class="dnd-combat-stats">
-            ${renderCombatStat("CA", character.sheet.ac, "Classe d’armadura")}
-            ${renderCombatStat("Inic.", formatModifier(dexterityMod), "Iniciativa")}
-            ${renderCombatStat("Vel.", "30", "Peus")}
+            ${renderCombatStat("CA", character.sheet.ac, "")}
+            ${renderCombatStat("Inic.", formatModifier(dexterityMod), "")}
+            ${renderCombatStat("Vel.", "30", "")}
           </div>
           ${renderDndHitPoints(dndState)}
           <div class="dnd-resource-grid">
@@ -1299,19 +1299,26 @@ function renderCheckLine(label, modifier, suffix = "", proficient = false) {
 }
 
 function renderDndHitPoints(dndState) {
-  const modified = dndState.currentHp !== dndState.maxHp || dndState.tempHp > 0;
-  return [
-    '<div class="dnd-hit-points ', modified ? 'has-runtime-change' : '', '">',
-    '<span>Punts de vida</span>',
-    '<strong class="', modified ? 'dnd-state-modified' : '', '">', escapeHtml(String(dndState.currentHp)), '<small> / ', escapeHtml(String(dndState.maxHp)), '</small></strong>',
-    '<div class="dnd-inline-adjust" aria-label="Ajusta punts de vida">',
-    '<button type="button" data-dnd-state="currentHp" data-dnd-delta="-1" aria-label="Resta un punt de vida">−</button>',
-    '<button type="button" data-dnd-state="currentHp" data-dnd-delta="1" aria-label="Suma un punt de vida" ', dndState.currentHp >= dndState.maxHp ? 'disabled' : '', '>+</button></div>',
-    '<div class="dnd-temporary-hp ', dndState.tempHp > 0 ? 'has-runtime-change' : '', '"><span>Temporal</span><strong class="', dndState.tempHp > 0 ? 'dnd-state-modified' : '', '">+', escapeHtml(String(dndState.tempHp)), '</strong><div class="dnd-inline-adjust"><button type="button" data-dnd-state="tempHp" data-dnd-delta="-1" aria-label="Resta un punt temporal" ', dndState.tempHp <= 0 ? 'disabled' : '', '>−</button><button type="button" data-dnd-state="tempHp" data-dnd-delta="1" aria-label="Suma un punt temporal">+</button></div></div>',
-    '</div>',
-  ].join('');
+  const hasTemporaryHp = dndState.tempHp > 0;
+  const modified = dndState.currentHp !== dndState.maxHp || hasTemporaryHp;
+  const displayedHp = dndState.currentHp + dndState.tempHp;
+  const hpRatio = dndState.maxHp ? dndState.currentHp / dndState.maxHp : 1;
+  const fractureLevel = hpRatio > 0.75 ? 0 : hpRatio > 0.5 ? 1 : hpRatio > 0.25 ? 2 : hpRatio > 0 ? 3 : 4;
+  return `
+    <div class="dnd-hit-points ${modified ? "has-runtime-change " : ""}${hasTemporaryHp ? "has-temporary-hp" : ""}">
+      <span>PV</span>
+      <strong class="${hasTemporaryHp ? "dnd-temporary-total" : (modified ? "dnd-state-modified" : "")}" data-hp-fracture="${fractureLevel}">${escapeHtml(String(displayedHp))}${hasTemporaryHp ? "<small>(" + escapeHtml(String(dndState.tempHp)) + ")</small>" : ""}<em>/${escapeHtml(String(dndState.maxHp))}</em></strong>
+      <div class="dnd-inline-adjust" aria-label="Ajusta punts de vida">
+        <button type="button" data-dnd-state="currentHp" data-dnd-delta="-1" aria-label="Resta un punt de vida">−</button>
+        <button type="button" data-dnd-state="currentHp" data-dnd-delta="1" aria-label="Suma un punt de vida" ${dndState.currentHp >= dndState.maxHp ? "disabled" : ""}>+</button>
+      </div>
+      <div class="dnd-inline-adjust dnd-temporary-hp-controls" aria-label="Ajusta punts temporals">
+        <button type="button" data-dnd-state="tempHp" data-dnd-delta="-1" aria-label="Resta un punt temporal" ${dndState.tempHp <= 0 ? "disabled" : ""}>−</button>
+        <button type="button" data-dnd-state="tempHp" data-dnd-delta="1" aria-label="Suma un punt temporal">+</button>
+      </div>
+    </div>
+  `;
 }
-
 function renderDndHitDice(dndState) {
   const modified = dndState.hitDice !== dndState.maxHitDice;
   return [
@@ -1337,7 +1344,18 @@ function renderDndDeathSaveRow(label, value, kind) {
     [0, 1, 2].map((index) => '<i class="' + (index < value ? 'active ' + kind : '') + '" aria-hidden="true"></i>').join('');
 }
 
-function renderDndStatusStrip(dndState, state) {
+function getDndRenderedRuntimeState(character, state) {
+  const draft = state?.ui?.dndStatusDraft;
+  const effects = draft?.characterId === character.id && Array.isArray(draft.effects)
+    ? draft.effects
+    : character.sheet.dndState?.effects;
+  return normalizeDndRuntimeState({
+    ...(character.sheet.dndState || {}),
+    effects,
+  }, character.sheet.hp, character.level);
+}
+
+function renderDndStatusStrip(character, dndState, state) {
   const activeEffects = dndState.effects
     .map((effect) => ({ effect, definition: DND_STATUS_DEFINITIONS.find((item) => getDndStatusEffect(dndState, item) === effect) }))
     .sort((left, right) => getDndStatusExpiryOrder(left.effect.duration) - getDndStatusExpiryOrder(right.effect.duration));
@@ -1345,11 +1363,10 @@ function renderDndStatusStrip(dndState, state) {
     '<section class="dnd-status-strip" aria-label="Estats actuals"><div class="dnd-status-summary"><span>Estat de taula</span><table><tbody><tr><th scope="row">Estats</th><td>',
     activeEffects.length ? '<strong>' + escapeHtml(String(activeEffects.length)) + ' actiu' + (activeEffects.length === 1 ? '' : 's') + '</strong><div class="dnd-status-summary-list">' + activeEffects.map(renderDndStatusSummaryItem).join('') + '</div>' : '<strong>Sense estats</strong>',
     '</td></tr></tbody></table></div>',
-    renderDndStatusMenu(dndState, state),
+    renderDndStatusMenu(character, dndState, state),
     '</section>',
   ].join('');
 }
-
 function getDndStatusExpiryOrder(duration) {
   const value = Number(duration);
   return value < 0 ? Number.POSITIVE_INFINITY : Math.max(0, value || 0);
@@ -1361,20 +1378,20 @@ function renderDndStatusSummaryItem(item) {
   const sprite = definition?.sprite || "25% 0%";
   return '<span class="dnd-status-summary-item" style="--status-sprite: ' + escapeAttribute(sprite) + '" title="' + escapeAttribute(item.effect.name + ': ' + duration) + '"><i aria-hidden="true"></i><span>' + escapeHtml(item.effect.name) + '</span><strong>' + escapeHtml(duration) + '</strong></span>';
 }
-function renderDndStatusMenu(dndState, state) {
+function renderDndStatusMenu(character, dndState, state) {
   const activeCount = dndState.effects.length;
   const selectedKey = getSelectedDndStatusKey(dndState, state);
   const selectedDefinition = DND_STATUS_DEFINITIONS.find((definition) => definition.key === selectedKey) || DND_STATUS_DEFINITIONS[0];
   const selectedEffect = getDndStatusEffect(dndState, selectedDefinition);
+  const isOpen = state?.ui?.dndStatusEditorCharacterId === character.id;
   return [
-    '<div class="dnd-status-menu">',
-    '<button type="button" class="dnd-status-trigger" data-dnd-status-popover aria-expanded="false" aria-haspopup="dialog" aria-label="Obre estats i condicions" title="Estats i condicions"><span aria-hidden="true"></span>', activeCount ? '<small>' + escapeHtml(String(activeCount)) + '</small>' : '', '</button>',
+    '<div class="dnd-status-menu ' , isOpen ? 'open' : '', '">',
+    '<button type="button" class="dnd-status-trigger" data-dnd-status-popover aria-expanded="', isOpen ? 'true' : 'false', '" aria-haspopup="dialog" aria-label="', isOpen ? 'Tanca els estats sense confirmar' : 'Obre estats i condicions', '" title="', isOpen ? 'Tanca sense desar' : 'Estats i condicions', '"><span aria-hidden="true"></span>', activeCount ? '<small>' + escapeHtml(String(activeCount)) + '</small>' : '', '</button>',
     '<div class="dnd-status-popover" role="dialog" aria-label="Estats i condicions"><p>Estats i condicions</p><div class="dnd-status-layout"><div class="dnd-status-options">',
     DND_STATUS_DEFINITIONS.map((definition) => renderDndStatusOption(definition, dndState, selectedKey)).join(''),
-    '</div>', renderDndStatusConfig(selectedDefinition, selectedEffect), '</div><small>Clica una icona per seleccionar-la. Temporal permet comptar torns; ∞ la manté activa.</small></div></div>',
+    '</div>', renderDndStatusConfig(selectedDefinition, selectedEffect), '</div><small>Els canvis són provisionals. Tanca el segell per descartar-los.</small><button type="button" class="dnd-status-confirm" data-dnd-status-confirm>Confirma estats</button></div></div>',
   ].join('');
 }
-
 function getSelectedDndStatusKey(dndState, state) {
   const requested = String(state?.ui?.dndStatusSelection || "");
   if (DND_STATUS_DEFINITIONS.some((definition) => definition.key === requested)) return requested;
@@ -1405,12 +1422,12 @@ function renderDndStatusConfig(definition, effect) {
   const counter = effect ? (duration < 0 ? '∞' : String(duration)) : '—';
   return [
     '<aside class="dnd-status-config"><span>', escapeHtml(definition.label), '</span>',
-    '<div class="dnd-status-counter"><strong>', escapeHtml(counter), '</strong><div>',
+    '<div class="dnd-status-counter"><div><small>Durada</small><strong>', escapeHtml(counter), '</strong></div><div>',
     '<button type="button" data-dnd-status-adjust="1" data-dnd-status-key="', escapeAttribute(definition.key), '" data-dnd-status-label="', escapeAttribute(definition.label), '" data-dnd-status-levels="', escapeAttribute(String(levels)), '" aria-label="Augmenta la duració">↑</button>',
     '<button type="button" data-dnd-status-adjust="-1" data-dnd-status-key="', escapeAttribute(definition.key), '" data-dnd-status-label="', escapeAttribute(definition.label), '" data-dnd-status-levels="', escapeAttribute(String(levels)), '" aria-label="Redueix la duració" ', effect ? '' : 'disabled', '>↓</button>',
     '</div></div><div class="dnd-status-modes">',
     '<button type="button" class="', effect && duration >= 0 ? 'active' : '', '" data-dnd-status-mode="temporary" data-dnd-status-key="', escapeAttribute(definition.key), '" data-dnd-status-label="', escapeAttribute(definition.label), '" data-dnd-status-levels="', escapeAttribute(String(levels)), '">Temporal</button>',
-    levels ? '': '<button type="button" class="' + (effect && duration < 0 ? 'active' : '') + '" data-dnd-status-mode="infinite" data-dnd-status-key="' + escapeAttribute(definition.key) + '" data-dnd-status-label="' + escapeAttribute(definition.label) + '">∞</button>',
+    levels ? '': '<button type="button" class="' + (effect && duration < 0 ? 'active' : '') + '" data-dnd-status-mode="infinite" data-dnd-status-key="' + escapeAttribute(definition.key) + '" data-dnd-status-label="' + escapeAttribute(definition.label) + '">Infinit</button>',
     '</div></aside>',
   ].join('');
 }

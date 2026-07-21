@@ -793,6 +793,12 @@ function handleClick(event) {
     return;
   }
 
+  const dndStatusConfirmButton = event.target.closest("[data-dnd-status-confirm]");
+  if (dndStatusConfirmButton) {
+    confirmDndStatusDraft();
+    return;
+  }
+
   const dndResetStateButton = event.target.closest("[data-dnd-reset-state]");
   if (dndResetStateButton) {
     resetDndRuntimeState();
@@ -3170,21 +3176,35 @@ function getDndRuntimeLimits(key, current) {
   return { min: 0, max: 1 };
 }
 
-function toggleDndStatusPopover(trigger) {
-  if (!(trigger instanceof HTMLElement)) return;
-  const menu = trigger.closest(".dnd-status-menu");
-  if (!(menu instanceof HTMLElement)) return;
-  const shouldOpen = !menu.classList.contains("open");
-  document.querySelectorAll(".dnd-status-menu.open").forEach((item) => {
-    if (item instanceof HTMLElement) {
-      item.classList.remove("open");
-      item.querySelector("[data-dnd-status-popover]")?.setAttribute("aria-expanded", "false");
-    }
-  });
-  menu.classList.toggle("open", shouldOpen);
-  trigger.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+function renderDndStatusDraft() {
+  render([RENDER_PARTS.characters, RENDER_PARTS.themes, RENDER_PARTS.assets]);
 }
 
+function clearDndStatusDraft() {
+  delete state.ui.dndStatusDraft;
+  delete state.ui.dndStatusEditorCharacterId;
+  delete state.ui.dndStatusSelection;
+}
+
+function toggleDndStatusPopover(trigger) {
+  if (!(trigger instanceof HTMLElement)) return;
+  const character = getEditableDndCharacter();
+  if (!character) return;
+  const isOpen = state.ui.dndStatusEditorCharacterId === character.id;
+  if (isOpen) {
+    clearDndStatusDraft();
+    renderDndStatusDraft();
+    return;
+  }
+  const current = normalizeDndRuntimeState(character.sheet.dndState, character.sheet.hp, character.level);
+  state.ui.dndStatusEditorCharacterId = character.id;
+  state.ui.dndStatusDraft = {
+    characterId: character.id,
+    effects: structuredClone(current.effects),
+  };
+  state.ui.dndStatusSelection = "";
+  renderDndStatusDraft();
+}
 function getDndStatusContext(button) {
   const character = getEditableDndCharacter();
   if (!character) return null;
@@ -3192,7 +3212,11 @@ function getDndStatusContext(button) {
   const label = String(button.dataset.dndStatusLabel || "").trim();
   const levels = Math.max(0, Math.min(6, Number(button.dataset.dndStatusLevels || 0)));
   if (!key || !label) return null;
-  const current = normalizeDndRuntimeState(character.sheet.dndState, character.sheet.hp, character.level);
+  const draft = state.ui.dndStatusDraft;
+  const effects = draft?.characterId === character.id && Array.isArray(draft.effects)
+    ? draft.effects
+    : character.sheet.dndState?.effects;
+  const current = normalizeDndRuntimeState({ ...(character.sheet.dndState || {}), effects }, character.sheet.hp, character.level);
   const effectId = "dnd-status-" + key;
   const effectIndex = current.effects.findIndex((effect) => effect.id === effectId || effect.name === label);
   return { character, key, label, levels, current, effectIndex };
@@ -3209,17 +3233,21 @@ function createDndStatusEffect(context, duration = 1) {
   return effect;
 }
 
-function commitSelectedDndStatus(context, message) {
+function updateDndStatusDraft(context) {
   state.ui.dndStatusSelection = context.key;
-  context.character.sheet.dndState = context.current;
-  commitDndRuntime(message);
+  state.ui.dndStatusEditorCharacterId = context.character.id;
+  state.ui.dndStatusDraft = {
+    characterId: context.character.id,
+    effects: structuredClone(context.current.effects),
+  };
+  renderDndStatusDraft();
 }
 
 function selectDndStatus(button) {
   const context = getDndStatusContext(button);
   if (!context) return;
   if (context.effectIndex === -1 && !createDndStatusEffect(context)) return;
-  commitSelectedDndStatus(context, "Estat D&D actualitzat");
+  updateDndStatusDraft(context);
 }
 
 function adjustDndStatusDuration(button) {
@@ -3237,7 +3265,7 @@ function adjustDndStatusDuration(button) {
     if (next === 0) context.current.effects.splice(context.effectIndex, 1);
     else effect.duration = next;
   }
-  commitSelectedDndStatus(context, "Duració de l’estat actualitzada");
+  updateDndStatusDraft(context);
 }
 
 function setDndStatusMode(button) {
@@ -3246,7 +3274,20 @@ function setDndStatusMode(button) {
   let effect = context.effectIndex === -1 ? createDndStatusEffect(context) : context.current.effects[context.effectIndex];
   if (!effect) return;
   effect.duration = button.dataset.dndStatusMode === "infinite" ? -1 : 1;
-  commitSelectedDndStatus(context, "Duració de l’estat actualitzada");
+  updateDndStatusDraft(context);
+}
+
+function confirmDndStatusDraft() {
+  const character = getEditableDndCharacter();
+  const draft = state.ui.dndStatusDraft;
+  if (!character || draft?.characterId !== character.id || !Array.isArray(draft.effects)) return;
+  const current = normalizeDndRuntimeState({
+    ...(character.sheet.dndState || {}),
+    effects: draft.effects,
+  }, character.sheet.hp, character.level);
+  character.sheet.dndState = current;
+  clearDndStatusDraft();
+  commitDndRuntime("Estats D&D confirmats");
 }
 function resetDndRuntimeState() {
   const character = getEditableDndCharacter();
@@ -4475,6 +4516,9 @@ function stripTransientUiState(nextState) {
       chronicles: {},
       glossary: {},
     },
+    dndStatusDraft: undefined,
+    dndStatusEditorCharacterId: "",
+    dndStatusSelection: "",
   };
   return clone;
 }
