@@ -14,6 +14,8 @@
     const DRIVE_ASSET_PREFIX = "drive-asset://";
     const LOCAL_ASSET_PREFIX = "asset://";
     const MAX_DRIVE_ASSET_BYTES = 12 * 1024 * 1024;
+    const DIRECT_MEDIA_KEYS = new Set(["portrait", "imageAssets", "voiceNotes"]);
+    const RICH_MEDIA_TOKEN_PATTERN = /\{\{media:(image|audio|video|file)\|([^|{}]+)\|([^{}]+)\}\}/g;
     const ALLOWED_DRIVE_ASSET_MIME_TYPES = new Set([
       "image/avif",
       "image/gif",
@@ -361,18 +363,24 @@
 
     function persistDriveAsset(asset, campaignId, targetType, targetId) {
       const dataUrl = String(asset && asset.dataUrl || "");
-      const match = dataUrl.match(/^data:([^;,]+);base64,([\s\S]+)$/);
+      const match = dataUrl.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=]+)$/);
       if (!match) throw new Error("El contingut de la imatge no es valid.");
-      const mimeType = String(asset.mimeType || match[1] || "application/octet-stream");
-      if (mimeType.indexOf("image/") !== 0) throw new Error("El fitxer pujat no es una imatge.");
-      const safeName = String(asset.name || "imatge")
-        .replace(/[^a-zA-Z0-9_.-]/g, "_")
-        .slice(0, 120) || "imatge";
+      const mimeType = String(asset.mimeType || match[1] || "application/octet-stream").toLowerCase();
+      if (!ALLOWED_DRIVE_ASSET_MIME_TYPES.has(mimeType) || mimeType.indexOf("image/") !== 0) {
+        throw new Error("El fitxer pujat no es una imatge compatible.");
+      }
+      if (estimateBase64Bytes(match[2]) > MAX_DRIVE_ASSET_BYTES) {
+        throw new Error("El fitxer supera el limit de 12 MB.");
+      }
       const prefix = [campaignId, targetType || "campaign", targetId || "general"]
         .map((part) => String(part).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 50))
         .join("__");
-      const blob = Utilities.newBlob(Utilities.base64Decode(match[2]), mimeType, `${prefix}__${safeName}`);
-      const file = getAssetFolder().createFile(blob);
+      const fileName = `asset-${prefix}-${hashAssetContent(match[2])}.${getAssetExtension(mimeType)}`;
+      const folder = getAssetFolder();
+      const existing = folder.getFilesByName(fileName);
+      const file = existing.hasNext()
+        ? existing.next()
+        : folder.createFile(Utilities.newBlob(Utilities.base64Decode(match[2]), mimeType, fileName));
       return {
         assetRef: `drive-asset://${file.getId()}`,
         id: file.getId(),
@@ -385,6 +393,9 @@
       const fileId = String(assetRef || "").replace(/^drive-asset:\/\//, "");
       if (!fileId) throw new Error("Referencia d'imatge no valida.");
       const file = DriveApp.getFileById(fileId);
+      if (!isCampaignAssetFile(file)) {
+        throw new Error("El fitxer no pertany a la carpeta d'actius de la campanya.");
+      }
       const blob = file.getBlob();
       const mimeType = String(blob.getContentType ? blob.getContentType() : "image/jpeg");
       return {
@@ -902,22 +913,44 @@
     }
 
     function externalizeDriveAssets(value, campaignId) {
+      return externalizeDriveAssetValue(value, campaignId, "");
+    }
+
+    function externalizeDriveAssetValue(value, campaignId, key) {
       if (typeof value === "string") {
         const text = String(value || "");
         if (text.indexOf(LOCAL_ASSET_PREFIX) === 0 || text.indexOf("|asset://") >= 0) {
           throw new Error("Hi ha un actiu local sense fitxer. Torna a seleccionar la imatge abans de sincronitzar.");
         }
+        if (DIRECT_MEDIA_KEYS.has(key)) {
+          if (text.indexOf(DRIVE_ASSET_PREFIX) === 0) return text;
+          if (text.indexOf("data:") === 0) return storeDriveAssetDataUrl(text, campaignId);
+          if (text.trim()) {
+            throw new Error("La imatge encara no esta allotjada a Drive. Torna a seleccionar-la i espera la confirmacio de pujada.");
+          }
+          return text;
+        }
         if (text.indexOf("data:") === 0) {
           return storeDriveAssetDataUrl(text, campaignId);
         }
-        return text.replace(/data:[^}\s]+/g, (dataUrl) => storeDriveAssetDataUrl(dataUrl, campaignId));
+        return text.replace(RICH_MEDIA_TOKEN_PATTERN, (full, kind, label, source) => {
+          const normalizedSource = String(source || "").trim();
+          if (normalizedSource.indexOf(LOCAL_ASSET_PREFIX) === 0) {
+            throw new Error("Hi ha un actiu local sense fitxer. Torna'l a seleccionar abans de sincronitzar.");
+          }
+          if (normalizedSource.indexOf(DRIVE_ASSET_PREFIX) === 0) return full;
+          if (normalizedSource.indexOf("data:") === 0) {
+            return `{{media:${kind}|${label}|${storeDriveAssetDataUrl(normalizedSource, campaignId)}}}`;
+          }
+          throw new Error("La referencia multimedia encara no esta allotjada a Drive.");
+        });
       }
       if (Array.isArray(value)) {
-        return value.map((item) => externalizeDriveAssets(item, campaignId));
+        return value.map((item) => externalizeDriveAssetValue(item, campaignId, key));
       }
       if (value && typeof value === "object") {
         return Object.fromEntries(
-          Object.entries(value).map(([key, item]) => [key, externalizeDriveAssets(item, campaignId)]),
+          Object.entries(value).map(([childKey, item]) => [childKey, externalizeDriveAssetValue(item, campaignId, childKey)]),
         );
       }
       return value;
@@ -1008,11 +1041,21 @@
     function isCampaignAssetFile(file) {
       if (!file || !String(file.getName ? file.getName() : "").startsWith("asset-")) return false;
       const expectedFolderId = extractDriveId(CONFIG.DRIVE_FOLDER_ID);
+      const assetFolderId = getExistingAssetFolderId();
+      if (typeof file.getParents !== "function") return false;
       const parents = file.getParents();
       while (parents.hasNext()) {
-        if (String(parents.next().getId()) === expectedFolderId) return true;
+        const parentId = String(parents.next().getId());
+        if (parentId === expectedFolderId || (assetFolderId && parentId === assetFolderId)) return true;
       }
       return false;
+    }
+
+    function getExistingAssetFolderId() {
+      const parent = getCampaignFolder();
+      if (typeof parent.getFoldersByName !== "function") return "";
+      const folders = parent.getFoldersByName(CONFIG.ASSET_FOLDER_NAME);
+      return folders.hasNext() ? String(folders.next().getId()) : "";
     }
 
     function collectDriveAssetTokens(value) {

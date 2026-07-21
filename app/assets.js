@@ -1,3 +1,24 @@
+const DIRECT_MEDIA_KEYS = new Set(["portrait", "imageAssets", "voiceNotes"]);
+
+export function collectMediaSourcesFromValue(value) {
+  const sources = new Set();
+  visitMediaValue(value, "", (source) => sources.add(source));
+  return [...sources];
+}
+
+export function collectMediaSourceRecordsFromValue(value) {
+  const records = new Map();
+  visitMediaRecords(value, "", "", (source, key, ownerId) => {
+    if (!records.has(source)) {
+      records.set(source, { source, key, ownerId });
+    }
+  });
+  return [...records.values()];
+}
+
+export function replaceMediaSourcesInValue(value, replacements) {
+  return mapMediaValue(value, "", (source) => replacements.has(source) ? replacements.get(source) : source);
+}
 const ASSET_TOKEN_PREFIX = "asset://";
 const DRIVE_ASSET_TOKEN_PREFIX = "drive-asset://";
 const DATA_URL_PATTERN = /^data:/i;
@@ -110,6 +131,60 @@ function visitAssetValue(value, onSource) {
   }
 }
 
+function visitMediaValue(value, key, onSource) {
+  if (typeof value === "string") {
+    if (DIRECT_MEDIA_KEYS.has(key) && value.trim()) onSource(value.trim());
+    for (const match of value.matchAll(RICH_MEDIA_TOKEN_PATTERN)) {
+      if (match[3].trim()) onSource(match[3].trim());
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => visitMediaValue(item, key, onSource));
+    return;
+  }
+  if (value && typeof value === "object") {
+    Object.entries(value).forEach(([childKey, item]) => visitMediaValue(item, childKey, onSource));
+  }
+}
+
+function visitMediaRecords(value, key, ownerId, onSource) {
+  if (typeof value === "string") {
+    if (DIRECT_MEDIA_KEYS.has(key) && value.trim()) {
+      onSource(value.trim(), key, ownerId);
+    }
+    for (const match of value.matchAll(RICH_MEDIA_TOKEN_PATTERN)) {
+      if (match[3].trim()) onSource(match[3].trim(), "rich", ownerId);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => visitMediaRecords(item, key, ownerId, onSource));
+    return;
+  }
+  if (value && typeof value === "object") {
+    const nextOwnerId = typeof value.id === "string" ? value.id : ownerId;
+    Object.entries(value).forEach(([childKey, item]) => visitMediaRecords(item, childKey, nextOwnerId, onSource));
+  }
+}
+
+function mapMediaValue(value, key, replaceSource) {
+  if (typeof value === "string") {
+    const direct = DIRECT_MEDIA_KEYS.has(key) ? replaceSource(value.trim()) : value;
+    return direct.replaceAll(
+      RICH_MEDIA_TOKEN_PATTERN,
+      (_full, kind, label, source) => `{{media:${kind}|${label}|${replaceSource(source.trim())}}}`,
+    );
+  }
+  if (Array.isArray(value)) return value.map((item) => mapMediaValue(item, key, replaceSource));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([childKey, item]) => [childKey, mapMediaValue(item, childKey, replaceSource)]),
+    );
+  }
+  return value;
+}
+
 function visitDriveAssetValue(value, onSource) {
   if (typeof value === "string") {
     if (isDriveAssetToken(value)) onSource(value);
@@ -184,6 +259,7 @@ export function replaceAssetSourcesInState(state, replacer) {
 
   nextState.characters = (nextState.characters || []).map((character) => {
     const nextCharacter = { ...character };
+    nextCharacter.portrait = replaceDirectSource(nextCharacter.portrait, replacer, markChanged);
     nextCharacter.summary = replaceSourcesInRichText(nextCharacter.summary, replacer, markChanged);
     nextCharacter.quickNotes = replaceSourcesInRichText(nextCharacter.quickNotes, replacer, markChanged);
     nextCharacter.history = replaceSourcesInRichText(nextCharacter.history, replacer, markChanged);
@@ -222,6 +298,8 @@ export function replaceAssetSourcesInState(state, replacer) {
 
   nextState.chronicles = (nextState.chronicles || []).map((chronicle) => ({
     ...chronicle,
+    imageAssets: replaceDirectSourceList(chronicle.imageAssets, replacer, markChanged),
+    voiceNotes: replaceDirectSourceList(chronicle.voiceNotes, replacer, markChanged),
     summary: replaceSourcesInRichText(chronicle.summary, replacer, markChanged),
     content: replaceSourcesInRichText(chronicle.content, replacer, markChanged),
     highlights: replaceSourcesInRichText(chronicle.highlights, replacer, markChanged),
@@ -247,6 +325,7 @@ export function replaceAssetSourcesInState(state, replacer) {
 
 function collectAssetSourcesFromState(state, onSource) {
   (state?.characters || []).forEach((character) => {
+    collectDirectSource(character?.portrait, onSource);
     collectRichTextSources(character?.summary, onSource);
     collectRichTextSources(character?.quickNotes, onSource);
     collectRichTextSources(character?.history, onSource);
@@ -270,6 +349,8 @@ function collectAssetSourcesFromState(state, onSource) {
   });
 
   (state?.chronicles || []).forEach((chronicle) => {
+    collectDirectSourceList(chronicle?.imageAssets, onSource);
+    collectDirectSourceList(chronicle?.voiceNotes, onSource);
     collectRichTextSources(chronicle?.summary, onSource);
     collectRichTextSources(chronicle?.content, onSource);
     collectRichTextSources(chronicle?.highlights, onSource);

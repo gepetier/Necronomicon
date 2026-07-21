@@ -15,6 +15,7 @@ import {
   collectAssetTokensFromValue,
   collectEmbeddedDataUrlsFromState,
   collectDriveAssetTokensFromValue,
+  collectMediaSourceRecordsFromValue,
   createAssetToken,
   createDriveAssetToken,
   replaceAssetSourcesInState,
@@ -85,6 +86,9 @@ test("rich text marks unsafe media links without rendering a dangerous href", ()
 });
 
 test("asset helpers collect and replace embedded asset sources", () => {
+  const mediaRecords = collectMediaSourceRecordsFromValue({ characters: [{ id: "ilu", portrait: "http://localhost:5173/resources/imatges/ilu.jpg" }] });
+  assert.deepEqual(mediaRecords[0], { source: "http://localhost:5173/resources/imatges/ilu.jpg", key: "portrait", ownerId: "ilu" });
+
   const sample = structuredClone(seedData);
   sample.glossary[0].imageAssets = ["data:image/png;base64,AAAA"];
   sample.chronicles[0].content = "{{media:image|Mapa|data:image/png;base64,BBBB}}";

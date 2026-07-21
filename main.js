@@ -10,6 +10,7 @@ import {
   persistState as storagePersistState,
   updateCampaign as storageUpdateCampaign,
 } from "./app/storage.js";
+import { seedData } from "./data.js";
 import {
   createChronicle as createChronicleEntry,
   autoLinkChronicleReferences,
@@ -45,8 +46,11 @@ import {
   collectEmbeddedDataUrlsFromState,
   inferAssetKindFromMimeType,
   isAssetToken,
+  collectMediaSourceRecordsFromValue,
   replaceAssetSourcesInState,
   replaceAssetTokensInValue,
+  isDriveAssetToken,
+  replaceMediaSourcesInValue,
 } from "./app/assets.js";
 import {
   clearAssetStore,
@@ -1541,13 +1545,14 @@ async function handleGoogleCredential(credential, options = {}) {
     cloudSession.selectingCampaign = true;
     cloudSession.pendingInitialPublish = shouldSeedCloud;
     cloudSession.lastSyncAt = new Date().toISOString();
+    const needsMediaMigration = stateHasUnmaterializedCloudMedia(state);
     cloudSession.lastError = "";
     ensureUiStateShape();
     persistStateImmediately({ skipCloud: true });
     const migratedEmbeddedAssets = await migrateEmbeddedAssets({ announce: false });
     updateAuthFeedback(shouldSeedCloud ? "firstPublish" : "campaignReady");
     prepareCampaignSelectionAfterLogin();
-    if ((shouldSeedCloud || migratedEmbeddedAssets) && canPublishCampaign()) {
+    if ((shouldSeedCloud || migratedEmbeddedAssets || needsMediaMigration) && canPublishCampaign()) {
       await pushStateToCloud({ target: { type: "campaign" } });
       cloudSession.pendingInitialPublish = false;
     }
@@ -1561,6 +1566,12 @@ async function handleGoogleCredential(credential, options = {}) {
     cloudSession.selectingCampaign = false;
     updateCloudStatus(error instanceof Error ? error.message : String(error), { error: true });
   }
+}
+
+function stateHasUnmaterializedCloudMedia(candidate) {
+  const payload = storageCreateCloudCampaignPayload(stripTransientUiState(candidate));
+  return collectMediaSourceRecordsFromValue(payload)
+    .some(({ source }) => !isDriveAssetToken(source));
 }
 
 function isCloudCampaignEmpty(campaign) {
@@ -3917,32 +3928,132 @@ async function pushStateToCloud(options = {}) {
 }
 
 async function prepareCloudAssetPayload(value, context) {
-  const tokens = collectAssetTokensFromValue(value);
-  if (!tokens.length) return { payload: value, replacements: new Map() };
-  if (cloudSession.capabilities?.driveAssetFiles !== true) {
-    return { payload: await materializeAssetTokens(value), replacements: new Map() };
-  }
+  const records = collectMediaSourceRecordsFromValue(value);
+  if (!records.length) return { payload: value, replacements: new Map() };
 
-  const bundle = await exportAssetBundle(tokens);
   const replacements = new Map();
-  for (const asset of bundle) {
-    const token = `asset://${asset.id}`;
-    let assetRef = cloudAssetUploadReplacements.get(token) || "";
+  for (const record of records) {
+    const source = record.source;
+    if (isDriveAssetToken(source)) continue;
+
+    const asset = await resolveCloudMediaSource(source, record);
+    if (!asset) continue;
+
+    if (cloudSession.capabilities?.driveAssetFiles !== true) {
+      replacements.set(source, asset.dataUrl);
+      continue;
+    }
+
+    let assetRef = cloudAssetUploadReplacements.get(source) || "";
     if (!assetRef) {
       const response = await saveAssetToCloud(cloudSession.idToken, asset, context);
       assetRef = String(response?.assetRef || "");
       if (!assetRef.startsWith("drive-asset://")) {
         throw new Error("Drive no ha retornat una referencia valida per a la imatge.");
       }
-      cloudAssetUploadReplacements.set(token, assetRef);
+      cloudAssetUploadReplacements.set(source, assetRef);
     }
-    replacements.set(token, assetRef);
+    replacements.set(source, assetRef);
   }
 
   return {
-    payload: replaceAssetTokensInValue(value, replacements),
+    payload: replaceMediaSourcesInValue(value, replacements),
     replacements,
   };
+}
+
+async function resolveCloudMediaSource(source, context = {}) {
+  if (isDriveAssetToken(source)) return null;
+
+  if (isAssetToken(source)) {
+    const bundle = await exportAssetBundle([source]);
+    if (bundle.length) {
+      return optimizeCloudAsset(bundle[0]);
+    }
+    const seedFallback = resolveSeedMediaSource("", context);
+    if (seedFallback && seedFallback !== source) {
+      return resolveCloudMediaSource(seedFallback, {});
+    }
+    throw new Error(`Falta el fitxer local de l'actiu ${source} (${context.ownerId || "element desconegut"}). Torna'l a seleccionar abans de sincronitzar.`);
+  }
+
+  const fallback = resolveSeedMediaSource(source, context);
+  const candidates = fallback && fallback !== source ? [source, fallback] : [source];
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const file = new File([blob], deriveCloudMediaName(candidate), {
+        type: blob.type || "application/octet-stream",
+        lastModified: Date.now(),
+      });
+      const dataUrl = await readFileAsDataUrl(await optimizeImageFile(file));
+      if (!dataUrl) throw new Error("No s'ha pogut llegir el fitxer descarregat.");
+      return {
+        id: source,
+        name: file.name,
+        mimeType: blob.type || file.type,
+        kind: inferAssetKindFromMimeType(blob.type || file.type),
+        dataUrl,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw new Error(`No s'ha pogut descarregar l'actiu ${source}: ${formatGlossaryUploadError(lastError)}`);
+}
+
+async function optimizeCloudAsset(asset) {
+  const response = await fetch(asset.dataUrl);
+  const blob = await response.blob();
+  const file = new File([blob], asset.name || "imatge", {
+    type: asset.mimeType || blob.type || "application/octet-stream",
+    lastModified: Date.now(),
+  });
+  const optimized = await optimizeImageFile(file);
+  return {
+    ...asset,
+    name: optimized.name || asset.name,
+    mimeType: optimized.type || asset.mimeType || blob.type,
+    kind: inferAssetKindFromMimeType(optimized.type || asset.mimeType || blob.type),
+    dataUrl: await readFileAsDataUrl(optimized),
+  };
+}
+
+function resolveSeedMediaSource(source, context = {}) {
+  const normalized = String(source || "").replaceAll("\\", "/").toLowerCase();
+  const ownerId = String(context.ownerId || "").toLowerCase();
+  if (ownerId) {
+    const ownerCharacter = seedData.characters.find((item) => String(item.id || "").toLowerCase() === ownerId);
+    if (ownerCharacter?.portrait && context.key === "portrait") return ownerCharacter.portrait;
+    const ownerEntry = seedData.glossary.find((item) => String(item.id || "").toLowerCase() === ownerId);
+    if (ownerEntry?.imageAssets?.length && context.key === "imageAssets") {
+      return ownerEntry.imageAssets.find(Boolean) || "";
+    }
+  }
+  const character = seedData.characters.find((item) => {
+    const id = String(item.id || "").toLowerCase();
+    return id && (normalized.includes(`/resources/imatges/${id}.`) || normalized.includes(`/assets/${id}-`));
+  });
+  if (character?.portrait) return character.portrait;
+
+  const entry = seedData.glossary.find((item) => {
+    const id = String(item.id || "").toLowerCase();
+    return id && (normalized.includes(`/resources/glossary/${id}.`) || normalized.includes(`/assets/${id}-`));
+  });
+  return entry?.imageAssets?.find(Boolean) || "";
+}
+
+function deriveCloudMediaName(source) {
+  try {
+    const path = new URL(source, window.location.href).pathname.split("/").pop();
+    return path || "imatge";
+  } catch {
+    return "imatge";
+  }
 }
 
 function applyCloudAssetReplacements(replacements) {

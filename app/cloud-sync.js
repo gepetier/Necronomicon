@@ -163,18 +163,24 @@ export async function saveGlossaryEntryToCloud(idToken, entry, campaignId = "", 
 }
 
 export async function saveAssetToCloud(idToken, asset, context = {}) {
-  await establishServerSession(idToken);
-  const operationId = createOperationId();
-  await postWithoutCors({
-    action: "saveAsset",
-    ...createAuthPayload(idToken),
-    operationId,
-    campaignId: context.campaignId || "",
-    targetType: context.targetType || "campaign",
-    targetId: context.targetId || "",
-    asset,
-  });
-  return jsonpRequest({ action: "claimAssetUpload", operationId });
+  const label = String(asset?.name || asset?.id || "imatge").trim() || "imatge";
+  try {
+    await establishServerSession(idToken);
+    const operationId = createOperationId();
+    await postWithoutCors({
+      action: "saveAsset",
+      ...createAuthPayload(idToken),
+      operationId,
+      campaignId: context.campaignId || "",
+      targetType: context.targetType || "campaign",
+      targetId: context.targetId || "",
+      asset,
+    });
+    return jsonpRequest({ action: "claimAssetUpload", operationId });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Pujada Drive fallida per "${label}": ${detail}`);
+  }
 }
 
 export async function loadAssetFromCloud(idToken, assetRef, campaignId = "") {

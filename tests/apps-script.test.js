@@ -146,6 +146,18 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
   };
 
   const assetFolder = {
+    getId: () => "asset-folder-id",
+    getFilesByName(name) {
+      const matched = assetFilesByName.get(String(name || "")) || null;
+      let available = Boolean(matched);
+      return {
+        hasNext: () => available,
+        next() {
+          available = false;
+          return matched;
+        },
+      };
+    },
     createFile(blob) {
       const id = `asset-file-${++assetCounter}`;
       const name = String(blob.getName ? blob.getName() : `asset-${assetCounter}`);
@@ -153,6 +165,16 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
         getId: () => id,
         getName: () => name,
         getBlob: () => blob,
+        getParents: () => {
+          let available = true;
+          return {
+            hasNext: () => available,
+            next() {
+              available = false;
+              return assetFolder;
+            },
+          };
+        },
       };
       assetFilesById.set(id, file);
       assetFilesByName.set(name, file);
@@ -329,9 +351,17 @@ test("Apps Script rejects orphan local asset tokens before writing campaign JSON
     campaignId: "campaign-a",
     entry: { id: "broken", name: "Broken", imageAssets: ["asset://missing-local-file"] },
   });
+  const remoteResponse = harness.handleRequest({
+    action: "saveGlossaryEntry",
+    idToken: "admin",
+    campaignId: "campaign-a",
+    entry: { id: "remote", name: "Remote", imageAssets: ["https://example.com/image.jpg"] },
+  });
 
   assert.equal(response.ok, false);
   assert.match(response.error, /actiu local sense fitxer/i);
+  assert.equal(remoteResponse.ok, false);
+  assert.match(remoteResponse.error, /allotjada a Drive/i);
   assert.equal(harness.readCampaign().campaigns[0].state.glossary.length, 0);
   assert.equal(harness.assetFiles.size, 0);
 });
