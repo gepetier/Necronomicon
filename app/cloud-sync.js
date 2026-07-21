@@ -162,6 +162,31 @@ export async function saveGlossaryEntryToCloud(idToken, entry, campaignId = "", 
   return saveItemToCloud(payload, compactPayload, idToken);
 }
 
+export async function deleteChronicleFromCloud(idToken, chronicleId, campaignId = "") {
+  return saveItemToCloud({
+    action: "deleteChronicle",
+    ...createAuthPayload(idToken),
+    campaignId,
+    itemId: chronicleId,
+  }, null, idToken);
+}
+
+export async function deleteGlossaryEntryFromCloud(idToken, entryId, campaignId = "") {
+  return saveItemToCloud({
+    action: "deleteGlossaryEntry",
+    ...createAuthPayload(idToken),
+    campaignId,
+    itemId: entryId,
+  }, null, idToken);
+}
+
+export async function repairCampaignAssetsInCloud(idToken, campaignId = "") {
+  return saveItemToCloud({
+    action: "repairCampaignAssets",
+    ...createAuthPayload(idToken),
+    campaignId,
+  }, null, idToken);
+}
 export async function saveAssetToCloud(idToken, asset, context = {}) {
   const label = String(asset?.name || asset?.id || "imatge").trim() || "imatge";
   try {

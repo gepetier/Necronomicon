@@ -6,7 +6,7 @@
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
-    const BACKEND_VERSION = "2026-07-17-drive-asset-files";
+    const BACKEND_VERSION = "2026-07-21-drive-asset-repair";
     const BACKUP_EVERY_REVISIONS = 20;
     const MAX_BACKUP_FILES = 40;
     const SESSION_TTL_SECONDS = 3600;
@@ -124,7 +124,7 @@
           if (!campaignContainsAssetReference(targetState, assetRef)) {
             throw new Error("Aquesta imatge no pertany a la campanya activa.");
           }
-          return ok(readDriveAsset(assetRef));
+          return ok(readDriveAsset(assetRef, { allowLegacyReference: true }));
         }
 
         if (request.action === "loadCampaign") {
@@ -134,7 +134,8 @@
             return ok({
               user: authorized.user,
               campaign: authorized.campaign,
-              assetBundle: createDriveAssetBundle(authorized.campaign),
+              assetBundle: [],
+              assetDiagnostics: getDriveAssetDiagnostics(authorized.campaign),
               capabilities: getClientCapabilities(),
               driveFile: getCurrentCampaignFileInfo(),
             });
@@ -171,6 +172,31 @@
           });
         }
 
+        if (request.action === "repairCampaignAssets") {
+          return withCampaignLock(() => {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            if (!canManageCampaign(actor)) {
+              throw new Error("No tens permisos per reparar els actius de la campanya.");
+            }
+            const repair = repairCampaignAssetReferences(current, campaignId);
+            const driveFile = repair.changed
+              ? persistCampaignUnlocked(current, user.email, getCampaignRevision(current), request.operationId, { forceBackup: true })
+              : getCurrentCampaignFileInfo();
+            const authorized = createAuthorizedCampaignView(current, user);
+            return ok({
+              user: authorized.user,
+              campaign: authorized.campaign,
+              assetDiagnostics: getDriveAssetDiagnostics(authorized.campaign),
+              repaired: repair.repaired,
+              unresolved: repair.unresolved,
+              capabilities: getClientCapabilities(),
+              driveFile,
+            });
+          });
+        }
         if (request.action === "saveCharacter") {
           return withCampaignLock(() => {
             const current = loadCampaign();
@@ -196,6 +222,7 @@
                 portrait: currentCharacter.portrait,
               }
               : externalizeDriveAssets(character, campaignId);
+            assertDriveAssetReferencesAreAllowed(nextCharacter, targetState);
             updateCampaignItem(current, campaignId, "characters", nextCharacter);
             const driveFile = persistCampaignUnlocked(
               current,
@@ -231,7 +258,9 @@
               throw new Error("No tens permisos per editar aquesta cronica.");
             }
 
-            updateCampaignItem(current, campaignId, "chronicles", externalizeDriveAssets(chronicle, campaignId));
+            const nextChronicle = externalizeDriveAssets(chronicle, campaignId);
+            assertDriveAssetReferencesAreAllowed(nextChronicle, targetState);
+            updateCampaignItem(current, campaignId, "chronicles", nextChronicle);
             const driveFile = persistCampaignUnlocked(
               current,
               user.email,
@@ -273,6 +302,7 @@
                 imageAssets: currentEntry.imageAssets,
               }
               : externalizeDriveAssets(entry, campaignId);
+            assertDriveAssetReferencesAreAllowed(nextEntry, targetState);
             updateCampaignItem(current, campaignId, "glossary", nextEntry);
             const driveFile = persistCampaignUnlocked(
               current,
@@ -290,6 +320,26 @@
           });
         }
 
+        if (request.action === "deleteChronicle" || request.action === "deleteGlossaryEntry") {
+          return withCampaignLock(() => {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            const collectionName = request.action === "deleteChronicle" ? "chronicles" : "glossary";
+            const itemId = String(request.itemId || "");
+            const item = findCampaignItem(current, campaignId, collectionName, itemId);
+            if (!item) throw new Error("No s'ha trobat l'element que vols esborrar.");
+            const allowed = collectionName === "chronicles"
+              ? canEditChronicle(actor, item)
+              : canEditGlossaryEntry(actor, item);
+            if (!allowed) throw new Error("No tens permisos per esborrar aquest element.");
+            deleteCampaignItem(current, campaignId, collectionName, itemId);
+            const driveFile = persistCampaignUnlocked(current, user.email, getCampaignRevision(current), request.operationId);
+            const authorized = createAuthorizedCampaignView(current, user);
+            return ok({ user: authorized.user, campaign: authorized.campaign, capabilities: getClientCapabilities(), driveFile });
+          });
+        }
         throw new Error(`Accio desconeguda: ${request.action || "(buida)"}`);
       } catch (error) {
         return {
@@ -389,11 +439,13 @@
       };
     }
 
-    function readDriveAsset(assetRef) {
+    function readDriveAsset(assetRef, options) {
       const fileId = String(assetRef || "").replace(/^drive-asset:\/\//, "");
       if (!fileId) throw new Error("Referencia d'imatge no valida.");
       const file = DriveApp.getFileById(fileId);
-      if (!isCampaignAssetFile(file)) {
+      const canonical = isCampaignAssetFile(file);
+      const legacy = !canonical && isLegacyCampaignAssetFile(file) && options && options.allowLegacyReference === true;
+      if (!canonical && !legacy) {
         throw new Error("El fitxer no pertany a la carpeta d'actius de la campanya.");
       }
       const blob = file.getBlob();
@@ -402,6 +454,7 @@
         assetRef: `drive-asset://${fileId}`,
         name: file.getName(),
         mimeType,
+        legacy,
         dataUrl: `data:${mimeType};base64,${Utilities.base64Encode(blob.getBytes())}`,
       };
     }
@@ -681,6 +734,24 @@
       syncTopLevelCampaignFields(campaign);
     }
 
+    function deleteCampaignItem(campaign, campaignId, collectionName, itemId) {
+      const targetId = resolveCampaignId(campaign, campaignId);
+      if (!targetId) throw new Error("Campanya no trobada per esborrar l'element.");
+      const now = new Date().toISOString();
+      campaign.campaigns = campaign.campaigns.map((entry) => {
+        if (!entry || entry.id !== targetId || !entry.state) return entry;
+        return {
+          ...entry,
+          updatedAt: now,
+          state: {
+            ...entry.state,
+            meta: { ...(entry.state.meta || {}), updatedAt: now },
+            [collectionName]: (entry.state[collectionName] || []).filter((item) => String(item && item.id) !== String(itemId)),
+          },
+        };
+      });
+      syncTopLevelCampaignFields(campaign);
+    }
     function mergeCampaignPublication(currentCandidate, incomingCandidate, user, publicationActor) {
       const current = normalizeCampaign(cloneJson(currentCandidate));
       const incoming = normalizeCampaign(cloneJson(incomingCandidate));
@@ -967,7 +1038,7 @@
       const extension = getAssetExtension(parsed.mimeType);
       const safeCampaignId = String(campaignId || "campaign").replace(/[^a-zA-Z0-9_-]/g, "-");
       const fileName = `asset-${safeCampaignId}-${hashAssetContent(parsed.base64)}.${extension}`;
-      const folder = getCampaignFolder();
+      const folder = getAssetFolder();
       const existing = folder.getFilesByName(fileName);
       const file = existing.hasNext()
         ? existing.next()
@@ -1038,6 +1109,71 @@
       return bundle;
     }
 
+    function assertDriveAssetReferencesAreAllowed(value, targetState) {
+      collectDriveAssetTokens(value).forEach((token) => {
+        const alreadyReferenced = campaignContainsAssetReference(targetState, token);
+        const fileId = String(token).slice(DRIVE_ASSET_PREFIX.length);
+        const file = DriveApp.getFileById(fileId);
+        if (!alreadyReferenced && !isCampaignAssetFile(file)) {
+          throw new Error("La referencia d'actiu Drive no pertany a aquesta campanya.");
+        }
+      });
+    }
+
+    function isLegacyCampaignAssetFile(file) {
+      return Boolean(file && String(file.getName ? file.getName() : "").startsWith("asset-"));
+    }
+
+    function getDriveAssetDiagnostics(value) {
+      const issues = [];
+      collectDriveAssetTokens(value).forEach((token) => {
+        try {
+          const file = DriveApp.getFileById(String(token).slice(DRIVE_ASSET_PREFIX.length));
+          if (!isCampaignAssetFile(file)) {
+            issues.push({ token, status: isLegacyCampaignAssetFile(file) ? "legacy" : "invalid" });
+          }
+        } catch (error) {
+          issues.push({ token, status: "missing" });
+        }
+      });
+      return issues;
+    }
+
+    function repairCampaignAssetReferences(campaign, campaignId) {
+      const targetState = getCampaignStateForId(campaign, campaignId);
+      const replacements = {};
+      const unresolved = [];
+      collectDriveAssetTokens(targetState).forEach((token) => {
+        try {
+          const file = DriveApp.getFileById(String(token).slice(DRIVE_ASSET_PREFIX.length));
+          if (isCampaignAssetFile(file)) return;
+          if (!isLegacyCampaignAssetFile(file)) { unresolved.push(token); return; }
+          const folder = getAssetFolder();
+          const name = String(file.getName());
+          const existing = folder.getFilesByName(name);
+          const copied = existing.hasNext()
+            ? existing.next()
+            : folder.createFile(Utilities.newBlob(file.getBlob().getBytes(), file.getBlob().getContentType(), name));
+          replacements[token] = `${DRIVE_ASSET_PREFIX}${copied.getId()}`;
+        } catch (error) {
+          unresolved.push(token);
+        }
+      });
+      const tokens = Object.keys(replacements);
+      if (!tokens.length) return { changed: false, repaired: 0, unresolved };
+      const replace = (value) => {
+        if (typeof value === "string") return tokens.reduce((text, token) => text.split(token).join(replacements[token]), value);
+        if (Array.isArray(value)) return value.map(replace);
+        if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replace(item)]));
+        return value;
+      };
+      const targetId = resolveCampaignId(campaign, campaignId);
+      campaign.campaigns = campaign.campaigns.map((entry) => entry && entry.id === targetId
+        ? { ...entry, state: replace(entry.state), updatedAt: new Date().toISOString() }
+        : entry);
+      syncTopLevelCampaignFields(campaign);
+      return { changed: true, repaired: tokens.length, unresolved };
+    }
     function isCampaignAssetFile(file) {
       if (!file || !String(file.getName ? file.getName() : "").startsWith("asset-")) return false;
       const expectedFolderId = extractDriveId(CONFIG.DRIVE_FOLDER_ID);
@@ -1208,6 +1344,8 @@
         backendVersion: BACKEND_VERSION,
         driveFolderId: extractDriveId(CONFIG.DRIVE_FOLDER_ID),
         atomicCampaignWrites: true,
+        lazyDriveAssets: true,
+        repairCampaignAssets: true,
         campaignRevisions: true,
         ephemeralServerSessions: true,
         preserveExistingCharacterPortrait: true,

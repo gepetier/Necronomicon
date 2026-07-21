@@ -21,6 +21,7 @@ import {
 } from "./app/chronicles.js";
 import {
   renderCharactersModule as renderCharactersView,
+  normalizeDndRuntimeState,
   saveCharacterOverview as saveCharacterOverviewEntry,
   saveCharacterTab as saveCharacterTabEntry,
 } from "./app/characters.js";
@@ -54,6 +55,7 @@ import {
 } from "./app/assets.js";
 import {
   clearAssetStore,
+  clearDriveAssetFailures,
   exportAssetBundle,
   hydrateAssetReferences,
   importAssetBundle,
@@ -89,6 +91,8 @@ import {
   CLOUD_CONFIG,
   clearStoredCredential,
   decodeCredential,
+  deleteChronicleFromCloud,
+  deleteGlossaryEntryFromCloud,
   getStoredCredential,
   isCredentialUsable,
   loadCampaignFromCloud,
@@ -96,6 +100,7 @@ import {
   loadGoogleIdentity,
   promptGoogleSignIn,
   renderGoogleButton,
+  repairCampaignAssetsInCloud,
   saveCampaignToCloud,
   saveAssetToCloud,
   saveCharacterToCloud,
@@ -106,7 +111,7 @@ import {
 import { createCloudSaveQueue } from "./app/cloud-save-queue.js";
 import { activateDialogFocus, deactivateDialogFocus, setAuthPageInert, trapDialogFocus } from "./app/dialog-focus.js";
 
-const SYNC_CLIENT_VERSION = "2026-07-17-drive-asset-files";
+const SYNC_CLIENT_VERSION = "2026-07-21-drive-asset-repair";
 
 let state = loadStoredState();
 let bookTurnTimer = null;
@@ -222,6 +227,7 @@ const cloudSession = {
   pendingInitialPublish: false,
   capabilities: {},
   driveFile: null,
+  assetDiagnostics: [],
   revision: 0,
 };
 
@@ -398,6 +404,11 @@ function handleClick(event) {
       return;
     }
     backupImportPicker?.click();
+    return;
+  }
+
+  if (event.target.closest("[data-repair-campaign-assets]")) {
+    void repairCampaignAssets();
     return;
   }
 
@@ -750,6 +761,47 @@ function handleClick(event) {
 
   if (event.target.closest("[data-save-character]")) {
     saveCharacterEdits();
+    return;
+  }
+
+  if (event.target.closest("[data-discard-character-edit]")) {
+    discardCharacterChanges();
+    return;
+  }
+
+  const dndStatusPopoverTrigger = event.target.closest("[data-dnd-status-popover]");
+  if (dndStatusPopoverTrigger) {
+    toggleDndStatusPopover(dndStatusPopoverTrigger);
+    return;
+  }
+
+  const dndStatusSelectButton = event.target.closest("[data-dnd-status-select]");
+  if (dndStatusSelectButton) {
+    selectDndStatus(dndStatusSelectButton);
+    return;
+  }
+
+  const dndStatusAdjustButton = event.target.closest("[data-dnd-status-adjust]");
+  if (dndStatusAdjustButton) {
+    adjustDndStatusDuration(dndStatusAdjustButton);
+    return;
+  }
+
+  const dndStatusModeButton = event.target.closest("[data-dnd-status-mode]");
+  if (dndStatusModeButton) {
+    setDndStatusMode(dndStatusModeButton);
+    return;
+  }
+
+  const dndResetStateButton = event.target.closest("[data-dnd-reset-state]");
+  if (dndResetStateButton) {
+    resetDndRuntimeState();
+    return;
+  }
+
+  const dndStateButton = event.target.closest("[data-dnd-state]");
+  if (dndStateButton) {
+    updateDndCharacterState(dndStateButton);
     return;
   }
 
@@ -1232,6 +1284,7 @@ function handleSubmit(event) {
 
   const formData = new FormData(form);
 
+
   if (form.dataset.form === "character-overview") {
     updateDraftFromForm(form);
     return;
@@ -1379,7 +1432,23 @@ function applyOfficeVocabulary(roots = [document.body]) {
     [/glossari/g, "referencies"],
     [/Compendi/g, "Espai de treball"],
     [/compendi/g, "espai de treball"],
-    [/D&D 5e|D&D/g, "Documents"],
+    [/La projecte activa/g, "El projecte actiu"],
+    [/la projecte activa/g, "el projecte actiu"],
+    [/La projecte oberta/g, "El projecte obert"],
+    [/la projecte oberta/g, "el projecte obert"],
+    [/De la projecte/g, "Del projecte"],
+    [/de la projecte/g, "del projecte"],
+    [/A la projecte/g, "Al projecte"],
+    [/a la projecte/g, "al projecte"],
+    [/Per la projecte/g, "Pel projecte"],
+    [/per la projecte/g, "pel projecte"],
+    [/Aquesta Fitxa/g, "Aquest Registre"],
+    [/aquesta fitxa/g, "aquest registre"],
+    [/La Fitxa/g, "El Registre"],
+    [/la fitxa/g, "el registre"],
+    [/Una fitxa/g, "Un registre"],
+    [/una fitxa/g, "un registre"],
+
     [/la projecte activa/g, "el projecte actiu"],
     [/la projecte oberta/g, "el projecte obert"],
     [/la projecte/g, "el projecte"],
@@ -1388,6 +1457,22 @@ function applyOfficeVocabulary(roots = [document.body]) {
     [/Fitxa/g, "Registre"],
     [/fitxa/g, "registre"],
     [/llibre de lectura/g, "document de lectura"],
+    [/Projecte oberta/g, "Projecte obert"],
+    [/projecte oberta/g, "projecte obert"],
+    [/Opcions de projecte/g, "Opcions del projecte"],
+    [/JSON de projecte activa/g, "JSON del projecte actiu"],
+    [/Nova projecte/g, "Nou projecte"],
+    [/La projecte nova/g, "El projecte nou"],
+    [/la projecte nova/g, "el projecte nou"],
+    [/del espai de treball/g, "de l'espai de treball"],
+    [/el espai de treball/g, "l'espai de treball"],
+    [/Totes les documents/g, "Tots els documents"],
+    [/totes les documents/g, "tots els documents"],
+    [/Documents assignades/g, "Documents assignats"],
+    [/documents assignades/g, "documents assignats"],
+    [/Registre assignada/g, "Registre assignat"],
+    [/registre assignada/g, "registre assignat"],
+
   ];
   const excludedSelector = [
     "script",
@@ -1539,20 +1624,20 @@ async function handleGoogleCredential(credential, options = {}) {
     };
     cloudSession.capabilities = response.capabilities || {};
     cloudSession.driveFile = response.driveFile || null;
+    cloudSession.assetDiagnostics = Array.isArray(response.assetDiagnostics) ? response.assetDiagnostics : [];
     cloudSession.revision = getCloudCampaignRevision(response.campaign);
     cloudSession.ready = true;
     cloudSession.awaitingServer = false;
     cloudSession.selectingCampaign = true;
     cloudSession.pendingInitialPublish = shouldSeedCloud;
     cloudSession.lastSyncAt = new Date().toISOString();
-    const needsMediaMigration = stateHasUnmaterializedCloudMedia(state);
     cloudSession.lastError = "";
     ensureUiStateShape();
     persistStateImmediately({ skipCloud: true });
     const migratedEmbeddedAssets = await migrateEmbeddedAssets({ announce: false });
     updateAuthFeedback(shouldSeedCloud ? "firstPublish" : "campaignReady");
     prepareCampaignSelectionAfterLogin();
-    if ((shouldSeedCloud || migratedEmbeddedAssets || needsMediaMigration) && canPublishCampaign()) {
+    if ((shouldSeedCloud || migratedEmbeddedAssets) && canPublishCampaign()) {
       await pushStateToCloud({ target: { type: "campaign" } });
       cloudSession.pendingInitialPublish = false;
     }
@@ -1644,10 +1729,11 @@ function selectLoginCampaign(campaignId, options = {}) {
   state = storageActivateCampaign(campaignId, state);
   ensureUiStateShape();
   syncCloudUserWithActiveCampaignAccess();
+  resetCloudCampaignContext();
   cloudSession.selectingCampaign = false;
   cloudSession.ready = true;
   cloudSession.awaitingServer = false;
-  cloudSession.status = `Campanya oberta: ${target.name}.`;
+  cloudSession.status = "Preparat per sincronitzar la campanya oberta.";
   openCharactersAfterLogin({ forceWelcome: options.forceWelcome });
   persistStateImmediately({ skipCloud: true });
   renderAuthCampaignSelection([]);
@@ -1928,6 +2014,13 @@ function getUserAccessForCampaign(campaign, email, forceSuperadmin = false) {
   });
 }
 
+function resetCloudCampaignContext() {
+  clearDriveAssetFailures();
+  cloudAssetUploadReplacements.clear();
+  cloudSession.lastError = "";
+  cloudSession.assetDiagnostics = [];
+  cloudSession.status = "Preparat per sincronitzar la campanya oberta.";
+}
 function syncCloudUserWithActiveCampaignAccess() {
   if (!cloudSession.user) {
     return;
@@ -2448,6 +2541,9 @@ function renderOptionsModule() {
   const campaignMeta = storageGetActiveCampaignMeta();
   const officeModeEnabled = Boolean(state.ui.officeMode);
   const cloudDiagnostics = getCloudDiagnostics();
+  const assetIssues = Array.isArray(cloudSession.assetDiagnostics) ? cloudSession.assetDiagnostics : [];
+  const legacyAssetCount = assetIssues.filter((issue) => issue.status === "legacy").length;
+  const missingAssetCount = assetIssues.filter((issue) => issue.status !== "legacy").length;
 
   optionsModule.innerHTML = `
     <section class="module-surface options-shell">
@@ -2467,7 +2563,7 @@ function renderOptionsModule() {
               ${renderSyncStatusIcon(syncState, syncLabel)}
               <h3>Sincronitzacio compartida</h3>
             </div>
-            <p>${escapeHtml(cloudSession.status || "Preparat")} Drive sincronitza la campanya activa: ${escapeHtml(campaignMeta.name)}.</p>
+            <p>${escapeHtml(cloudSession.status || "Preparat")} La copia compartida de Drive conte el cataleg de campanyes. Campanya oberta: ${escapeHtml(campaignMeta.name)}.</p>
           </div>
           <div class="options-stat-list">
             <span class="badge">${escapeHtml(userLabel)}</span>
@@ -2476,8 +2572,16 @@ function renderOptionsModule() {
             <span class="badge">Darrer sync: ${escapeHtml(lastSyncLabel)}</span>
             ${cloudSession.saving ? '<span class="badge">Desant...</span>' : ""}
             ${cloudSession.lastError ? `<span class="badge warning">Error: ${escapeHtml(cloudSession.lastError)}</span>` : ""}
+            ${legacyAssetCount ? `<span class="badge warning">${legacyAssetCount} imatges Drive per reparar</span>` : ""}
+            ${missingAssetCount ? `<span class="badge warning">${missingAssetCount} imatges Drive no disponibles</span>` : ""}
           </div>
           <div class="options-actions">
+            ${publishEnabled && legacyAssetCount && cloudSession.capabilities?.repairCampaignAssets === true ? `
+              <button type="button" class="secondary" data-repair-campaign-assets>
+                <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
+                <span>Repara imatges Drive</span>
+              </button>
+            ` : ""}
             ${publishEnabled ? `
               <button type="button" class="secondary" data-cloud-publish>
                 <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
@@ -2943,6 +3047,25 @@ function saveCharacterEdits() {
   });
 }
 
+function discardCharacterChanges() {
+  const character = getSelectedCharacter();
+  if (!character) {
+    return;
+  }
+
+  const hasPendingDraft = Boolean(
+    Object.keys(state.ui.drafts.characters.overview[character.id] || {}).length
+    || Object.keys(state.ui.drafts.characters.tabs[character.id] || {}).length,
+  );
+  if (hasPendingDraft && !window.confirm("Vols descartar tots els canvis no desats d'aquesta fitxa?")) {
+    return;
+  }
+
+  clearCharacterDrafts(character.id);
+  state.ui.editModes.characters = false;
+  showSaveNotice(hasPendingDraft ? "Canvis de la fitxa descartats" : "Edicio tancada");
+}
+
 function applyCharacterOverviewDraft(character) {
   const draft = state.ui.drafts.characters.overview[character.id] || {};
   const formData = new FormData();
@@ -2977,6 +3100,10 @@ function applyCharacterTabDrafts(character) {
       formData.set("proficiency", draft.proficiency !== undefined ? String(draft.proficiency) : character.sheet.proficiency || "");
       formData.set("abilities", draft.abilities !== undefined ? String(draft.abilities) : character.sheet.abilities || "");
       formData.set("features", draft.features !== undefined ? String(draft.features) : character.sheet.features || "");
+      const skillProficiencies = Array.isArray(draft.skillProficiencies)
+        ? draft.skillProficiencies
+        : (Array.isArray(character.sheet.skillProficiencies) ? character.sheet.skillProficiencies : []);
+      skillProficiencies.forEach((skillId) => formData.append("skillProficiencies", String(skillId)));
       formData.set(
         "savageMaxPowerPoints",
         draft.savageMaxPowerPoints !== undefined
@@ -3003,6 +3130,140 @@ function applyCharacterTabDrafts(character) {
   });
 }
 
+function getEditableDndCharacter() {
+  const character = getSelectedCharacter();
+  if (!character || !canEditCharacter(character)) {
+    denyPermission("No tens permisos per modificar l'estat d'aquesta fitxa.");
+    return null;
+  }
+  character.sheet = character.sheet || {};
+  return character;
+}
+
+function commitDndRuntime(message) {
+  showSaveNotice(message, {
+    cloud: true,
+    renderParts: [RENDER_PARTS.notice, RENDER_PARTS.characters, RENDER_PARTS.themes, RENDER_PARTS.assets],
+  });
+}
+
+function updateDndCharacterState(button) {
+  const character = getEditableDndCharacter();
+  if (!character) return;
+  const current = normalizeDndRuntimeState(character.sheet.dndState, character.sheet.hp, character.level);
+  const key = String(button.dataset.dndState || '');
+  if (button.dataset.dndToggle === 'true') {
+    current[key] = !current[key];
+  } else {
+    const limits = getDndRuntimeLimits(key, current);
+    current[key] = clampRuntimeNumber(Number(current[key] || 0) + Number(button.dataset.dndDelta || 0), limits);
+  }
+  character.sheet.dndState = current;
+  commitDndRuntime("Estat D&D actualitzat");
+}
+
+function getDndRuntimeLimits(key, current) {
+  if (key === 'currentHp') return { min: 0, max: current.maxHp };
+  if (key === 'tempHp') return { min: 0, max: 999 };
+  if (key === 'hitDice') return { min: 0, max: current.maxHitDice };
+  if (key === 'deathSuccesses' || key === 'deathFailures') return { min: 0, max: 3 };
+  return { min: 0, max: 1 };
+}
+
+function toggleDndStatusPopover(trigger) {
+  if (!(trigger instanceof HTMLElement)) return;
+  const menu = trigger.closest(".dnd-status-menu");
+  if (!(menu instanceof HTMLElement)) return;
+  const shouldOpen = !menu.classList.contains("open");
+  document.querySelectorAll(".dnd-status-menu.open").forEach((item) => {
+    if (item instanceof HTMLElement) {
+      item.classList.remove("open");
+      item.querySelector("[data-dnd-status-popover]")?.setAttribute("aria-expanded", "false");
+    }
+  });
+  menu.classList.toggle("open", shouldOpen);
+  trigger.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+}
+
+function getDndStatusContext(button) {
+  const character = getEditableDndCharacter();
+  if (!character) return null;
+  const key = String(button.dataset.dndStatusKey || button.dataset.dndStatusSelect || "");
+  const label = String(button.dataset.dndStatusLabel || "").trim();
+  const levels = Math.max(0, Math.min(6, Number(button.dataset.dndStatusLevels || 0)));
+  if (!key || !label) return null;
+  const current = normalizeDndRuntimeState(character.sheet.dndState, character.sheet.hp, character.level);
+  const effectId = "dnd-status-" + key;
+  const effectIndex = current.effects.findIndex((effect) => effect.id === effectId || effect.name === label);
+  return { character, key, label, levels, current, effectIndex };
+}
+
+function createDndStatusEffect(context, duration = 1) {
+  if (context.current.effects.length >= 20) {
+    showSaveNotice("Ja hi ha 20 estats actius; neteja’n un abans d’afegir-ne més.");
+    return null;
+  }
+  const effect = { id: "dnd-status-" + context.key, name: context.label, duration };
+  context.current.effects.push(effect);
+  context.effectIndex = context.current.effects.length - 1;
+  return effect;
+}
+
+function commitSelectedDndStatus(context, message) {
+  state.ui.dndStatusSelection = context.key;
+  context.character.sheet.dndState = context.current;
+  commitDndRuntime(message);
+}
+
+function selectDndStatus(button) {
+  const context = getDndStatusContext(button);
+  if (!context) return;
+  if (context.effectIndex === -1 && !createDndStatusEffect(context)) return;
+  commitSelectedDndStatus(context, "Estat D&D actualitzat");
+}
+
+function adjustDndStatusDuration(button) {
+  const context = getDndStatusContext(button);
+  if (!context) return;
+  const delta = Number(button.dataset.dndStatusAdjust || 0);
+  let effect = context.effectIndex === -1 ? createDndStatusEffect(context) : context.current.effects[context.effectIndex];
+  if (!effect) return;
+  const currentDuration = Number(effect.duration);
+  if (currentDuration < 0) {
+    if (delta < 0) effect.duration = context.levels || 3;
+  } else {
+    const limit = context.levels || 99;
+    const next = Math.max(0, Math.min(limit, currentDuration + delta));
+    if (next === 0) context.current.effects.splice(context.effectIndex, 1);
+    else effect.duration = next;
+  }
+  commitSelectedDndStatus(context, "Duració de l’estat actualitzada");
+}
+
+function setDndStatusMode(button) {
+  const context = getDndStatusContext(button);
+  if (!context) return;
+  let effect = context.effectIndex === -1 ? createDndStatusEffect(context) : context.current.effects[context.effectIndex];
+  if (!effect) return;
+  effect.duration = button.dataset.dndStatusMode === "infinite" ? -1 : 1;
+  commitSelectedDndStatus(context, "Duració de l’estat actualitzada");
+}
+function resetDndRuntimeState() {
+  const character = getEditableDndCharacter();
+  if (!character) return;
+  const current = normalizeDndRuntimeState(character.sheet.dndState, character.sheet.hp, character.level);
+  character.sheet.dndState = {
+    ...current,
+    currentHp: current.maxHp,
+    tempHp: 0,
+    hitDice: current.maxHitDice,
+    deathSuccesses: 0,
+    deathFailures: 0,
+    inspiration: false,
+    effects: [],
+  };
+  commitDndRuntime("Estat temporal restablert");
+}
 function updateSavageCharacterState(button) {
   const character = getSelectedCharacter();
   if (!character || !canEditCharacter(character)) {
@@ -3501,6 +3762,7 @@ function switchCampaign(campaignId) {
   state = storageActivateCampaign(campaignId, state);
   ensureUiStateShape();
   syncCloudUserWithActiveCampaignAccess();
+  resetCloudCampaignContext();
   clearChronicleReturn();
   closeSidebarPreview();
   persistStateImmediately({ skipCloud: true });
@@ -3538,6 +3800,7 @@ function switchAccessibleCampaign(campaignId) {
   state = storageActivateCampaign(campaignId, state);
   ensureUiStateShape();
   syncCloudUserWithActiveCampaignAccess();
+  resetCloudCampaignContext();
   clearChronicleReturn();
   closeSidebarPreview();
   persistStateImmediately({ skipCloud: true });
@@ -3564,6 +3827,7 @@ function createCampaign(formData) {
   state = storageCreateCampaign({ name, system }, state);
   ensureUiStateShape();
   syncCloudUserWithActiveCampaignAccess();
+  resetCloudCampaignContext();
   clearChronicleReturn();
   closeSidebarPreview();
   persistStateImmediately({ cloud: true });
@@ -3614,6 +3878,7 @@ function deleteCampaign(campaignId) {
   state = storageDeleteCampaign(campaignId, state);
   ensureUiStateShape();
   syncCloudUserWithActiveCampaignAccess();
+  resetCloudCampaignContext();
   clearChronicleReturn();
   closeSidebarPreview();
   persistStateImmediately({ cloud: true });
@@ -3879,6 +4144,10 @@ async function pushStateToCloud(options = {}) {
           target.preserveExistingPortrait === true
           && cloudSession.capabilities?.preserveExistingCharacterPortrait === true,
       });
+    } else if (target.type === "deleteChronicle") {
+      response = await deleteChronicleFromCloud(cloudSession.idToken, target.chronicleId, campaignId);
+    } else if (target.type === "deleteGlossary") {
+      response = await deleteGlossaryEntryFromCloud(cloudSession.idToken, target.entryId, campaignId);
     } else if (target.type === "chronicle") {
       const prepared = await prepareCloudAssetPayload(target.chronicle, {
         campaignId,
@@ -4069,6 +4338,36 @@ function getCloudCampaignRevision(campaign) {
   return Math.max(0, Number(campaign?.serverSync?.revision) || 0);
 }
 
+async function repairCampaignAssets() {
+  if (!canPublishCampaign() || !cloudSession.capabilities?.repairCampaignAssets) return;
+  cloudSession.saving = true;
+  cloudSession.status = "Reparant referencies d'imatge a Drive...";
+  render([RENDER_PARTS.notice, RENDER_PARTS.options]);
+  try {
+    const response = await repairCampaignAssetsInCloud(cloudSession.idToken, storageGetActiveCampaignMeta().id);
+    if (response?.campaign) {
+      state = storageMigrateStoredState({ version: response.version || 0, state: response.campaign });
+      ensureUiStateShape();
+      persistStateImmediately({ skipCloud: true });
+    }
+    clearDriveAssetFailures();
+    cloudSession.assetDiagnostics = Array.isArray(response?.assetDiagnostics) ? response.assetDiagnostics : [];
+    cloudSession.driveFile = response?.driveFile || cloudSession.driveFile;
+    cloudSession.revision = response?.campaign ? getCloudCampaignRevision(response.campaign) : cloudSession.revision;
+    cloudSession.lastError = "";
+    cloudSession.lastSyncAt = new Date().toISOString();
+    const unresolved = Array.isArray(response?.unresolved) ? response.unresolved.length : 0;
+    cloudSession.status = unresolved
+      ? `S'han reparat ${Number(response?.repaired) || 0} imatges; en queden ${unresolved} per revisar.`
+      : `S'han reparat ${Number(response?.repaired) || 0} referencies d'imatge.`;
+  } catch (error) {
+    cloudSession.lastError = error instanceof Error ? error.message : String(error);
+    cloudSession.status = cloudSession.lastError;
+  } finally {
+    cloudSession.saving = false;
+    render(FULL_RENDER_PARTS);
+  }
+}
 async function publishCampaignToCloud() {
   if (cloudSaveTimer !== null) {
     window.clearTimeout(cloudSaveTimer);
@@ -4101,6 +4400,10 @@ function resolveCloudSaveTarget(target) {
     const characterId = target.characterId || target.character?.id || "";
     const character = characterId ? state.characters.find((item) => item.id === characterId) : target.character;
     return character ? { ...target, characterId: character.id, character } : null;
+  }
+
+  if (target.type === "deleteChronicle" || target.type === "deleteGlossary") {
+    return target;
   }
 
   if (target.type === "chronicle") {
@@ -4288,7 +4591,7 @@ function deleteChronicle() {
   }
   persistAndRender(FULL_RENDER_PARTS, {
     cloud: true,
-    cloudTarget: { type: "campaign" },
+    cloudTarget: { type: "deleteChronicle", chronicleId: deletedId },
   });
 }
 
@@ -4527,7 +4830,7 @@ function deleteGlossaryEntry() {
   }
   persistAndRender(FULL_RENDER_PARTS, {
     cloud: true,
-    cloudTarget: { type: "campaign" },
+    cloudTarget: { type: "deleteGlossary", entryId: deletedId },
   });
 }
 
@@ -5715,8 +6018,9 @@ function renderReferenceSuggestions(textarea, options = {}) {
     return;
   }
 
-  const referenceKey = selectedReference
-    ? `${textarea.id}:${selectedReference.start}:${selectedReference.end}:${selectedReference.label}`
+  const actionContext = selectedReference || referenceContext;
+  const referenceKey = actionContext
+    ? `${textarea.id}:${actionContext.start}:${actionContext.end}:${actionContext.label}`
     : "";
   if (container.dataset.referenceSearchKey !== referenceKey) {
     container.dataset.referenceSearchKey = referenceKey;
@@ -5726,12 +6030,12 @@ function renderReferenceSuggestions(textarea, options = {}) {
   const matches = referenceContext.token.length >= 2
     ? getReferenceMatches(referenceContext.token)
     : [];
-  const searchQuery = selectedReference ? container.dataset.referenceSearchQuery || "" : "";
+  const searchQuery = actionContext ? container.dataset.referenceSearchQuery || "" : "";
   const searchMatches = searchQuery.trim().length >= 2
     ? getReferenceMatches(searchQuery, { includeMetadata: true, limit: 8 })
     : [];
 
-  if (!matches.length && !selectedReference) {
+  if (!matches.length && !actionContext) {
     container.innerHTML = "";
     return;
   }
@@ -5758,7 +6062,7 @@ function renderReferenceSuggestions(textarea, options = {}) {
     matchButtons.push(...matches.map((entry) => renderSuggestionButton(entry)));
   }
 
-  if (selectedReference) {
+  if (actionContext) {
     matchButtons.push(`
       <div class="suggestion-search">
         <label for="${escapeAttribute(textarea.id)}ReferenceSearch">Cerca una entrada</label>
@@ -5798,7 +6102,7 @@ function renderReferenceSuggestions(textarea, options = {}) {
           data-input-id="${escapeAttribute(textarea.id)}"
         >
           <span class="suggestion-chip-title">Nova entrada</span>
-          <span class="suggestion-chip-meta">Crea una entrada del glossari i enllaca el text seleccionat</span>
+          <span class="suggestion-chip-meta">Crea una entrada del glossari i enllaca el terme actiu</span>
         </button>
       `);
     }

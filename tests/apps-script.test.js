@@ -317,7 +317,7 @@ test("Apps Script exchanges the Google token for an opaque one-time claimed sess
   assert.equal(harness.handleRequest({ action: "claimSession", operationId: "claim-1" }).ok, false);
 });
 
-test("Apps Script stores glossary images as Drive files and returns an authorized bundle", () => {
+test("Apps Script stores glossary images as Drive files and defers the asset bundle", () => {
   const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
   const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
   const dataUrl = "data:image/png;base64,YWJj";
@@ -336,10 +336,10 @@ test("Apps Script stores glossary images as Drive files and returns an authorize
 
   const loaded = harness.handleRequest({ action: "loadCampaign", idToken: "admin" });
   assert.equal(loaded.ok, true);
-  assert.equal(loaded.assetBundle.length, 1);
-  assert.equal(loaded.assetBundle[0].token, remoteSource);
-  assert.equal(loaded.assetBundle[0].dataUrl, dataUrl);
+  assert.equal(loaded.assetBundle.length, 0);
+  assert.deepEqual(loaded.assetDiagnostics, []);
   assert.equal(loaded.capabilities.driveAssetFiles, true);
+  assert.equal(loaded.capabilities.lazyDriveAssets, true);
 });
 
 test("Apps Script rejects orphan local asset tokens before writing campaign JSON", () => {
@@ -656,4 +656,26 @@ test("virtual users enforce the complete server-side role matrix", async (t) => 
     assert.equal(response.ok, false);
     assert.match(response.error, /cap campanya assignada|No tens acces/);
   });
+});
+
+
+test("Apps Script deletes one glossary entry without publishing the full catalog", () => {
+  const campaign = createCampaignLibrary({
+    usersB: { "player@example.com": { role: "player" } },
+  });
+  campaign.campaigns[1].state.glossary = [
+    { id: "entry-assigned", name: "Assigned", editableByUserEmails: ["player@example.com"] },
+  ];
+  const harness = createAppsScriptHarness(campaign, { player: "player@example.com" });
+  const response = harness.handleRequest({
+    action: "deleteGlossaryEntry",
+    idToken: "player",
+    campaignId: "campaign-b",
+    operationId: "delete-entry-1",
+    itemId: "entry-assigned",
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(harness.readCampaign().campaigns[1].state.glossary.length, 0);
+  assert.equal(harness.readCampaign().campaigns[0].state.characters[0].name, "Hero A");
 });

@@ -42,3 +42,8 @@ S'ha afegit un directori `resources/` per desar arxius que després es podran en
 - `resources/notes-de-veu/` → notes de veu (`.mp3`, `.wav`, etc.)
 - `resources/imatges/` → imatges de sessions, mapes o referències
 
+
+## Depuració
+
+- `npm.cmd run debug:status` mostra l'estat local de Vite, QA i captures.
+- Vegeu [0-START-HERE.md](./0-START-HERE.md) i [DEBUG-RUNBOOK.md](./DEBUG-RUNBOOK.md) per al flux curt.

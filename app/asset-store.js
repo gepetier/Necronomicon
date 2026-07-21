@@ -16,10 +16,16 @@ const DB_VERSION = 1;
 const STORE_NAME = "assets";
 
 const objectUrlCache = new Map();
+const driveAssetFailures = new Map();
+const MISSING_IMAGE_DATA_URL = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 280"><rect width="100%" height="100%" fill="#543421"/><path d="M0 0h480v280H0z" fill="none" stroke="#d6b47c" stroke-width="8"/><path d="M110 190l72-72 48 45 43-35 97 62" fill="none" stroke="#d6b47c" stroke-width="12"/><circle cx="160" cy="82" r="22" fill="#d6b47c"/></svg>')}`;
 let driveAssetLoader = null;
 
 export function setDriveAssetLoader(loader) {
   driveAssetLoader = typeof loader === "function" ? loader : null;
+}
+
+export function clearDriveAssetFailures() {
+  driveAssetFailures.clear();
 }
 
 export async function storeAssetFile(file) {
@@ -69,24 +75,31 @@ export async function getAssetObjectUrl(token) {
   const recordId = getCacheRecordId(token);
   let record = await readRecord(recordId);
   if (!record?.blob && isDriveAssetToken(token) && driveAssetLoader) {
-    const asset = await driveAssetLoader(token);
-    if (asset?.dataUrl) {
-      const response = await fetch(asset.dataUrl);
-      const blob = await response.blob();
-      record = {
-        id: recordId,
-        blob,
-        name: asset.name || `drive-${getAssetIdFromToken(token)}`,
-        mimeType: asset.mimeType || blob.type || "application/octet-stream",
-        kind: inferAssetKindFromMimeType(asset.mimeType || blob.type),
-        savedAt: new Date().toISOString(),
-      };
-      await writeRecord(record);
+    if (driveAssetFailures.has(token)) return "";
+    try {
+      const asset = await driveAssetLoader(token);
+      if (asset?.dataUrl) {
+        const response = await fetch(asset.dataUrl);
+        const blob = await response.blob();
+        record = {
+          id: recordId,
+          blob,
+          name: asset.name || `drive-${getAssetIdFromToken(token)}`,
+          mimeType: asset.mimeType || blob.type || "application/octet-stream",
+          kind: inferAssetKindFromMimeType(asset.mimeType || blob.type),
+          savedAt: new Date().toISOString(),
+        };
+        await writeRecord(record);
+      }
+    } catch (error) {
+      driveAssetFailures.set(token, error instanceof Error ? error.message : String(error));
+      return "";
     }
   }
   if (!record?.blob) {
     return "";
   }
+  driveAssetFailures.delete(token);
 
   const objectUrl = URL.createObjectURL(record.blob);
   objectUrlCache.set(token, objectUrl);
@@ -114,6 +127,10 @@ export async function hydrateAssetReferences(root = document) {
         const source = await getAssetObjectUrl(srcToken);
         if (source) {
           element.setAttribute("src", source);
+          element.classList.remove("asset-unavailable");
+          element.removeAttribute("data-asset-error");
+        } else {
+          markAssetUnavailable(element, driveAssetFailures.get(srcToken) || "No s'ha pogut carregar l'actiu.");
         }
       }
 
@@ -121,6 +138,10 @@ export async function hydrateAssetReferences(root = document) {
         const href = await getAssetObjectUrl(hrefToken);
         if (href) {
           element.setAttribute("href", href);
+        } else {
+          element.removeAttribute("href");
+          element.classList.add("asset-unavailable");
+          element.dataset.assetError = driveAssetFailures.get(hrefToken) || "No s'ha pogut carregar l'actiu.";
         }
       }
     }),
@@ -294,4 +315,15 @@ function readBlobAsDataUrl(blob) {
     reader.addEventListener("error", () => reject(reader.error));
     reader.readAsDataURL(blob);
   });
+}
+
+function markAssetUnavailable(element, message) {
+  element.classList.add("asset-unavailable");
+  element.dataset.assetError = message;
+  element.setAttribute("title", message);
+  if (element instanceof HTMLImageElement) {
+    const label = element.getAttribute("alt") || "Imatge";
+    element.setAttribute("alt", `${label} (no disponible)`);
+    element.setAttribute("src", MISSING_IMAGE_DATA_URL);
+  }
 }

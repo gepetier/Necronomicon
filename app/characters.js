@@ -135,6 +135,24 @@ const SAVAGE_CONCEPTS = {
   },
 };
 
+const DND_STATUS_DEFINITIONS = [
+  { key: "cegat", label: "Cegat", sprite: "0% 0%" },
+  { key: "encisat", label: "Encisat", sprite: "25% 0%" },
+  { key: "sord", label: "Sord", sprite: "50% 0%" },
+  { key: "esgotament", label: "Esgotament", sprite: "75% 0%", levels: 6 },
+  { key: "espantat", label: "Espantat", sprite: "100% 0%" },
+  { key: "agafat", label: "Agafat", sprite: "0% 50%" },
+  { key: "incapacitat", label: "Incapacitat", sprite: "25% 50%" },
+  { key: "invisible", label: "Invisible", sprite: "50% 50%" },
+  { key: "paralitzat", label: "Paralitzat", sprite: "75% 50%" },
+  { key: "petrificat", label: "Petrificat", sprite: "100% 50%" },
+  { key: "enverinat", label: "Enverinat", sprite: "0% 100%" },
+  { key: "a-terra", label: "A terra", sprite: "25% 100%" },
+  { key: "immobilitzat", label: "Immobilitzat", sprite: "50% 100%" },
+  { key: "atordit", label: "Atordit", sprite: "75% 100%" },
+  { key: "inconscient", label: "Inconscient", sprite: "100% 100%" },
+];
+
 const SAVAGE_CONDITION_DEFINITIONS = [
   { key: "distracted", label: "Distret" },
   { key: "vulnerable", label: "Vulnerable" },
@@ -199,6 +217,10 @@ export function renderCharactersModule({
   const returnLabel = shouldShowCharacterReturnFab?.(character.id) ? getViewStateLabel?.(state.ui.glossaryReturnView) : "";
   const canEditCurrentCharacter = canEditCharacter(character);
   const selectedCharacterTab = getVisibleCharacterTab(state.ui.selectedCharacterTab);
+  const hasCharacterDraft = Boolean(
+    Object.keys(state.ui.drafts.characters.overview[character.id] || {}).length
+    || Object.keys(state.ui.drafts.characters.tabs[character.id] || {}).length,
+  );
 
   rootEl.innerHTML = `
     <section class="detail-card ${state.ui.notesPanelOpen ? "notes-open" : ""}">
@@ -214,7 +236,7 @@ export function renderCharactersModule({
           aria-pressed="${state.ui.editModes.characters ? "true" : "false"}"
         >
           <span class="module-action-icon">${renderModuleActionIcon("characters")}</span>
-          <span>${state.ui.editModes.characters ? "Tanca edició" : "Edita fitxa"}</span>
+          <span>${state.ui.editModes.characters ? (hasCharacterDraft ? "Tanca edició (conserva esborrany)" : "Tanca edició") : "Edita fitxa"}</span>
         </button>` : ""}
       </div>
       <div class="detail-grid">
@@ -275,8 +297,9 @@ export function renderCharactersModule({
         </div>
       </div>
       ${renderPlayerNotesPanel()}
-      ${isSavageWorldsCampaign(state) ? renderPlayerNotesFab({ inline: true }) : renderPlayerNotesFab()}
+      ${renderPlayerNotesFab({ inline: state.ui.editModes.characters || isSavageWorldsCampaign(state) })}
       ${state.ui.editModes.characters && canEditCurrentCharacter ? `<div class="editor-actions">
+        ${hasCharacterDraft ? '<button type="button" class="secondary" data-discard-character-edit>Descarta canvis</button>' : ""}
         <button type="button" data-save-character>Desa personatge</button>
       </div>` : ""}
     </section>
@@ -336,6 +359,9 @@ export function saveCharacterTab(formData, { getSelectedCharacter, showSaveNotic
     character.sheet.proficiency = readString(formData, "proficiency");
     character.sheet.abilities = readString(formData, "abilities");
     character.sheet.features = readString(formData, "features");
+    if (formData.has("skillProficiencies")) {
+      character.sheet.skillProficiencies = normalizeDndSkillProficiencies(formData.getAll("skillProficiencies"));
+    }
     if (formData.has("savageMaxPowerPoints")) {
       const nextMax = clampNumber(readString(formData, "savageMaxPowerPoints"), 0, 99, 0);
       character.sheet.savageState = character.sheet.savageState || {};
@@ -414,7 +440,7 @@ function getVisibleCharacterTab(tab) {
 
 function renderCharacterTabContent(character, tab, state) {
   if (tab === "sheet") {
-    return isSavageWorldsCampaign(state) ? renderSavageWorldsSheetTab(character) : renderDndSheetTab(character);
+    return isSavageWorldsCampaign(state) ? renderSavageWorldsSheetTab(character) : renderDndSheetTab(character, state);
   }
 
   if (tab === "inventory") {
@@ -434,10 +460,13 @@ function renderCharacterTabContent(character, tab, state) {
   `;
 }
 
-function renderDndSheetTab(character) {
+function renderDndSheetTab(character, state) {
   const abilities = parseAbilityScores(character.sheet.abilities);
   const dexterityMod = getAbilityModifier(abilities.des);
   const wisdomMod = getAbilityModifier(abilities.sav);
+  const proficiency = parseSignedNumber(character.sheet.proficiency);
+  const skillProficiencies = new Set(normalizeDndSkillProficiencies(character.sheet.skillProficiencies));
+  const dndState = normalizeDndRuntimeState(character.sheet.dndState, character.sheet.hp, character.level);
   const spellcasting = resolveSpellcasting(character, abilities);
 
   return `
@@ -453,6 +482,9 @@ function renderDndSheetTab(character) {
           <span>${escapeHtml(character.lineage)}</span>
         </div>
       </header>
+
+      ${renderDndStatusStrip(dndState, state)}
+
 
       <div class="dnd-sheet-grid">
         <section class="dnd-ability-column" aria-label="Puntuacions d'atribut">
@@ -470,35 +502,28 @@ function renderDndSheetTab(character) {
           </div>
           <h4>Habilitats</h4>
           <div class="dnd-skill-list">
-            ${ABILITY_DEFINITIONS.flatMap((ability) => ability.skills.map((skill) => renderCheckLine(skill, getAbilityModifier(abilities[ability.key]), ability.shortLabel))).join("")}
+            ${ABILITY_DEFINITIONS.flatMap((ability) => ability.skills.map((skill) => {
+              const proficient = skillProficiencies.has(getDndSkillId(skill));
+              return renderCheckLine(skill, getAbilityModifier(abilities[ability.key]) + (proficient ? proficiency : 0), ability.shortLabel, proficient);
+            })).join("")}
           </div>
         </section>
 
         <section class="dnd-panel dnd-combat-panel">
           <div class="dnd-combat-stats">
-            ${renderCombatStat("CA", character.sheet.ac, "Classe d'armadura")}
+            ${renderCombatStat("CA", character.sheet.ac, "Classe d’armadura")}
             ${renderCombatStat("Inic.", formatModifier(dexterityMod), "Iniciativa")}
             ${renderCombatStat("Vel.", "30", "Peus")}
           </div>
-          <div class="dnd-hit-points">
-            <span>Punts de vida màxims</span>
-            <strong>${escapeHtml(character.sheet.hp)}</strong>
-          </div>
+          ${renderDndHitPoints(dndState)}
           <div class="dnd-resource-grid">
-            <div>
-              <span>Daus de cop</span>
-              <strong>${escapeHtml(`${character.level}d8`)}</strong>
-            </div>
+            ${renderDndHitDice(dndState)}
             <div>
               <span>Proficiència</span>
               <strong>${escapeHtml(character.sheet.proficiency)}</strong>
             </div>
           </div>
-          <div class="dnd-death-saves" aria-label="Salvacions contra mort">
-            <span>Salvacions contra mort</span>
-            <div><strong>Èxits</strong><i></i><i></i><i></i></div>
-            <div><strong>Fallades</strong><i></i><i></i><i></i></div>
-          </div>
+          ${renderDndDeathSaves(dndState)}
         </section>
 
         <section class="dnd-panel dnd-attacks-panel">
@@ -538,6 +563,7 @@ function renderDndSheetTab(character) {
           </section>
         ` : ""}
       </div>
+      ${renderDndStateReset(dndState)}
     </article>
   `;
 }
@@ -1261,10 +1287,10 @@ function renderCombatStat(label, value, helper) {
   `;
 }
 
-function renderCheckLine(label, modifier, suffix = "") {
+function renderCheckLine(label, modifier, suffix = "", proficient = false) {
   return `
-    <div class="dnd-check-line">
-      <i aria-hidden="true"></i>
+    <div class="dnd-check-line ${proficient ? "proficient" : ""}">
+      <i aria-hidden="true" title="${proficient ? "Amb proficiència" : "Sense proficiència"}"></i>
       <strong>${escapeHtml(formatModifier(modifier))}</strong>
       <span>${escapeHtml(label)}</span>
       ${suffix ? `<em>${escapeHtml(suffix)}</em>` : ""}
@@ -1272,6 +1298,133 @@ function renderCheckLine(label, modifier, suffix = "") {
   `;
 }
 
+function renderDndHitPoints(dndState) {
+  const modified = dndState.currentHp !== dndState.maxHp || dndState.tempHp > 0;
+  return [
+    '<div class="dnd-hit-points ', modified ? 'has-runtime-change' : '', '">',
+    '<span>Punts de vida</span>',
+    '<strong class="', modified ? 'dnd-state-modified' : '', '">', escapeHtml(String(dndState.currentHp)), '<small> / ', escapeHtml(String(dndState.maxHp)), '</small></strong>',
+    '<div class="dnd-inline-adjust" aria-label="Ajusta punts de vida">',
+    '<button type="button" data-dnd-state="currentHp" data-dnd-delta="-1" aria-label="Resta un punt de vida">−</button>',
+    '<button type="button" data-dnd-state="currentHp" data-dnd-delta="1" aria-label="Suma un punt de vida" ', dndState.currentHp >= dndState.maxHp ? 'disabled' : '', '>+</button></div>',
+    '<div class="dnd-temporary-hp ', dndState.tempHp > 0 ? 'has-runtime-change' : '', '"><span>Temporal</span><strong class="', dndState.tempHp > 0 ? 'dnd-state-modified' : '', '">+', escapeHtml(String(dndState.tempHp)), '</strong><div class="dnd-inline-adjust"><button type="button" data-dnd-state="tempHp" data-dnd-delta="-1" aria-label="Resta un punt temporal" ', dndState.tempHp <= 0 ? 'disabled' : '', '>−</button><button type="button" data-dnd-state="tempHp" data-dnd-delta="1" aria-label="Suma un punt temporal">+</button></div></div>',
+    '</div>',
+  ].join('');
+}
+
+function renderDndHitDice(dndState) {
+  const modified = dndState.hitDice !== dndState.maxHitDice;
+  return [
+    '<div class="dnd-runtime-resource ', modified ? 'has-runtime-change' : '', '">',
+    '<span>Daus de cop</span><strong class="', modified ? 'dnd-state-modified' : '', '">', escapeHtml(String(dndState.hitDice)), 'd8</strong>',
+    '<small>de ', escapeHtml(String(dndState.maxHitDice)), '</small>',
+    '<div class="dnd-inline-adjust"><button type="button" data-dnd-state="hitDice" data-dnd-delta="-1" aria-label="Gasta un dau de cop" ', dndState.hitDice <= 0 ? 'disabled' : '', '>−</button>',
+    '<button type="button" data-dnd-state="hitDice" data-dnd-delta="1" aria-label="Recupera un dau de cop" ', dndState.hitDice >= dndState.maxHitDice ? 'disabled' : '', '>+</button></div></div>',
+  ].join('');
+}
+
+function renderDndDeathSaves(dndState) {
+  return [
+    '<div class="dnd-death-saves" aria-label="Salvacions contra mort"><span>Salvacions contra mort</span>',
+    renderDndDeathSaveRow('Èxits', dndState.deathSuccesses, 'success'),
+    renderDndDeathSaveRow('Fallades', dndState.deathFailures, 'failure'),
+    '</div>',
+  ].join('');
+}
+
+function renderDndDeathSaveRow(label, value, kind) {
+  return '<div><strong class="' + (value ? 'dnd-state-modified' : '') + '">' + escapeHtml(label) + '</strong>' +
+    [0, 1, 2].map((index) => '<i class="' + (index < value ? 'active ' + kind : '') + '" aria-hidden="true"></i>').join('');
+}
+
+function renderDndStatusStrip(dndState, state) {
+  const activeEffects = dndState.effects
+    .map((effect) => ({ effect, definition: DND_STATUS_DEFINITIONS.find((item) => getDndStatusEffect(dndState, item) === effect) }))
+    .sort((left, right) => getDndStatusExpiryOrder(left.effect.duration) - getDndStatusExpiryOrder(right.effect.duration));
+  return [
+    '<section class="dnd-status-strip" aria-label="Estats actuals"><div class="dnd-status-summary"><span>Estat de taula</span><table><tbody><tr><th scope="row">Estats</th><td>',
+    activeEffects.length ? '<strong>' + escapeHtml(String(activeEffects.length)) + ' actiu' + (activeEffects.length === 1 ? '' : 's') + '</strong><div class="dnd-status-summary-list">' + activeEffects.map(renderDndStatusSummaryItem).join('') + '</div>' : '<strong>Sense estats</strong>',
+    '</td></tr></tbody></table></div>',
+    renderDndStatusMenu(dndState, state),
+    '</section>',
+  ].join('');
+}
+
+function getDndStatusExpiryOrder(duration) {
+  const value = Number(duration);
+  return value < 0 ? Number.POSITIVE_INFINITY : Math.max(0, value || 0);
+}
+
+function renderDndStatusSummaryItem(item) {
+  const definition = item.definition;
+  const duration = definition ? formatDndStatusValue(item.effect.duration, definition.levels) : formatDndEffectDuration(item.effect.duration);
+  const sprite = definition?.sprite || "25% 0%";
+  return '<span class="dnd-status-summary-item" style="--status-sprite: ' + escapeAttribute(sprite) + '" title="' + escapeAttribute(item.effect.name + ': ' + duration) + '"><i aria-hidden="true"></i><span>' + escapeHtml(item.effect.name) + '</span><strong>' + escapeHtml(duration) + '</strong></span>';
+}
+function renderDndStatusMenu(dndState, state) {
+  const activeCount = dndState.effects.length;
+  const selectedKey = getSelectedDndStatusKey(dndState, state);
+  const selectedDefinition = DND_STATUS_DEFINITIONS.find((definition) => definition.key === selectedKey) || DND_STATUS_DEFINITIONS[0];
+  const selectedEffect = getDndStatusEffect(dndState, selectedDefinition);
+  return [
+    '<div class="dnd-status-menu">',
+    '<button type="button" class="dnd-status-trigger" data-dnd-status-popover aria-expanded="false" aria-haspopup="dialog" aria-label="Obre estats i condicions" title="Estats i condicions"><span aria-hidden="true"></span>', activeCount ? '<small>' + escapeHtml(String(activeCount)) + '</small>' : '', '</button>',
+    '<div class="dnd-status-popover" role="dialog" aria-label="Estats i condicions"><p>Estats i condicions</p><div class="dnd-status-layout"><div class="dnd-status-options">',
+    DND_STATUS_DEFINITIONS.map((definition) => renderDndStatusOption(definition, dndState, selectedKey)).join(''),
+    '</div>', renderDndStatusConfig(selectedDefinition, selectedEffect), '</div><small>Clica una icona per seleccionar-la. Temporal permet comptar torns; ∞ la manté activa.</small></div></div>',
+  ].join('');
+}
+
+function getSelectedDndStatusKey(dndState, state) {
+  const requested = String(state?.ui?.dndStatusSelection || "");
+  if (DND_STATUS_DEFINITIONS.some((definition) => definition.key === requested)) return requested;
+  const active = DND_STATUS_DEFINITIONS.find((definition) => getDndStatusEffect(dndState, definition));
+  return active?.key || DND_STATUS_DEFINITIONS[0].key;
+}
+
+function getDndStatusEffect(dndState, definition) {
+  return dndState.effects.find((item) => item.id === 'dnd-status-' + definition.key || getDndSkillId(item.name) === definition.key);
+}
+
+function renderDndStatusOption(definition, dndState, selectedKey) {
+  const effect = getDndStatusEffect(dndState, definition);
+  const duration = effect ? formatDndStatusValue(effect.duration, definition.levels) : '';
+  return [
+    '<button type="button" class="dnd-status-option ', effect ? 'active' : '', definition.key === selectedKey ? 'selected' : '', '" data-dnd-status-select="', escapeAttribute(definition.key),
+    '" data-dnd-status-label="', escapeAttribute(definition.label), '" data-dnd-status-levels="', escapeAttribute(String(definition.levels || 0)),
+    '" style="--status-sprite: ', escapeAttribute(definition.sprite), ';" aria-pressed="', effect ? 'true' : 'false',
+    '" aria-label="', escapeAttribute(definition.label + (duration ? ': ' + duration : '')), '" title="', escapeAttribute(definition.label), '">',
+    '<span aria-hidden="true"></span><span class="sr-only">', escapeHtml(definition.label), '</span>',
+    effect ? '<small>' + escapeHtml(duration) + '</small>' : '', '</button>',
+  ].join('');
+}
+
+function renderDndStatusConfig(definition, effect) {
+  const duration = effect ? Number(effect.duration) : 0;
+  const levels = Number(definition.levels) || 0;
+  const counter = effect ? (duration < 0 ? '∞' : String(duration)) : '—';
+  return [
+    '<aside class="dnd-status-config"><span>', escapeHtml(definition.label), '</span>',
+    '<div class="dnd-status-counter"><strong>', escapeHtml(counter), '</strong><div>',
+    '<button type="button" data-dnd-status-adjust="1" data-dnd-status-key="', escapeAttribute(definition.key), '" data-dnd-status-label="', escapeAttribute(definition.label), '" data-dnd-status-levels="', escapeAttribute(String(levels)), '" aria-label="Augmenta la duració">↑</button>',
+    '<button type="button" data-dnd-status-adjust="-1" data-dnd-status-key="', escapeAttribute(definition.key), '" data-dnd-status-label="', escapeAttribute(definition.label), '" data-dnd-status-levels="', escapeAttribute(String(levels)), '" aria-label="Redueix la duració" ', effect ? '' : 'disabled', '>↓</button>',
+    '</div></div><div class="dnd-status-modes">',
+    '<button type="button" class="', effect && duration >= 0 ? 'active' : '', '" data-dnd-status-mode="temporary" data-dnd-status-key="', escapeAttribute(definition.key), '" data-dnd-status-label="', escapeAttribute(definition.label), '" data-dnd-status-levels="', escapeAttribute(String(levels)), '">Temporal</button>',
+    levels ? '': '<button type="button" class="' + (effect && duration < 0 ? 'active' : '') + '" data-dnd-status-mode="infinite" data-dnd-status-key="' + escapeAttribute(definition.key) + '" data-dnd-status-label="' + escapeAttribute(definition.label) + '">∞</button>',
+    '</div></aside>',
+  ].join('');
+}
+function formatDndStatusValue(duration, levels) {
+  return levels ? String(Math.max(1, Number(duration) || 1)) : formatDndEffectDuration(duration);
+}
+function formatDndEffectDuration(duration) {
+  return Number(duration) < 0 ? '∞' : String(Math.max(0, Number(duration) || 0)) + 't';
+}
+
+function renderDndStateReset(dndState) {
+  const changed = dndState.currentHp !== dndState.maxHp || dndState.tempHp > 0 || dndState.hitDice !== dndState.maxHitDice || dndState.deathSuccesses > 0 || dndState.deathFailures > 0 || dndState.inspiration || dndState.effects.length;
+  return changed ? '<button type="button" class="dnd-state-reset" data-dnd-reset-state title="Restableix l’estat temporal de la fitxa">Torna a defecte</button>' : '';
+}
 function renderAttackRow(character) {
   const abilities = parseAbilityScores(character.sheet.abilities);
   const strengthMod = getAbilityModifier(abilities.for);
@@ -1320,6 +1473,47 @@ function formatModifier(value) {
 function parseSignedNumber(value) {
   const match = String(value || "").match(/[+-]?\d+/);
   return match ? Number(match[0]) : 0;
+}
+
+function getDndSkillId(label) {
+  return String(label || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function normalizeDndSkillProficiencies(value) {
+  const validIds = new Set(ABILITY_DEFINITIONS.flatMap((ability) => ability.skills.map(getDndSkillId)));
+  return Array.from(new Set((Array.isArray(value) ? value : []).map(getDndSkillId).filter((id) => validIds.has(id))));
+}
+
+export function normalizeDndRuntimeState(candidate, maxHpValue, levelValue = 1) {
+  const source = candidate && typeof candidate === 'object' ? candidate : {};
+  const parsedMaxHp = Math.max(0, parseSignedNumber(maxHpValue));
+  const maxHp = parsedMaxHp || 1;
+  const maxHitDice = Math.max(1, Math.min(20, Number(levelValue) || 1));
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : min));
+  const sourceEffects = Array.isArray(source.effects) ? source.effects : [];
+  return {
+    maxHp,
+    currentHp: clamp(source.currentHp ?? maxHp, 0, maxHp),
+    tempHp: clamp(source.tempHp, 0, 999),
+    hitDice: clamp(source.hitDice ?? maxHitDice, 0, maxHitDice),
+    maxHitDice,
+    deathSuccesses: clamp(source.deathSuccesses, 0, 3),
+    deathFailures: clamp(source.deathFailures, 0, 3),
+    inspiration: Boolean(source.inspiration),
+    effects: sourceEffects
+      .filter((effect) => effect && typeof effect === 'object' && String(effect.name || '').trim())
+      .slice(0, 20)
+      .map((effect, index) => ({
+        id: String(effect.id || 'effect-' + (index + 1)),
+        name: String(effect.name).trim().slice(0, 64),
+        duration: Number(effect.duration) === -1 ? -1 : clamp(effect.duration ?? 0, 0, 999),
+      })),
+  };
 }
 
 function resolveSpellcasting(character, abilities) {
@@ -1437,6 +1631,7 @@ function renderCharacterTabEditor(character, tab, draft, state) {
       ${renderInputField("hp", "HP", readDraftValue(draft.hp, character.sheet.hp))}
       ${renderInputField("proficiency", "Proficiència", readDraftValue(draft.proficiency, character.sheet.proficiency))}
       ${renderRichTextareaField("abilities", "Atributs", readDraftValue(draft.abilities, character.sheet.abilities), 4)}
+      ${renderDndSkillAffinityEditor(character, draft)}
       ${renderRichTextareaField("features", "Capacitats i trets", readDraftValue(draft.features, character.sheet.features), 4)}
     `;
   }
@@ -1457,6 +1652,18 @@ function renderCharacterTabEditor(character, tab, draft, state) {
   return renderRichTextareaField("history", "Història personal", readDraftValue(draft.history, character.history), 6);
 }
 
+function renderDndSkillAffinityEditor(character, draft) {
+  const selected = new Set(normalizeDndSkillProficiencies(draft.skillProficiencies !== undefined ? draft.skillProficiencies : character.sheet.skillProficiencies));
+  return [
+    '<section class="dnd-skill-affinity-editor" aria-label="Habilitats amb proficiència">',
+    '<span>Habilitats amb proficiència</span><small>Clica el cercle: la fitxa hi suma la proficiència.</small><div>',
+    ABILITY_DEFINITIONS.flatMap((ability) => ability.skills.map((skill) => {
+      const id = getDndSkillId(skill);
+      return '<label><input type="checkbox" name="skillProficiencies" value="' + escapeAttribute(id) + '"' + (selected.has(id) ? ' checked' : '') + ' /><span>' + escapeHtml(skill) + '</span><em>' + escapeHtml(ability.shortLabel) + '</em></label>';
+    })).join(''),
+    '</div></section>',
+  ].join('');
+}
 function renderSavageSheetEditor(character, draft) {
   const abilitiesValue = readDraftValue(draft.abilities, character.sheet.abilities);
   const featuresValue = readDraftValue(draft.features, character.sheet.features);

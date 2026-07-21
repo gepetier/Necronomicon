@@ -16,7 +16,9 @@
     "qa:persistence": "node qa-runner.mjs persistence",
     "capture": "node capture-runner.mjs",
     "capture:changed": "node capture-runner.mjs changed",
-    "capture:smoke": "node capture-runner.mjs smoke"
+    "capture:smoke": "node capture-runner.mjs smoke",
+    "verify:fast": "npm run build && npm run test:unit",
+    "debug:status": "node debug-status.mjs"
   },
   "devDependencies": {
     "vite": "^7.1.0"

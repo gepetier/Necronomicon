@@ -52,7 +52,7 @@ export function getCloudSaveTargetKey(target) {
     || target.entryId
     || target.entry?.id
     || "";
-  return id && ["character", "chronicle", "glossary"].includes(target.type)
+  return id && ["character", "chronicle", "glossary", "deleteChronicle", "deleteGlossary"].includes(target.type)
     ? `${target.type}:${id}`
     : "";
 }
