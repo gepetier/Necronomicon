@@ -111,7 +111,7 @@ import {
 import { createCloudSaveQueue } from "./app/cloud-save-queue.js";
 import { activateDialogFocus, deactivateDialogFocus, setAuthPageInert, trapDialogFocus } from "./app/dialog-focus.js";
 
-const SYNC_CLIENT_VERSION = "2026-07-21-drive-asset-repair";
+const SYNC_CLIENT_VERSION = "2026-07-22-media-purge";
 
 let state = loadStoredState();
 let bookTurnTimer = null;
@@ -4339,10 +4339,6 @@ function resolveSeedMediaSource(source, context = {}) {
   if (ownerId) {
     const ownerCharacter = seedData.characters.find((item) => String(item.id || "").toLowerCase() === ownerId);
     if (ownerCharacter?.portrait && context.key === "portrait") return ownerCharacter.portrait;
-    const ownerEntry = seedData.glossary.find((item) => String(item.id || "").toLowerCase() === ownerId);
-    if (ownerEntry?.imageAssets?.length && context.key === "imageAssets") {
-      return ownerEntry.imageAssets.find(Boolean) || "";
-    }
   }
   const character = seedData.characters.find((item) => {
     const id = String(item.id || "").toLowerCase();
@@ -4350,11 +4346,7 @@ function resolveSeedMediaSource(source, context = {}) {
   });
   if (character?.portrait) return character.portrait;
 
-  const entry = seedData.glossary.find((item) => {
-    const id = String(item.id || "").toLowerCase();
-    return id && (normalized.includes(`/resources/glossary/${id}.`) || normalized.includes(`/assets/${id}-`));
-  });
-  return entry?.imageAssets?.find(Boolean) || "";
+  return "";
 }
 
 function deriveCloudMediaName(source) {
@@ -6553,7 +6545,37 @@ function applyChronicleReferenceTooltip(referenceButton, referenceId) {
 
   referenceButton.dataset.referenceTooltip = "glossary";
   referenceButton.append(createGlossaryReferenceTooltip(entry));
+  const positionTooltip = () => positionGlossaryReferenceTooltip(referenceButton);
+  referenceButton.addEventListener("pointerenter", positionTooltip);
+  referenceButton.addEventListener("focusin", positionTooltip);
+  requestAnimationFrame(positionTooltip);
   void hydrateAssetReferences(referenceButton);
+}
+
+function positionGlossaryReferenceTooltip(referenceButton) {
+  if (!(referenceButton instanceof HTMLElement)) {
+    return;
+  }
+
+  const tooltip = referenceButton.querySelector(".glossary-reference-tooltip");
+  const bookSpread = referenceButton.closest(".book-spread");
+  if (!(tooltip instanceof HTMLElement) || !(bookSpread instanceof HTMLElement)) {
+    return;
+  }
+
+  const referenceRect = referenceButton.getBoundingClientRect();
+  const bookRect = bookSpread.getBoundingClientRect();
+  const referenceCenterY = referenceRect.top + referenceRect.height / 2;
+  const opensDown = referenceCenterY <= bookRect.top + bookRect.height / 2;
+  tooltip.classList.toggle("glossary-reference-tooltip-down", opensDown);
+
+  tooltip.style.setProperty("--tooltip-nudge-x", "0px");
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const desiredLeft = referenceRect.left + referenceRect.width / 2 - tooltipRect.width / 2;
+  const minLeft = bookRect.left + 14;
+  const maxLeft = Math.max(minLeft, bookRect.right - tooltipRect.width - 14);
+  const clampedLeft = Math.min(Math.max(desiredLeft, minLeft), maxLeft);
+  tooltip.style.setProperty("--tooltip-nudge-x", String(Math.round(clampedLeft - desiredLeft)) + "px");
 }
 
 function createGlossaryReferenceTooltip(entry) {

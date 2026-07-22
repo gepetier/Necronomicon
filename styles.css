@@ -5570,6 +5570,7 @@ history-list,
   bottom: calc(100% + 0.72rem);
   z-index: 45;
   --tooltip-image-aspect: 1;
+  --tooltip-nudge-x: 0px;
   width: min(260px, calc(100vw - 2rem));
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -5584,10 +5585,15 @@ history-list,
   box-shadow: 0 18px 36px rgba(25, 13, 8, 0.3);
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, 0.35rem);
+  transform: translate(calc(-50% + var(--tooltip-nudge-x)), 0.35rem);
   transition:
     opacity 140ms ease,
     transform 140ms ease;
+}
+
+.glossary-reference-tooltip-down {
+  top: calc(100% + 0.72rem);
+  bottom: auto;
 }
 
 .glossary-reference-tooltip-portrait {
@@ -5603,7 +5609,7 @@ history-list,
 .glossary-reference-tooltip::after {
   content: "";
   position: absolute;
-  left: 50%;
+  left: calc(50% - var(--tooltip-nudge-x));
   bottom: -0.44rem;
   width: 0.8rem;
   height: 0.8rem;
@@ -5613,11 +5619,20 @@ history-list,
   transform: translateX(-50%) rotate(45deg);
 }
 
+.glossary-reference-tooltip-down::after {
+  top: -0.44rem;
+  bottom: auto;
+  border-top: 1px solid rgba(90, 52, 27, 0.22);
+  border-left: 1px solid rgba(90, 52, 27, 0.22);
+  border-right: 0;
+  border-bottom: 0;
+}
+
 .glossary-inline-link:hover .glossary-reference-tooltip,
 .glossary-inline-link:focus-visible .glossary-reference-tooltip,
 .glossary-inline-link.tooltip-capture-open .glossary-reference-tooltip {
   opacity: 1;
-  transform: translate(-50%, 0);
+  transform: translate(calc(-50% + var(--tooltip-nudge-x)), 0);
 }
 
 .glossary-reference-tooltip-media {
@@ -9008,10 +9023,10 @@ select {
   }
 
   .glossary-reference-tooltip {
-    left: 0;
+    left: 50%;
     width: min(300px, calc(100vw - 3rem));
     grid-template-columns: minmax(0, 1fr);
-    transform: translate(0, 0.35rem);
+    transform: translate(calc(-50% + var(--tooltip-nudge-x)), 0.35rem);
   }
 
   .glossary-reference-tooltip-portrait {
@@ -9021,12 +9036,9 @@ select {
   .glossary-inline-link:hover .glossary-reference-tooltip,
   .glossary-inline-link:focus-visible .glossary-reference-tooltip,
   .glossary-inline-link.tooltip-capture-open .glossary-reference-tooltip {
-    transform: translate(0, 0);
+    transform: translate(calc(-50% + var(--tooltip-nudge-x)), 0);
   }
 
-  .glossary-reference-tooltip::after {
-    left: 1.2rem;
-  }
 
   .glossary-reference-tooltip-media {
     width: 100%;

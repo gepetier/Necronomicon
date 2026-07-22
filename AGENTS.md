@@ -47,7 +47,7 @@ Fitxers principals: `main.js` (orquestració/UI), `styles.css` (estils), `data.j
 
 ## Estat actual
 
-- Backend/client de sync: `2026-07-21-drive-asset-repair`.
+- Backend/client de sync: `2026-07-22-media-purge`.
 - Càrrega d'actius Drive és diferida; els errors es cachegen i mostren un fallback visual en comptes de repetir peticions.
 - `Opcions` pot reparar explícitament referències d'actius heretats que ja pertanyen a la campanya però són fora d'`assets`.
 - Vegeu `CURRENT-DEBUG.md` per bloquejants reals i `DEBUG-RUNBOOK.md` per triatge.
@@ -70,3 +70,5 @@ Fitxers principals: `main.js` (orquestració/UI), `styles.css` (estils), `data.j
 
 
 - 2026-07-21: corregida la carrega i reparacio d'actius Drive: carrega diferida, diagnostics, migracio controlada de fitxers legacy a assets, fallback visual i esborrats atomics. Queda pendent desplegar Apps Script i executar la reparacio sobre les dades reals.
+
+- 2026-07-22: eliminades les imatges legacy de Croniques i Glossari del paquet local; afegida migracio v12 i purga segura de Drive amb backup. Retrats i recursos UI preservats.

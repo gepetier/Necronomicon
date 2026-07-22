@@ -150,6 +150,10 @@ export function migrateStoredState(payload) {
     nextState = migrateGlossaryCharacterCategoryName(nextState);
   }
 
+  if (version < 12) {
+    nextState = migrateLegacyChronicleAndGlossaryImages(nextState);
+  }
+
   return sanitizeState(nextState);
 }
 
@@ -755,6 +759,43 @@ function shouldReplaceLegacyGlossary(glossary) {
   );
 }
 
+function migrateLegacyChronicleAndGlossaryImages(candidate) {
+  const next = structuredClone(candidate);
+  next.chronicles = Array.isArray(next.chronicles)
+    ? next.chronicles.map(stripLegacyRecordImages)
+    : [];
+  next.glossary = Array.isArray(next.glossary)
+    ? next.glossary.map(stripLegacyRecordImages)
+    : [];
+  return next;
+}
+
+function stripLegacyRecordImages(record) {
+  const stripped = stripLegacyInlineImages(record);
+  return {
+    ...stripped,
+    imageAssets: [],
+  };
+}
+
+function stripLegacyInlineImages(value) {
+  if (typeof value === "string") {
+    return value.replace(
+      /\{\{media:image\|([^|{}]+)\|[^{}]+\}\}/g,
+      "$1",
+    );
+  }
+  if (Array.isArray(value)) {
+    return value.map(stripLegacyInlineImages);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, stripLegacyInlineImages(item)]),
+    );
+  }
+  return value;
+}
+
 function migrateGlossaryImages(candidate) {
   const next = structuredClone(candidate);
   const imageSeedIds = new Set(
@@ -1272,28 +1313,7 @@ function sanitizeGlossary(entry, fallback) {
 }
 
 function sanitizeGlossaryImageAssets(entry, fallback) {
-  const assets = Array.isArray(entry?.imageAssets)
+  return Array.isArray(entry?.imageAssets)
     ? entry.imageAssets
     : splitLines(entry?.imageAssets || fallback.imageAssets?.join("\n") || "");
-  const packagedFallback = fallback?.imageAssets?.[0] || "";
-
-  return assets.map((source) => (
-    packagedFallback && isPackagedGlossaryImage(entry?.id, source)
-      ? packagedFallback
-      : source
-  ));
-}
-
-function isPackagedGlossaryImage(entryId, source) {
-  const normalizedId = String(entryId || "").trim().toLowerCase();
-  const normalizedSource = String(source || "").replaceAll("\\", "/").toLowerCase();
-  if (!normalizedId || !normalizedSource) {
-    return false;
-  }
-
-  return (
-    normalizedSource.includes(`/assets/${normalizedId}-`)
-    || normalizedSource.includes(`/resources/glossary/${normalizedId}.png`)
-    || normalizedSource.includes(`/resources/glossary/${normalizedId}.jpg`)
-  );
 }

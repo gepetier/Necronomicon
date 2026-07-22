@@ -390,28 +390,21 @@ test("storage repairs stale packaged Meledar character portraits", () => {
   assert.equal(ilu.portrait, seedData.characters.find((character) => character.id === "ilu").portrait);
 });
 
-test("storage repairs stale packaged glossary illustration URLs", () => {
-  const migrated = migrateStoredState({
-    version: DATA_VERSION,
-    state: {
-      ...structuredClone(seedData),
-      glossary: seedData.glossary.map((entry) => (
-        entry.id === "nishaar"
-          ? {
-            ...structuredClone(entry),
-            imageAssets: [
-              "/assets/nishaar-oldhash.png",
-              "https://example.com/custom-reference.png",
-            ],
-          }
-          : structuredClone(entry)
-      )),
-    },
-  });
-
-  const nishaar = migrated.glossary.find((entry) => entry.id === "nishaar");
-  assert.equal(nishaar.imageAssets[0], seedData.glossary.find((entry) => entry.id === "nishaar").imageAssets[0]);
-  assert.equal(nishaar.imageAssets[1], "https://example.com/custom-reference.png");
+test("storage version 12 removes legacy chronicle and glossary images once", () => {
+  const legacyState = structuredClone(seedData);
+  legacyState.glossary[0] = {
+    ...legacyState.glossary[0],
+    description: "{{media:image|Mapa antic|drive-asset://legacy-map}}",
+    imageAssets: ["drive-asset://legacy-cover"],
+  };
+  legacyState.chronicles[0] = {
+    ...legacyState.chronicles[0],
+    imageAssets: ["asset://legacy-local"],
+  };
+  const migrated = migrateStoredState({ version: 11, state: legacyState });
+  assert.deepEqual(migrated.glossary[0].imageAssets, []);
+  assert.equal(migrated.glossary[0].description, "Mapa antic");
+  assert.deepEqual(migrated.chronicles[0].imageAssets, []);
 });
 
 test("storage seeds Ruth Baskin only for a Baskins Savage Worlds campaign", () => {

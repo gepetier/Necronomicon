@@ -1,20 +1,26 @@
 # Estat actiu de depuracio
 
-Actualitzat: 2026-07-21.
+Actualitzat: 2026-07-22.
 
 ## Aplicat en codi
 
-- Les lectures de Drive ja no descarreguen tot el lot d'imatges a l'inici: cada actiu es resol sota demanda i els errors queden en cache.
-- El backend informa dels actius legacy, absents o invalids i permet a un gestor copiar els legacy a la carpeta canonica `assets`.
-- Els esborrats de croniques i entrades de glossari son operacions atomiques: un actiu orfe d'un altre element no els bloqueja.
-- Les dades URL legacy s'escriuen directament a `assets`; no al directori arrel de la campanya.
-- El panell Opcions diferencia el cataleg compartit de Drive de la campanya oberta.
+- La versio de dades 12 elimina una sola vegada totes les referencies d'imatge de Croniques i Glossari, inclosos els tokens `{{media:image|...}}`.
+- El seed i el paquet public ja no inclouen imatges de glossari legacy; els retrats de Personatges i els recursos visuals de la interfície es conserven.
+- El backend `2026-07-22-media-purge` incorpora `purgeLegacyChronicleAndGlossaryImages()`: fa backup, neteja el JSON i envia a la paperera els actius orfes.
+- La purga preserva qualsevol fitxer encara referenciat fora de Croniques i Glossari, especialment retrats.
 
-## Pendent abans de provar produccio
+## Pendent a Drive
 
-1. Fer backup del `campaign.json` de Drive.
-2. Desplegar `apps-script/Code.gs` revisio `2026-07-21-drive-asset-repair`.
-3. Recarregar l'app autenticada i executar `Repara imatges Drive` si apareix l'avís d'actius legacy.
-4. Revisar manualment els elements que quedin com a `missing` o `invalid`.
+1. Copiar `apps-script/Code.gs` actualitzat a Apps Script.
+2. Executar manualment `purgeLegacyChronicleAndGlossaryImages` una sola vegada abans de pujar imatges noves.
+3. Revisar els comptadors retornats i la copia `campaign-backup-...manual-media-purge.json`.
+4. Desplegar la revisio `2026-07-22-media-purge` i recarregar l'app.
+5. Verificar que Croniques i Glossari no contenen `drive-asset://`, `asset://` ni media inline; despres es poden tornar a pujar les imatges.
 
-Vegeu [DEBUG-RUNBOOK.md](./DEBUG-RUNBOOK.md) per al procediment curt.
+## Validacio local
+
+- `verify:fast`: correcte, 46 proves unitaries.
+- Captures desktop i mobile generades; Glossari mostra placeholders i Croniques no mostra media legacy.
+- `qa:persistence`: persistencia de les entrades i imatges noves correcta; queda un fals negatiu preexistent a l'opacitat inicial del tooltip, tot i que el contingut i la imatge persisteixen.
+
+Vegeu [DEBUG-RUNBOOK.md](./DEBUG-RUNBOOK.md) i [apps-script/README.md](./apps-script/README.md).

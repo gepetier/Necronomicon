@@ -6,7 +6,7 @@
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
-    const BACKEND_VERSION = "2026-07-21-drive-asset-repair";
+    const BACKEND_VERSION = "2026-07-22-media-purge";
     const BACKUP_EVERY_REVISIONS = 20;
     const MAX_BACKUP_FILES = 40;
     const SESSION_TTL_SECONDS = 3600;
@@ -74,6 +74,30 @@
       },
       users: {},
     };
+
+    function purgeLegacyChronicleAndGlossaryImages() {
+      return withCampaignLock(() => {
+        const current = loadCampaign();
+        const previousRevision = getCampaignRevision(current);
+        const purge = purgeChronicleAndGlossaryImageReferences(current);
+        const driveFile = persistCampaignUnlocked(
+          current,
+          "manual-media-purge",
+          previousRevision,
+          `media-purge-${Date.now()}`,
+          { forceBackup: true },
+        );
+        const driveCleanup = trashPurgedDriveImages(current, purge.driveTokens);
+        return {
+          ok: true,
+          removedReferences: purge.removedReferences,
+          removedInlineImages: purge.removedInlineImages,
+          trashedDriveFiles: driveCleanup.trashed,
+          skippedDriveFiles: driveCleanup.skipped,
+          driveFile,
+        };
+      });
+    }
 
     function doGet(e) {
       const request = readRequest(e);
@@ -1216,6 +1240,141 @@
         }
         if (item && typeof item === "object") Object.values(item).forEach(visit);
       }
+    }
+
+    function purgeChronicleAndGlossaryImageReferences(campaign) {
+      const targetTokens = new Set();
+      let removedReferences = 0;
+      let removedInlineImages = 0;
+
+      const purgeRecord = (record) => {
+        collectDriveAssetTokens(record).forEach((token) => targetTokens.add(token));
+        const stripped = stripInlineImages(record);
+        removedInlineImages += stripped.removed;
+        removedReferences += Array.isArray(record && record.imageAssets)
+          ? record.imageAssets.filter(Boolean).length
+          : 0;
+        return {
+          ...stripped.value,
+          imageAssets: [],
+        };
+      };
+
+      const purgeState = (state) => ({
+        ...state,
+        chronicles: Array.isArray(state && state.chronicles)
+          ? state.chronicles.map(purgeRecord)
+          : [],
+        glossary: Array.isArray(state && state.glossary)
+          ? state.glossary.map(purgeRecord)
+          : [],
+      });
+
+      if (Array.isArray(campaign.campaigns)) {
+        campaign.campaigns = campaign.campaigns.map((entry) => ({
+          ...entry,
+          version: 12,
+          updatedAt: new Date().toISOString(),
+          state: purgeState(entry && entry.state ? entry.state : {}),
+        }));
+        campaign.version = 12;
+        syncTopLevelCampaignFields(campaign);
+      } else {
+        const nextState = purgeState(campaign);
+        Object.keys(campaign).forEach((key) => delete campaign[key]);
+        Object.assign(campaign, nextState, { version: 12 });
+      }
+
+      return {
+        driveTokens: [...targetTokens],
+        removedReferences,
+        removedInlineImages,
+      };
+    }
+
+    function stripInlineImages(value) {
+      if (typeof value === "string") {
+        let removed = 0;
+        const nextValue = value.replace(
+          /\{\{media:image\|([^|{}]+)\|[^{}]+\}\}/g,
+          (_full, label) => {
+            removed += 1;
+            return label;
+          },
+        );
+        return { value: nextValue, removed };
+      }
+      if (Array.isArray(value)) {
+        let removed = 0;
+        const nextValue = value.map((item) => {
+          const next = stripInlineImages(item);
+          removed += next.removed;
+          return next.value;
+        });
+        return { value: nextValue, removed };
+      }
+      if (value && typeof value === "object") {
+        let removed = 0;
+        const nextValue = Object.fromEntries(
+          Object.entries(value).map(([key, item]) => {
+            const next = stripInlineImages(item);
+            removed += next.removed;
+            return [key, next.value];
+          }),
+        );
+        return { value: nextValue, removed };
+      }
+      return { value, removed: 0 };
+    }
+
+    function trashPurgedDriveImages(campaign, targetTokens) {
+      const remainingTokens = new Set(collectDriveAssetTokens(campaign));
+      const visitedIds = new Set();
+      const result = { trashed: [], skipped: [] };
+
+      const trashImage = (file, source) => {
+        const fileId = String(file && file.getId ? file.getId() : "");
+        if (!fileId || visitedIds.has(fileId)) return;
+        visitedIds.add(fileId);
+        const mimeType = String(
+          file && file.getMimeType
+            ? file.getMimeType()
+            : file && file.getBlob
+              ? file.getBlob().getContentType()
+              : "",
+        ).toLowerCase();
+        if (mimeType.indexOf("image/") !== 0) {
+          result.skipped.push({ fileId, source, reason: "not-image" });
+          return;
+        }
+        file.setTrashed(true);
+        result.trashed.push({ fileId, source });
+      };
+
+      (Array.isArray(targetTokens) ? targetTokens : []).forEach((token) => {
+        if (remainingTokens.has(token)) return;
+        const fileId = String(token || "").slice(DRIVE_ASSET_PREFIX.length);
+        if (!fileId) return;
+        try {
+          trashImage(DriveApp.getFileById(fileId), "removed-reference");
+        } catch (error) {
+          result.skipped.push({ fileId, source: "removed-reference", reason: String(error) });
+        }
+      });
+
+      const assetFolder = getAssetFolder();
+      if (assetFolder && typeof assetFolder.getFiles === "function") {
+        const files = assetFolder.getFiles();
+        while (files.hasNext()) {
+          const file = files.next();
+          const token = `drive-asset://${file.getId()}`;
+          if (!remainingTokens.has(token)) {
+            trashImage(file, "orphan-assets-folder");
+          }
+        }
+      }
+
+      return result;
     }
 
     function getAssetKind(mimeType) {

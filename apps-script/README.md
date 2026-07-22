@@ -53,3 +53,15 @@ Amb aquesta URL el client pot:
 - Els permisos viuen dins el mateix JSON, per tant es poden editar des de la UI quan la pestanya de permisos estigui connectada.
 - Després d'actualitzar `Code.gs`, crea una versió i un desplegament nous: editar el codi no actualitza automàticament la URL `/exec` desplegada.
 - No posis tokens secrets dins el client. El client nomes ha de tenir el client id public de Google i la URL publica del Web App; la credencial d'usuari es conserva només durant la sessió del navegador.
+
+## Purga total de media legacy
+
+Quan es vulgui reiniciar totes les imatges de Croniques i Glossari:
+
+1. Copia la versio actual de `apps-script/Code.gs` a Apps Script i desa-la.
+2. Al selector de funcions, tria `purgeLegacyChronicleAndGlossaryImages` i prem `Executa` una sola vegada.
+3. La funcio crea primer un `campaign-backup-...manual-media-purge.json`, elimina les referencies d'imatge de Croniques i Glossari i envia a la paperera els fitxers d'imatge orfes d'`assets`.
+4. Les imatges encara referenciades per Personatges, inclosos els retrats, es conserven.
+5. Comprova el resultat del registre d'execucio i desplega una versio nova del Web App (`2026-07-22-media-purge`).
+
+No tornis a executar la funcio despres de pujar les imatges noves. Els fitxers purgats romanen recuperables a la paperera de Drive fins que es buidi manualment.

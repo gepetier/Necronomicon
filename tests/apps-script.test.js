@@ -70,6 +70,7 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
   const cacheValues = new Map();
   const assetFilesById = new Map();
   const assetFilesByName = new Map();
+  const trashedAssetIds = new Set();
   let assetCounter = 0;
   let locked = false;
 
@@ -124,6 +125,8 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
           },
           getLastUpdated: () => new Date("2026-07-15T12:00:00.000Z"),
           getUrl: () => `https://drive.google.com/file/d/${id}/view`,
+          getMimeType: () => String(blob.getContentType ? blob.getContentType() : "application/octet-stream"),
+          setTrashed: (value) => value && trashedAssetIds.add(id),
         };
         assetFilesById.set(id, file);
         assetFilesByName.set(name, file);
@@ -147,6 +150,14 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
 
   const assetFolder = {
     getId: () => "asset-folder-id",
+    getFiles() {
+      const files = [...assetFilesById.values()];
+      let index = 0;
+      return {
+        hasNext: () => index < files.length,
+        next: () => files[index++],
+      };
+    },
     getFilesByName(name) {
       const matched = assetFilesByName.get(String(name || "")) || null;
       let available = Boolean(matched);
@@ -175,6 +186,8 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
             },
           };
         },
+        getMimeType: () => String(blob.getContentType ? blob.getContentType() : "application/octet-stream"),
+        setTrashed: (value) => value && trashedAssetIds.add(id),
       };
       assetFilesById.set(id, file);
       assetFilesByName.set(name, file);
@@ -253,6 +266,8 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
     events,
     backups,
     assetFiles: assetFilesById,
+    trashedAssetIds,
+    purgeLegacyImages: () => JSON.parse(JSON.stringify(context.purgeLegacyChronicleAndGlossaryImages())),
   };
 }
 
@@ -678,4 +693,35 @@ test("Apps Script deletes one glossary entry without publishing the full catalog
   assert.equal(response.ok, true);
   assert.equal(harness.readCampaign().campaigns[1].state.glossary.length, 0);
   assert.equal(harness.readCampaign().campaigns[0].state.characters[0].name, "Hero A");
+});
+
+test("manual media purge backs up JSON, clears chronicles/glossary and preserves portraits", () => {
+  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
+  campaign.campaigns[0].state.glossary = [{ id: "place", name: "Place" }];
+  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
+  const savedGlossary = harness.handleRequest({
+    action: "saveGlossaryEntry", idToken: "admin", campaignId: "campaign-a", operationId: "glossary-with-image",
+    entry: { id: "place", name: "Place", description: "{{media:image|Mapa|data:image/png;base64,bWFw}}", imageAssets: ["data:image/png;base64,aW1hZ2U="] },
+  });
+  const savedCharacter = harness.handleRequest({
+    action: "saveCharacter", idToken: "admin", campaignId: "campaign-a", operationId: "portrait-image",
+    character: { id: "hero-a", name: "Hero A", portrait: "data:image/png;base64,cG9ydHJhaXQ=" },
+  });
+  assert.equal(savedGlossary.ok, true);
+  assert.equal(savedCharacter.ok, true);
+  const before = harness.readCampaign();
+  const portraitToken = before.campaigns[0].state.characters[0].portrait;
+  const glossaryTokens = before.campaigns[0].state.glossary[0].imageAssets;
+  const result = harness.purgeLegacyImages();
+  const stored = harness.readCampaign();
+  const cleanedEntry = stored.campaigns[0].state.glossary[0];
+  assert.equal(result.ok, true);
+  assert.equal(stored.version, 12);
+  assert.equal(stored.campaigns[0].version, 12);
+  assert.deepEqual(cleanedEntry.imageAssets, []);
+  assert.equal(cleanedEntry.description, "Mapa");
+  assert.equal(stored.campaigns[0].state.characters[0].portrait, portraitToken);
+  assert.equal(harness.trashedAssetIds.has(portraitToken.replace("drive-asset://", "")), false);
+  glossaryTokens.forEach((token) => assert.equal(harness.trashedAssetIds.has(token.replace("drive-asset://", "")), true));
+  assert.ok(harness.backups.length >= 1);
 });

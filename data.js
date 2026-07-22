@@ -1,5 +1,5 @@
 ﻿export const STORAGE_KEY = "campaign-compendium";
-export const DATA_VERSION = 11;
+export const DATA_VERSION = 12;
 
 
 const CHARACTER_PORTRAITS = {
@@ -7,18 +7,6 @@ const CHARACTER_PORTRAITS = {
   nelthan: new URL("./resources/imatges/nelthan.jpg", import.meta.url).href,
   damakos: new URL("./resources/imatges/damakos.jpg", import.meta.url).href,
   elatoris: new URL("./resources/imatges/elatoris.jpg", import.meta.url).href,
-};
-
-const GLOSSARY_ILLUSTRATIONS = {
-  mijo: new URL("./resources/glossary/mijo.jpg", import.meta.url).href,
-  portadoresDelVelo: new URL("./resources/glossary/portadores-del-velo.jpg", import.meta.url).href,
-  marcaDeNishaar: new URL("./resources/glossary/marca-de-nishaar.jpg", import.meta.url).href,
-  kaelorSimbol: new URL("./resources/glossary/kaelor-simbol.jpg", import.meta.url).href,
-  avatarDeNishaar: new URL("./resources/glossary/avatar-de-nishaar.jpg", import.meta.url).href,
-  vozDeKaelor: new URL("./resources/glossary/voz-de-kaelor.jpg", import.meta.url).href,
-  nishaar: new URL("./resources/glossary/nishaar.jpg", import.meta.url).href,
-  reinaElisabeth: new URL("./resources/glossary/reina-elisabeth.jpg", import.meta.url).href,
-  varronThayne: new URL("./resources/glossary/varron-thayne.jpg", import.meta.url).href,
 };
 
 export const seedData = {
@@ -426,7 +414,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       latestStatus:
         "La fe de Varron queda destruïda, però Nelthan obre la possibilitat que el veritable Kaelor hagi estat silenciat, manipulat o empresonat.",
       lastSeenChronicleId: "sala-dels-plaers",
-      imageAssets: [GLOSSARY_ILLUSTRATIONS.kaelorSimbol],
+      imageAssets: [],
       playerNotes: [],
       characterIds: ["ilu", "nelthan"],
       chronicleIds: ["judici-acantilado", "ritual-fossa", "sala-dels-plaers"],
@@ -469,7 +457,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       tags: ["guàrdia", "culte", "escolta"],
       notes:
         "Apareixen al transport inicial, al control de la ciutat i al repartiment dels amulets d'espines abans del sacrifici massiu.",
-      imageAssets: [GLOSSARY_ILLUSTRATIONS.portadoresDelVelo],
+      imageAssets: [],
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
       chronicleIds: ["judici-acantilado", "ritual-fossa"],
@@ -512,7 +500,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       tags: ["títol", "legitimitat", "culte"],
       notes:
         "A la pràctica, la Voz que governava Acantilado del Silencio era Zaher-Ar'Kal sota disfressa.",
-      imageAssets: [GLOSSARY_ILLUSTRATIONS.vozDeKaelor],
+      imageAssets: [],
       playerNotes: [],
       characterIds: ["elatoris", "nelthan"],
       chronicleIds: ["ritual-fossa"],
@@ -530,7 +518,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       latestStatus:
         "Trencat per la revelació de la impostura demoníaca, torna a aixecar-se només quan el grup li ofereix la possibilitat que Kaelor no fos fals sinó empresonat o silenciat.",
       lastSeenChronicleId: "sala-dels-plaers",
-      imageAssets: [GLOSSARY_ILLUSTRATIONS.varronThayne],
+      imageAssets: [],
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
       chronicleIds: ["judici-acantilado", "ritual-fossa", "sagnatori", "sala-dels-plaers"],
@@ -562,7 +550,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       latestStatus:
         "Desapareguda després de la massacre de la plaça; el grup no sap on és des que Elatoris la va salvar enmig del caos.",
       lastSeenChronicleId: "ritual-fossa",
-      imageAssets: [GLOSSARY_ILLUSTRATIONS.reinaElisabeth],
+      imageAssets: [],
       playerNotes: [],
       characterIds: ["elatoris", "ilu", "nelthan"],
       chronicleIds: ["judici-acantilado", "ritual-fossa"],
@@ -580,7 +568,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       latestStatus:
         "Mort. L'última informació rellevant del grup és que només el tornen a trobar com un cos deformat dins la pila de cadàvers del Sagnatori.",
       lastSeenChronicleId: "sagnatori",
-      imageAssets: [GLOSSARY_ILLUSTRATIONS.mijo],
+      imageAssets: [],
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
       chronicleIds: ["judici-acantilado", "ritual-fossa", "sagnatori"],
@@ -629,7 +617,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       latestStatus:
         "La menció del pacte amb Nisha'ar inquieta Elyse, però el grup ajorna una explicació més profunda fins a trobar un moment més segur.",
       lastSeenChronicleId: "sala-dels-plaers",
-      imageAssets: [GLOSSARY_ILLUSTRATIONS.nishaar],
+      imageAssets: [],
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
       chronicleIds: ["judici-acantilado", "sagnatori", "sala-dels-plaers"],
@@ -658,7 +646,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       tags: ["gat", "avatar", "vigilància"],
       notes:
         "Nelthan el detecta primer com a presència demoníaca a la ciutat i més tard Nisha'ar confirma que aquesta criatura és la seva forma visible.",
-      imageAssets: [GLOSSARY_ILLUSTRATIONS.avatarDeNishaar],
+      imageAssets: [],
       playerNotes: [],
       characterIds: ["nelthan", "ilu", "elatoris"],
       chronicleIds: ["judici-acantilado", "ritual-fossa", "sagnatori"],
@@ -701,7 +689,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       tags: ["marca", "pacte", "protecció"],
       notes:
         "No se n'han vist encara tots els efectes, però queda associada explícitament al pacte i a l'entrada als dominis d'Ish'Nael.",
-      imageAssets: [GLOSSARY_ILLUSTRATIONS.marcaDeNishaar],
+      imageAssets: [],
       playerNotes: [],
       characterIds: ["ilu", "nelthan", "damakos", "elatoris"],
       chronicleIds: ["sagnatori"],
