@@ -4,6 +4,8 @@ export const DEFAULT_ACCESS_ROLES = {
   superadmin: {
     editAnyCharacter: true,
     editOwnCharacter: true,
+    manageCharacters: true,
+    deleteCharacters: true,
     editChronicles: true,
     editAssignedChronicles: true,
     editGlossary: true,
@@ -15,6 +17,8 @@ export const DEFAULT_ACCESS_ROLES = {
   gm: {
     editAnyCharacter: true,
     editOwnCharacter: true,
+    manageCharacters: true,
+    deleteCharacters: true,
     editChronicles: true,
     editAssignedChronicles: true,
     editGlossary: true,
@@ -26,6 +30,8 @@ export const DEFAULT_ACCESS_ROLES = {
   player: {
     editAnyCharacter: false,
     editOwnCharacter: true,
+    manageCharacters: false,
+    deleteCharacters: false,
     editChronicles: false,
     editAssignedChronicles: true,
     editGlossary: false,
@@ -169,6 +175,14 @@ export function canPublishCampaign(userAccess) {
 
 export function canEditAnyCharacter(userAccess) {
   return Boolean(userAccess?.permissions?.editAnyCharacter);
+}
+
+export function canManageCharacters(userAccess) {
+  return Boolean(userAccess?.permissions?.manageCharacters);
+}
+
+export function canDeleteCharacter(userAccess, character) {
+  return Boolean(character && userAccess?.permissions?.deleteCharacters);
 }
 
 export function canEditCharacter(userAccess, characterOrId) {

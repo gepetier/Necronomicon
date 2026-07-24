@@ -6,7 +6,7 @@
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
-    const BACKEND_VERSION = "2026-07-22-media-purge";
+    const BACKEND_VERSION = "2026-07-24-character-roster";
     const BACKUP_EVERY_REVISIONS = 20;
     const MAX_BACKUP_FILES = 40;
     const SESSION_TTL_SECONDS = 3600;
@@ -41,6 +41,8 @@
         superadmin: {
           editAnyCharacter: true,
           editOwnCharacter: true,
+          manageCharacters: true,
+          deleteCharacters: true,
           editChronicles: true,
           editAssignedChronicles: true,
           editGlossary: true,
@@ -52,6 +54,8 @@
         gm: {
           editAnyCharacter: true,
           editOwnCharacter: true,
+          manageCharacters: true,
+          deleteCharacters: true,
           editChronicles: true,
           editAssignedChronicles: true,
           editGlossary: true,
@@ -63,6 +67,8 @@
         player: {
           editAnyCharacter: false,
           editOwnCharacter: true,
+          manageCharacters: false,
+          deleteCharacters: false,
           editChronicles: false,
           editAssignedChronicles: true,
           editGlossary: false,
@@ -341,6 +347,54 @@
               capabilities: getClientCapabilities(),
               driveFile,
             });
+          });
+        }
+
+        if (request.action === "saveCharacterRoster") {
+          return withCampaignLock(() => {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            const characterId = String(request.characterId || "");
+            const character = findCampaignItem(current, campaignId, "characters", characterId);
+            if (!character) throw new Error("No s ha trobat la fitxa de personatge.");
+            if (!canManageCharacters(actor)) throw new Error("No tens permisos per gestionar personatges.");
+            const requestedRoster = request.roster && typeof request.roster === "object" ? request.roster : {};
+            const nextCharacter = {
+              ...character,
+              roster: {
+                ...(character.roster && typeof character.roster === "object" ? character.roster : {}),
+                status: normalizeCharacterRosterStatus(requestedRoster.status),
+                changedAt: new Date().toISOString(),
+                changedBy: actor.email || "",
+              },
+            };
+            const requestedEmails = Array.isArray(request.assignedEmails) ? request.assignedEmails : [];
+            updateCampaignItem(current, campaignId, "characters", nextCharacter);
+            updateCharacterAssignments(current, campaignId, characterId, requestedEmails);
+            const driveFile = persistCampaignUnlocked(current, user.email, getCampaignRevision(current), request.operationId);
+            const authorized = createAuthorizedCampaignView(current, user);
+            return ok({ user: authorized.user, campaign: authorized.campaign, capabilities: getClientCapabilities(), driveFile });
+          });
+        }
+
+        if (request.action === "deleteCharacter") {
+          return withCampaignLock(() => {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            const characterId = String(request.itemId || "");
+            const character = findCampaignItem(current, campaignId, "characters", characterId);
+            if (!character) throw new Error("No s ha trobat la fitxa de personatge.");
+            if (!canDeleteCharacter(actor)) throw new Error("No tens permisos per eliminar aquesta fitxa.");
+            const blockers = getCharacterDeletionBlockers(targetState, characterId);
+            if (blockers.length) throw new Error(`No es pot eliminar la fitxa: ${blockers.join(", ")}. Retira o marca com a mort el personatge.`);
+            deleteCampaignItem(current, campaignId, "characters", characterId);
+            const driveFile = persistCampaignUnlocked(current, user.email, getCampaignRevision(current), request.operationId);
+            const authorized = createAuthorizedCampaignView(current, user);
+            return ok({ user: authorized.user, campaign: authorized.campaign, capabilities: getClientCapabilities(), driveFile });
           });
         }
 
@@ -758,6 +812,60 @@
       syncTopLevelCampaignFields(campaign);
     }
 
+    function normalizeCharacterRosterStatus(status) {
+      const value = String(status || "active");
+      return ["active", "retired", "dead"].indexOf(value) >= 0 ? value : "active";
+    }
+
+    function canManageCharacters(user) {
+      return Boolean(user && user.hasAccess && user.permissions && user.permissions.manageCharacters);
+    }
+
+    function canDeleteCharacter(user) {
+      return Boolean(user && user.hasAccess && user.permissions && user.permissions.deleteCharacters);
+    }
+
+    function updateCharacterAssignments(campaign, campaignId, characterId, assignedEmails) {
+      const selected = new Set((assignedEmails || []).map((email) => String(email || "").trim().toLowerCase()));
+      const updateAccess = (access) => {
+        const normalized = normalizeCampaign({ access: access || DEFAULT_ACCESS }).access;
+        const users = Object.fromEntries(Object.entries(normalized.users).map(([email, user]) => {
+          const ids = (user.characterIds || []).map(String).filter((id) => id !== String(characterId));
+          if (selected.has(email)) ids.push(String(characterId));
+          return [email, { ...user, characterIds: Array.from(new Set(ids)) }];
+        }));
+        return { ...normalized, users };
+      };
+      if (!Array.isArray(campaign.campaigns)) {
+        campaign.access = updateAccess(campaign.access);
+        return;
+      }
+      const targetId = resolveCampaignId(campaign, campaignId);
+      campaign.campaigns = campaign.campaigns.map((entry) => (
+        entry && entry.id === targetId && entry.state
+          ? { ...entry, state: { ...entry.state, access: updateAccess(entry.state.access) } }
+          : entry
+      ));
+      syncTopLevelCampaignFields(campaign);
+    }
+
+    function getCharacterDeletionBlockers(state, characterId) {
+      const id = String(characterId);
+      const users = normalizeCampaign({ access: state.access || DEFAULT_ACCESS }).access.users;
+      const assignedCount = Object.values(users).filter((user) => Array.isArray(user.characterIds) && user.characterIds.map(String).includes(id)).length;
+      const chronicleCount = (state.chronicles || []).filter((chronicle) => Array.isArray(chronicle.characterIds) && chronicle.characterIds.map(String).includes(id)).length;
+      const glossaryCount = (state.glossary || []).filter((entry) => Array.isArray(entry.characterIds) && entry.characterIds.map(String).includes(id)).length;
+      const referenceToken = `[[${id}|`;
+      const textualReferences = (state.chronicles || []).filter((chronicle) => String(chronicle.content || "").indexOf(referenceToken) >= 0).length
+        + (state.glossary || []).filter((entry) => [entry.description, entry.notes, entry.latestStatus].some((value) => String(value || "").indexOf(referenceToken) >= 0)).length;
+      return [
+        assignedCount ? `${assignedCount} jugador(s) assignat(s)` : "",
+        chronicleCount ? `${chronicleCount} crònica/ques relacionada/es` : "",
+        glossaryCount ? `${glossaryCount} entrada/des de glossari relacionada/es` : "",
+        textualReferences ? `${textualReferences} referència/ces dins una crònica` : "",
+      ].filter(Boolean);
+    }
+
     function deleteCampaignItem(campaign, campaignId, collectionName, itemId) {
       const targetId = resolveCampaignId(campaign, campaignId);
       if (!targetId) throw new Error("Campanya no trobada per esborrar l'element.");
@@ -932,7 +1040,7 @@
 
     function filterAccessForActor(access, actor) {
       const normalized = normalizeCampaign({ access }).access;
-      if (actor && actor.permissions && actor.permissions.managePermissions) {
+      if (actor && actor.permissions && (actor.permissions.managePermissions || actor.permissions.manageCharacters)) {
         return normalized;
       }
 
@@ -1510,6 +1618,7 @@
         preserveExistingCharacterPortrait: true,
         preserveExistingImageAssets: true,
         driveAssetFiles: true,
+        characterRosterManagement: true,
       };
     }
 

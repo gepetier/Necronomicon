@@ -75,6 +75,8 @@ import {
   canCreateGlossaryEntry as permissionsCanCreateGlossaryEntry,
   canDeleteChronicle as permissionsCanDeleteChronicle,
   canDeleteGlossaryEntry as permissionsCanDeleteGlossaryEntry,
+  canDeleteCharacter as permissionsCanDeleteCharacter,
+  canManageCharacters as permissionsCanManageCharacters,
   canEditAnyCharacter as permissionsCanEditAnyCharacter,
   canEditCharacter as permissionsCanEditCharacter,
   canEditChronicle as permissionsCanEditChronicle,
@@ -91,6 +93,7 @@ import {
   CLOUD_CONFIG,
   clearStoredCredential,
   decodeCredential,
+  deleteCharacterFromCloud,
   deleteChronicleFromCloud,
   deleteGlossaryEntryFromCloud,
   getStoredCredential,
@@ -104,6 +107,7 @@ import {
   saveCampaignToCloud,
   saveAssetToCloud,
   saveCharacterToCloud,
+  saveCharacterRosterToCloud,
   saveChronicleToCloud,
   saveGlossaryEntryToCloud,
   storeCredential,
@@ -521,6 +525,48 @@ function handleClick(event) {
     return;
   }
 
+  if (event.target.closest("[data-create-character]")) {
+    createCharacter();
+    return;
+  }
+
+  const characterRosterFilter = event.target.closest("[data-character-roster-filter]");
+  if (characterRosterFilter) {
+    state.ui.characterRosterFilter = ["active", "retired", "dead", "all"].includes(characterRosterFilter.dataset.characterRosterFilter)
+      ? characterRosterFilter.dataset.characterRosterFilter
+      : "active";
+    state.ui.characterRosterActionId = "";
+    persistAndRender([RENDER_PARTS.characters]);
+    return;
+  }
+
+  const characterRosterToggle = event.target.closest("[data-toggle-character-roster-actions]");
+  if (characterRosterToggle) {
+    if (!canManageCharacters()) {
+      denyPermission("No tens permisos per gestionar personatges.");
+      return;
+    }
+    const characterId = characterRosterToggle.dataset.toggleCharacterRosterActions || "";
+    state.ui.characterRosterActionId = state.ui.characterRosterActionId === characterId ? "" : characterId;
+    render([RENDER_PARTS.characters]);
+    return;
+  }
+
+  const rosterStatus = event.target.closest("[data-set-character-roster-status]");
+  if (rosterStatus) {
+    updateCharacterRosterStatus(rosterStatus.dataset.characterId || "", rosterStatus.dataset.setCharacterRosterStatus || "");
+    return;
+  }
+
+  const characterDelete = event.target.closest("[data-delete-character]");
+  if (characterDelete) {
+    deleteCharacter(characterDelete.dataset.deleteCharacter || "");
+    return;
+  }
+
+  if (event.target.closest("[data-character-roster-actions]")) {
+    return;
+  }
   if (event.target.closest("[data-open-character-editor]")) {
     const editableCharacter = state.characters.find((character) => canEditCharacter(character));
     if (!editableCharacter) {
@@ -576,6 +622,26 @@ function handleClick(event) {
       switchChronicleSelection(nextId, direction);
     }
     return;
+  }
+
+  const glossarySortToggle = event.target.closest("[data-toggle-glossary-sort]");
+  if (glossarySortToggle) {
+    state.ui.glossarySortMenuOpen = !state.ui.glossarySortMenuOpen;
+    render([RENDER_PARTS.glossary]);
+    return;
+  }
+
+  const glossarySortOption = event.target.closest("[data-glossary-sort-order]");
+  if (glossarySortOption) {
+    state.ui.glossarySortOrder = glossarySortOption.dataset.glossarySortOrder === "story" ? "story" : "alphabetical";
+    state.ui.glossarySortMenuOpen = false;
+    persistAndRender([RENDER_PARTS.glossary, RENDER_PARTS.notice]);
+    return;
+  }
+
+  if (state.ui.glossarySortMenuOpen && !event.target.closest("[data-glossary-sort-control]")) {
+    state.ui.glossarySortMenuOpen = false;
+    render([RENDER_PARTS.glossary]);
   }
 
   const glossaryFilter = event.target.closest("[data-glossary-filter]");
@@ -1293,6 +1359,10 @@ function handleSubmit(event) {
   const formData = new FormData(form);
 
 
+  if (form.dataset.form === "character-assignment") {
+    saveCharacterAssignment(formData);
+    return;
+  }
   if (form.dataset.form === "character-overview") {
     updateDraftFromForm(form);
     return;
@@ -2248,6 +2318,9 @@ function renderCharactersModule() {
     renderPlayerNotesFab,
     canEditCharacter,
     canEditAnyCharacter: canEditAnyCharacter(),
+    canManageCharacters: canManageCharacters(),
+    canDeleteCharacter,
+    getCharacterAssignments,
   });
 }
 
@@ -2796,7 +2869,7 @@ function renderCampaignAccessSummary(activeMeta, currentUserAccess) {
 function renderAccessSummary(currentUserAccess) {
   const permissions = currentUserAccess.permissions || {};
   const granted = [
-    permissions.editAnyCharacter || permissions.editOwnCharacter ? "Fitxes assignades" : "",
+    permissions.manageCharacters ? "Gestió de personatges" : permissions.editAnyCharacter || permissions.editOwnCharacter ? "Fitxes assignades" : "",
     permissions.editChronicles ? "Totes les croniques" : permissions.editAssignedChronicles ? "Croniques assignades" : "",
     permissions.editGlossary ? "Tot el glossari" : permissions.editAssignedGlossary ? "Glossari assignat" : "",
     permissions.publishCampaign ? "Publicacio de campanya" : "",
@@ -2828,6 +2901,8 @@ function renderPermissionsForm(canManagePermissions) {
         <legend>${escapeHtml(roleId)}</legend>
         ${renderPermissionCheckbox(roleId, "editAnyCharacter", "Qualsevol fitxa", permissions.editAnyCharacter, canManagePermissions)}
         ${renderPermissionCheckbox(roleId, "editOwnCharacter", "Fitxa assignada", permissions.editOwnCharacter, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "manageCharacters", "Gestiona personatges", permissions.manageCharacters, canManagePermissions)}
+        ${renderPermissionCheckbox(roleId, "deleteCharacters", "Elimina fitxes", permissions.deleteCharacters, canManagePermissions)}
         ${renderPermissionCheckbox(roleId, "editChronicles", "Totes les croniques", permissions.editChronicles, canManagePermissions)}
         ${renderPermissionCheckbox(roleId, "editAssignedChronicles", "Croniques assignades", permissions.editAssignedChronicles, canManagePermissions)}
         ${renderPermissionCheckbox(roleId, "editGlossary", "Tot el glossari", permissions.editGlossary, canManagePermissions)}
@@ -3030,6 +3105,129 @@ function saveCharacterTab(formData) {
   saveCharacterTabEntry(formData, { getSelectedCharacter, showSaveNotice });
 }
 
+function createCharacter() {
+  if (!canManageCharacters()) {
+    denyPermission("No tens permisos per crear personatges.");
+    return;
+  }
+  const id = `personatge-${Date.now().toString(36)}`;
+  const system = String(state.meta?.system || "D&D 5e");
+  const isSavage = system.toLowerCase().includes("savage");
+  const character = {
+    id,
+    name: "Nou personatge",
+    title: "Fitxa pendent",
+    lineage: "",
+    className: system,
+    level: 1,
+    summary: "",
+    quickNotes: "",
+    lore: { origin: "", bonds: "", secrets: "", goals: "", wounds: "" },
+    sheet: {
+      ac: "", hp: "", proficiency: "", abilities: "", features: "",
+      ...(isSavage ? { savageState: { bennies: 3, wounds: 0, fatigue: 0, shaken: false, incapacitated: false, conviction: 0, powerPoints: 0, maxPowerPoints: 0, conditions: [], ammo: {} } } : {}),
+    },
+    inventory: { items: "", currency: "", artifacts: "", notes: "" },
+    history: "",
+    sigil: "?",
+    portrait: "",
+    playerNotes: [],
+    palette: ["#4f3f34", "#c49a5d"],
+    roster: { status: "active", changedAt: new Date().toISOString(), changedBy: getCurrentUserAccess().email || "local" },
+  };
+  state.characters.push(character);
+  state.ui.selectedCharacterId = id;
+  state.ui.newCharacterId = id;
+  state.ui.showCharacterGrid = false;
+  state.ui.editModes.characters = true;
+  state.ui.characterRosterActionId = "";
+  clearCharacterDrafts(id);
+  persistAndRender();
+  showSaveNotice("Fitxa nova preparada. Es pujarà a Drive quan la desis.");
+}
+
+function updateCharacterRosterStatus(characterId, status) {
+  if (!canManageCharacters()) {
+    denyPermission("No tens permisos per canviar lestat de campanya.");
+    return;
+  }
+  const character = state.characters.find((item) => item.id === characterId);
+  if (!character || !["active", "retired", "dead"].includes(status)) return;
+  character.roster = {
+    ...(character.roster || {}),
+    status,
+    changedAt: new Date().toISOString(),
+    changedBy: getCurrentUserAccess().email || "local",
+  };
+  state.ui.characterRosterActionId = "";
+  persistAndRender(FULL_RENDER_PARTS, {
+    cloud: true,
+    cloudTarget: { type: "characterRoster", characterId },
+  });
+  showSaveNotice(`${character.name}: ${({ active: "actiu", retired: "retirat", dead: "mort" })[status]}.`, {
+    cloud: true,
+    cloudTarget: { type: "characterRoster", characterId },
+  });
+}
+
+function saveCharacterAssignment(formData) {
+  if (!canManageCharacters()) {
+    denyPermission("No tens permisos per assignar personatges.");
+    return;
+  }
+  const characterId = readString(formData, "characterId");
+  if (!state.characters.some((character) => character.id === characterId)) return;
+  const selectedEmails = new Set(formData.getAll("assignmentEmail").map((value) => String(value || "").trim().toLowerCase()).filter(Boolean));
+  const access = normalizeAccessShape(state.access);
+  const users = Object.fromEntries(Object.entries(access.users).map(([email, user]) => [
+    email,
+    { ...user, characterIds: (user.characterIds || []).filter((id) => String(id) !== characterId) },
+  ]));
+  selectedEmails.forEach((email) => {
+    if (users[email]) users[email].characterIds = [...new Set([...(users[email].characterIds || []), characterId])];
+  });
+  state.access = normalizeAccessShape({ ...access, users });
+  state.ui.characterRosterActionId = "";
+  persistAndRender(FULL_RENDER_PARTS, { cloud: true, cloudTarget: { type: "characterRoster", characterId } });
+  showSaveNotice("Assignació de jugadors desada", { cloud: true, cloudTarget: { type: "characterRoster", characterId } });
+}
+
+function getCharacterDeletionBlockers(characterId) {
+  const assigned = getCharacterAssignments(characterId);
+  const chronicles = state.chronicles.filter((chronicle) => Array.isArray(chronicle.characterIds) && chronicle.characterIds.includes(characterId));
+  const glossary = state.glossary.filter((entry) => Array.isArray(entry.characterIds) && entry.characterIds.includes(characterId));
+  const token = `[[${characterId}|`;
+  const references = [
+    ...state.chronicles.filter((chronicle) => String(chronicle.content || "").includes(token)),
+    ...state.glossary.filter((entry) => [entry.description, entry.notes, entry.latestStatus].some((value) => String(value || "").includes(token))),
+  ];
+  return { assigned, chronicles, glossary, references };
+}
+
+function deleteCharacter(characterId) {
+  const character = state.characters.find((item) => item.id === characterId);
+  if (!character || !canDeleteCharacter(character)) {
+    denyPermission("No tens permisos per eliminar aquesta fitxa.");
+    return;
+  }
+  const blockers = getCharacterDeletionBlockers(characterId);
+  const messages = [
+    blockers.assigned.length ? `${blockers.assigned.length} jugador(s) assignat(s)` : "",
+    blockers.chronicles.length ? `${blockers.chronicles.length} crònica/ques relacionada/es` : "",
+    blockers.glossary.length ? `${blockers.glossary.length} entrada/des de glossari relacionada/es` : "",
+    blockers.references.length ? `${blockers.references.length} referència/ces textual(s)` : "",
+  ].filter(Boolean);
+  if (messages.length) {
+    showSaveNotice(`No es pot eliminar ${character.name}: ${messages.join(", ")}. Retira o marca com a mort la fitxa per conservar la història.`);
+    return;
+  }
+  if (!window.confirm(`Eliminar definitivament la fitxa de ${character.name}? Aquesta acció no es pot desfer.`)) return;
+  state.characters = state.characters.filter((item) => item.id !== characterId);
+  state.ui.selectedCharacterId = state.characters[0]?.id || "";
+  state.ui.showCharacterGrid = true;
+  state.ui.characterRosterActionId = "";
+  persistAndRender(FULL_RENDER_PARTS, { cloud: true, cloudTarget: { type: "deleteCharacter", characterId } });
+}
 function saveCharacterEdits() {
   const character = getSelectedCharacter();
   if (!character) {
@@ -3044,6 +3242,7 @@ function saveCharacterEdits() {
   applyCharacterOverviewDraft(character);
   applyCharacterTabDrafts(character);
   clearCharacterDrafts(character.id);
+  if (state.ui.newCharacterId === character.id) state.ui.newCharacterId = "";
   state.ui.editModes.characters = false;
   showSaveNotice("Personatge desat", {
     cloud: true,
@@ -3070,9 +3269,16 @@ function discardCharacterChanges() {
     return;
   }
 
+  const isUnsavedNewCharacter = state.ui.newCharacterId === character.id;
   clearCharacterDrafts(character.id);
+  if (isUnsavedNewCharacter) {
+    state.characters = state.characters.filter((item) => item.id !== character.id);
+    state.ui.selectedCharacterId = state.characters[0]?.id || "";
+    state.ui.newCharacterId = "";
+    state.ui.showCharacterGrid = true;
+  }
   state.ui.editModes.characters = false;
-  showSaveNotice(hasPendingDraft ? "Canvis de la fitxa descartats" : "Edicio tancada");
+  showSaveNotice(isUnsavedNewCharacter ? "Fitxa nova descartada" : hasPendingDraft ? "Canvis de la fitxa descartats" : "Edicio tancada");
 }
 
 function applyCharacterOverviewDraft(character) {
@@ -3671,6 +3877,8 @@ function savePermissions(formData) {
       {
         editAnyCharacter: formData.has(`role:${roleId}:editAnyCharacter`),
         editOwnCharacter: formData.has(`role:${roleId}:editOwnCharacter`),
+        manageCharacters: formData.has(`role:${roleId}:manageCharacters`),
+        deleteCharacters: formData.has(`role:${roleId}:deleteCharacters`),
         editChronicles: formData.has(`role:${roleId}:editChronicles`),
         editAssignedChronicles: formData.has(`role:${roleId}:editAssignedChronicles`),
         editGlossary: formData.has(`role:${roleId}:editGlossary`),
@@ -3970,6 +4178,8 @@ function getAccessState() {
       superadmin: {
         editAnyCharacter: true,
         editOwnCharacter: true,
+        manageCharacters: true,
+        deleteCharacters: true,
         editChronicles: true,
         editAssignedChronicles: true,
         editGlossary: true,
@@ -3982,6 +4192,8 @@ function getAccessState() {
       gm: {
         editAnyCharacter: true,
         editOwnCharacter: true,
+        manageCharacters: true,
+        deleteCharacters: true,
         editChronicles: true,
         editAssignedChronicles: true,
         editGlossary: true,
@@ -3994,6 +4206,8 @@ function getAccessState() {
       player: {
         editAnyCharacter: false,
         editOwnCharacter: true,
+        manageCharacters: false,
+        deleteCharacters: false,
         editChronicles: false,
         editAssignedChronicles: true,
         editGlossary: false,
@@ -4038,6 +4252,21 @@ function canManageCampaigns() {
 
 function canPublishCampaign() {
   return permissionsCanPublishCampaign(getCurrentUserAccess());
+}
+
+function canManageCharacters() {
+  return permissionsCanManageCharacters(getCurrentUserAccess());
+}
+
+function canDeleteCharacter(character) {
+  return permissionsCanDeleteCharacter(getCurrentUserAccess(), character);
+}
+
+function getCharacterAssignments(characterId) {
+  const access = normalizeAccessShape(state.access);
+  return Object.entries(access.users)
+    .filter(([, user]) => Array.isArray(user.characterIds) && user.characterIds.includes(String(characterId)))
+    .map(([email]) => email);
 }
 
 function canEditAnyCharacter() {
@@ -4344,6 +4573,13 @@ async function pushStateToCloud(options = {}) {
           target.preserveExistingPortrait === true
           && cloudSession.capabilities?.preserveExistingCharacterPortrait === true,
       });
+    } else if (target.type === "characterRoster") {
+      response = await saveCharacterRosterToCloud(cloudSession.idToken, target.characterId, {
+        roster: state.characters.find((item) => item.id === target.characterId)?.roster || {},
+        assignedEmails: getCharacterAssignments(target.characterId),
+      }, campaignId);
+    } else if (target.type === "deleteCharacter") {
+      response = await deleteCharacterFromCloud(cloudSession.idToken, target.characterId, campaignId);
     } else if (target.type === "deleteChronicle") {
       response = await deleteChronicleFromCloud(cloudSession.idToken, target.chronicleId, campaignId);
     } else if (target.type === "deleteGlossary") {
@@ -4616,13 +4852,17 @@ function resolveCloudSaveTarget(target) {
     return null;
   }
 
+  if (target.type === "characterRoster") {
+    return target.characterId && state.characters.some((item) => item.id === target.characterId) ? target : null;
+  }
+
   if (target.type === "character") {
     const characterId = target.characterId || target.character?.id || "";
     const character = characterId ? state.characters.find((item) => item.id === characterId) : target.character;
     return character ? { ...target, characterId: character.id, character } : null;
   }
 
-  if (target.type === "deleteChronicle" || target.type === "deleteGlossary") {
+  if (target.type === "deleteCharacter" || target.type === "deleteChronicle" || target.type === "deleteGlossary") {
     return target;
   }
 
@@ -4698,6 +4938,8 @@ function stripTransientUiState(nextState) {
     dndStatusDraft: undefined,
     dndStatusEditorCharacterId: "",
     dndStatusSelection: "",
+    characterRosterActionId: "",
+    newCharacterId: "",
   };
   return clone;
 }
@@ -5174,6 +5416,11 @@ function ensureUiStateShape() {
     ? state.ui.glossaryChronicleIds.map(String).filter((id) => validChronicleIds.has(id))
     : [];
   state.ui.glossarySearch = typeof state.ui.glossarySearch === "string" ? state.ui.glossarySearch : "";
+  state.ui.glossarySortOrder = state.ui.glossarySortOrder === "story" ? "story" : "alphabetical";
+  state.ui.glossarySortMenuOpen = state.ui.glossarySortMenuOpen === true;
+  state.ui.characterRosterFilter = ["active", "retired", "dead", "all"].includes(state.ui.characterRosterFilter) ? state.ui.characterRosterFilter : "active";
+  state.ui.characterRosterActionId = typeof state.ui.characterRosterActionId === "string" ? state.ui.characterRosterActionId : "";
+  state.ui.newCharacterId = typeof state.ui.newCharacterId === "string" ? state.ui.newCharacterId : "";
   state.ui.newChronicleId = typeof state.ui.newChronicleId === "string" ? state.ui.newChronicleId : "";
   state.ui.newGlossaryId = typeof state.ui.newGlossaryId === "string" ? state.ui.newGlossaryId : "";
   state.ui.chronicleIndexSearch = typeof state.ui.chronicleIndexSearch === "string" ? state.ui.chronicleIndexSearch : "";
@@ -6138,8 +6385,30 @@ function getAdjacentChronicleId(direction) {
 
 function getFilteredGlossaryEntries() {
   const search = normalizeGlossarySearchValue(state.ui.glossarySearch);
-  return state.glossary.filter((entry) => {
+  const entries = state.glossary.filter((entry) => {
     return doesGlossaryEntryMatchCurrentFilters(entry, search);
+  });
+  return sortGlossaryEntries(entries);
+}
+
+function sortGlossaryEntries(entries) {
+  const order = state.ui.glossarySortOrder === "story" ? "story" : "alphabetical";
+  const sourceIndex = new Map(state.glossary.map((entry, index) => [entry.id, index]));
+  const chronicleIndex = new Map(state.chronicles.map((chronicle, index) => [chronicle.id, index]));
+  const getStoryIndex = (entry) => {
+    const linked = (entry.chronicleIds || [])
+      .map((chronicleId) => chronicleIndex.get(chronicleId))
+      .filter((index) => Number.isInteger(index));
+    return linked.length ? Math.min(...linked) : Number.MAX_SAFE_INTEGER;
+  };
+
+  return [...entries].sort((left, right) => {
+    if (order === "story") {
+      const storyDifference = getStoryIndex(left) - getStoryIndex(right);
+      if (storyDifference) return storyDifference;
+      return (sourceIndex.get(left.id) || 0) - (sourceIndex.get(right.id) || 0);
+    }
+    return String(left.name || "").localeCompare(String(right.name || ""), "ca", { sensitivity: "base" });
   });
 }
 

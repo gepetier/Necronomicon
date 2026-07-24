@@ -1,5 +1,5 @@
 ﻿export const STORAGE_KEY = "campaign-compendium";
-export const DATA_VERSION = 12;
+export const DATA_VERSION = 14;
 
 
 const CHARACTER_PORTRAITS = {
@@ -1001,12 +1001,17 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     selectedCharacterId: "ilu",
     selectedCharacterTab: "sheet",
     showCharacterGrid: true,
+    characterRosterFilter: "active",
+    characterRosterActionId: "",
+    newCharacterId: "",
     officeMode: false,
     selectedChronicleId: "judici-acantilado",
     chronicleIndexSearch: "",
     glossaryCategory: "Totes",
     glossaryChronicleIds: [],
     glossarySearch: "",
+    glossarySortOrder: "alphabetical",
+    glossarySortMenuOpen: false,
     selectedGlossaryId: "acantilado-del-silencio",
     editModes: {
       characters: false,

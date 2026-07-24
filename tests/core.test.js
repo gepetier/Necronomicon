@@ -407,6 +407,29 @@ test("storage version 12 removes legacy chronicle and glossary images once", () 
   assert.deepEqual(migrated.chronicles[0].imageAssets, []);
 });
 
+
+test("storage version 13 gives every character an active campaign roster", () => {
+  const legacy = structuredClone(seedData);
+  delete legacy.characters[0].roster;
+  const migrated = migrateStoredState({ version: 12, state: legacy });
+  assert.deepEqual(migrated.characters[0].roster, {
+    status: "active",
+    changedAt: "",
+    changedBy: "",
+  });
+  assert.equal(migrated.ui.characterRosterFilter, "active");
+});
+
+
+test("storage version 14 enables character roster management for the legacy GM roles", () => {
+  const legacy = structuredClone(seedData);
+  legacy.access = { roles: { gm: { editAnyCharacter: true } }, users: {} };
+  const migrated = migrateStoredState({ version: 13, state: legacy });
+  assert.equal(migrated.access.roles.gm.manageCharacters, true);
+  assert.equal(migrated.access.roles.gm.deleteCharacters, true);
+  assert.equal(migrated.access.roles.player.manageCharacters, false);
+});
+
 test("storage seeds Ruth Baskin only for a Baskins Savage Worlds campaign", () => {
   const baskins = migrateStoredState({
     version: DATA_VERSION,

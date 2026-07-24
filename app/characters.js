@@ -171,33 +171,53 @@ export function renderCharactersModule({
   renderPlayerNotesFab,
   canEditCharacter = () => true,
   canEditAnyCharacter = true,
+  canManageCharacters = false,
+  canDeleteCharacter = () => false,
+  getCharacterAssignments = () => [],
 }) {
   if (state.ui.showCharacterGrid) {
     const editableCharacters = state.characters.filter((character) => canEditCharacter(character));
     const officeMode = Boolean(state.ui.officeMode);
+    const activeFilter = ["active", "retired", "dead", "all"].includes(state.ui.characterRosterFilter)
+      ? state.ui.characterRosterFilter
+      : "active";
+    const rosterCounts = state.characters.reduce((counts, character) => {
+      const status = getCharacterRosterStatus(character);
+      counts[status] += 1;
+      return counts;
+    }, { active: 0, retired: 0, dead: 0 });
+    const visibleCharacters = activeFilter === "all"
+      ? state.characters
+      : state.characters.filter((character) => getCharacterRosterStatus(character) === activeFilter);
+    const managementActions = canManageCharacters
+      ? `<button type="button" class="primary character-create-button" data-create-character><span aria-hidden="true">+</span> Personatge</button>`
+      : "";
+    const editorAction = editableCharacters.length
+      ? `<button type="button" class="secondary module-edit-button" data-open-character-editor><span class="module-action-icon">${renderModuleActionIcon("characters")}</span><span>${state.ui.editModes.characters ? "Continua edició" : canEditAnyCharacter ? "Edita fitxes" : "Edita la teva fitxa"}</span></button>`
+      : "";
     rootEl.innerHTML = `
       <section class="module-surface module-surface-characters">
-        <div class="module-section-header">
+        <div class="module-section-header character-roster-header">
           <div class="module-section-copy">
             <p class="eyebrow">${officeMode ? "Projecte actiu" : "Companyia activa"}</p>
             <h3>${officeMode ? "Contactes del projecte" : "Personatges de campanya"}</h3>
-            <p>${officeMode ? "Obre un registre o entra directament a l'editor de la fitxa seleccionada." : "Obre una carta o entra directament a l'editor de la fitxa seleccionada."}</p>
+            <p>${canManageCharacters ? "Gestiona les fitxes, el seu estat de campanya i qui hi té accés." : "Obre una carta o entra directament a l editor de la fitxa seleccionada."}</p>
           </div>
-          ${editableCharacters.length ? `<div class="module-inline-actions">
-            <button type="button" class="secondary module-edit-button" data-open-character-editor>
-              <span class="module-action-icon">${renderModuleActionIcon("characters")}</span>
-              <span>${state.ui.editModes.characters ? "Continua edició" : canEditAnyCharacter ? "Edita fitxes" : "Edita la teva fitxa"}</span>
-            </button>
-          </div>` : ""}
+          <div class="module-inline-actions">${managementActions}${editorAction}</div>
+        </div>
+        <div class="character-roster-toolbar" aria-label="Filtra la companyia">
+          ${renderRosterFilterButton("active", "Actius", rosterCounts.active, activeFilter)}
+          ${renderRosterFilterButton("retired", "Retirats", rosterCounts.retired, activeFilter)}
+          ${renderRosterFilterButton("dead", "Morts", rosterCounts.dead, activeFilter)}
+          ${renderRosterFilterButton("all", "Tots", state.characters.length, activeFilter)}
         </div>
         <div class="character-grid">
-          ${state.characters.map((character) => renderCharacterCard(character, state)).join("")}
+          ${visibleCharacters.length ? visibleCharacters.map((character) => renderCharacterCard(character, state, { canManageCharacters, canDeleteCharacter, assignments: getCharacterAssignments(character.id), accessUsers: state.access?.users || {} })).join("") : `<article class="section-card character-roster-empty"><p>No hi ha personatges en aquest estat.</p></article>`}
         </div>
       </section>
     `;
     return;
   }
-
   const character = getSelectedCharacter();
   if (!character) {
     state.ui.showCharacterGrid = true;
@@ -211,6 +231,9 @@ export function renderCharactersModule({
       renderPlayerNotesFab,
       canEditCharacter,
       canEditAnyCharacter,
+      canManageCharacters,
+      canDeleteCharacter,
+      getCharacterAssignments,
     });
     return;
   }
@@ -391,33 +414,43 @@ export function saveCharacterTab(formData, { getSelectedCharacter, showSaveNotic
   showSaveNotice(`Secció ${characterTabLabel(tab).toLowerCase()} desada`);
 }
 
-function renderCharacterCard(character, state) {
+function renderRosterFilterButton(status, label, count, activeFilter) {
+  return `<button type="button" class="character-roster-filter ${activeFilter === status ? "active" : ""}" data-character-roster-filter="${status}" aria-pressed="${activeFilter === status}">${label}<span>${count}</span></button>`;
+}
+
+function getCharacterRosterStatus(character) {
+  const status = String(character?.roster?.status || "active");
+  return ["active", "retired", "dead"].includes(status) ? status : "active";
+}
+
+function rosterStatusLabel(status) {
+  return ({ active: "Actiu", retired: "Retirat", dead: "Mort" })[status] || "Actiu";
+}
+
+function renderCharacterRosterActions(character, options) {
+  if (!options.canManageCharacters) return "";
+  const status = getCharacterRosterStatus(character);
+  const isOpen = String(options.state.ui.characterRosterActionId || "") === character.id;
+  const assigned = new Set((options.assignments || []).map((value) => String(value).toLowerCase()));
+  const users = Object.entries(options.accessUsers || {});
+  const statusActions = ["active", "retired", "dead"].map((nextStatus) => `<button type="button" class="${status === nextStatus ? "active" : ""}" data-set-character-roster-status="${nextStatus}" data-character-id="${escapeAttribute(character.id)}">${rosterStatusLabel(nextStatus)}</button>`).join("");
+  const userOptions = users.length ? `<div class="character-assignment-users">${users.map(([email, user]) => `<label><input type="checkbox" name="assignmentEmail" value="${escapeAttribute(email)}" ${assigned.has(email.toLowerCase()) ? "checked" : ""} /><span>${escapeHtml(user.name || email)}</span></label>`).join("")}</div><button type="submit" class="secondary">Desa assignació</button>` : `<p class="character-assignment-empty">No hi ha cap usuari de campanya per assignar.</p>`;
+  return `<div class="character-roster-actions" data-character-roster-actions><button type="button" class="character-roster-more" data-toggle-character-roster-actions="${escapeAttribute(character.id)}" aria-expanded="${isOpen}" aria-label="Gestiona ${escapeAttribute(character.name)}" title="Gestiona el personatge">•••</button>${isOpen ? `<div class="character-roster-popover" role="dialog" aria-label="Gestió de ${escapeAttribute(character.name)}"><p class="eyebrow">Estat de campanya</p><div class="character-roster-status-actions">${statusActions}</div><form data-form="character-assignment" class="character-assignment-form"><input type="hidden" name="characterId" value="${escapeAttribute(character.id)}" /><span class="character-assignment-label">Jugadors amb accés</span>${userOptions}</form>${options.canDeleteCharacter(character) ? `<button type="button" class="character-delete-button" data-delete-character="${escapeAttribute(character.id)}">Elimina definitivament</button>` : ""}</div>` : ""}</div>`;
+}
+
+function renderCharacterCard(character, state, options = {}) {
   const hasOverviewDraft = Object.keys(state.ui.drafts.characters.overview[character.id] || {}).length > 0;
   const hasTabDraft = Object.keys(state.ui.drafts.characters.tabs[character.id] || {}).length > 0;
-  const statusPills = [];
-
-  if (hasOverviewDraft || hasTabDraft) {
-    statusPills.push({ label: "Esborrany", tone: "draft" });
-  }
-
-  if (state.ui.editModes.characters && state.ui.selectedCharacterId === character.id) {
-    statusPills.push({ label: "En edició", tone: "editing" });
-  }
-
+  const status = getCharacterRosterStatus(character);
+  const statusPills = [{ label: rosterStatusLabel(status), tone: `roster-${status}` }];
+  if (hasOverviewDraft || hasTabDraft) statusPills.push({ label: "Esborrany", tone: "draft" });
+  if (state.ui.editModes.characters && state.ui.selectedCharacterId === character.id) statusPills.push({ label: "En edició", tone: "editing" });
   return `
-    <article
-      class="character-card"
-      data-character-card="${character.id}"
-      tabindex="0"
-      role="button"
-      aria-label="${escapeAttribute(`Obre la fitxa de ${character.name}`)}"
-      style="${paletteStyle(character.palette)}"
-    >
+    <article class="character-card character-roster-${status}" data-character-card="${character.id}" tabindex="0" role="button" aria-label="${escapeAttribute(`Obre la fitxa de ${character.name}`)}" style="${paletteStyle(character.palette)}">
       ${renderStatusPills(statusPills)}
+      ${renderCharacterRosterActions(character, { ...options, state })}
       <div class="card-portrait ${character.portrait ? "has-image" : ""}" data-mark="${escapeHtml(character.sigil)}">
-        ${character.portrait
-          ? `<img class="portrait-media" ${renderCharacterAssetAttribute(character.portrait)} alt="${escapeAttribute(`Retrat de ${character.name}`)}" loading="lazy" />`
-          : ""}
+        ${character.portrait ? `<img class="portrait-media" ${renderCharacterAssetAttribute(character.portrait)} alt="${escapeAttribute(`Retrat de ${character.name}`)}" loading="lazy" />` : ""}
         <div class="portrait-badge">${escapeHtml(character.sigil)}</div>
       </div>
       <div class="character-card-copy">
@@ -425,15 +458,11 @@ function renderCharacterCard(character, state) {
         <h3>${escapeHtml(character.name)}</h3>
         <p class="character-card-title">${escapeHtml(character.title)}</p>
         <p class="character-card-summary">${escapeHtml(shortText(plainTextFromRichText(character.summary), 124))}</p>
-        <div class="card-tags">
-          <span class="badge">Nivell ${escapeHtml(String(character.level))}</span>
-          <span class="badge">${escapeHtml(shortText(plainTextFromRichText(character.quickNotes), 42))}</span>
-        </div>
+        <div class="card-tags"><span class="badge">Nivell ${escapeHtml(String(character.level))}</span><span class="badge">${escapeHtml(shortText(plainTextFromRichText(character.quickNotes), 42))}</span></div>
       </div>
     </article>
   `;
 }
-
 function getVisibleCharacterTab(tab) {
   return CHARACTER_TABS.includes(tab) ? tab : "sheet";
 }

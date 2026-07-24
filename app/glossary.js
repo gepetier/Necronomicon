@@ -38,14 +38,17 @@ export function renderGlossaryModule({
   const isEditingCurrent = state.ui.editModes.glossary && current && canEditGlossaryEntry(current);
 
   rootEl.innerHTML = `
-    <section class="glossary-shell ${state.ui.notesPanelOpen ? "notes-open" : ""}">
+    <section class="glossary-shell ${state.ui.notesPanelOpen ? "notes-open" : ""} ${state.ui.glossarySortMenuOpen ? "glossary-sort-open" : ""}">
       <div class="glossary-layout ${isEditingCurrent ? "glossary-layout-editing" : ""}">
         <aside class="glossary-nav-panel module-surface">
           <section class="glossary-search-panel">
             <div class="glossary-search-head">
-              <div>
+              <div class="glossary-search-title">
                 <p class="eyebrow">Glossari</p>
-                <h3>Busca i filtra</h3>
+                <div class="glossary-search-title-row">
+                  <h3>Busca i filtra</h3>
+                  ${renderGlossarySortControl(state)}
+                </div>
               </div>
               ${canCreateGlossaryEntry ? `<button type="button" class="secondary glossary-create-button" data-create-glossary>
                 <span class="module-action-icon">${renderModuleActionIcon("create")}</span>
@@ -118,6 +121,61 @@ export function renderGlossaryModule({
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderGlossarySortControl(state) {
+  const sortOrder = state.ui.glossarySortOrder === "story" ? "story" : "alphabetical";
+  const isOpen = state.ui.glossarySortMenuOpen === true;
+  const menuId = "glossary-sort-menu";
+  const options = [
+    { id: "alphabetical", label: "Alfabèticament", description: "De la A a la Z", mark: "A–Z" },
+    { id: "story", label: "Aparició a la història", description: "Segons la primera crònica vinculada", mark: "↳" },
+  ];
+
+  return `
+    <div class="glossary-sort-control" data-glossary-sort-control>
+      <button
+        type="button"
+        class="secondary glossary-sort-button${isOpen ? " is-open" : ""}"
+        data-toggle-glossary-sort
+        aria-label="Ordena les entrades del glossari"
+        aria-expanded="${isOpen ? "true" : "false"}"
+        aria-controls="${menuId}"
+        title="Ordena les entrades"
+      >
+        ${renderGlossarySortIcon()}
+      </button>
+      ${isOpen ? `
+        <div id="${menuId}" class="glossary-sort-popover" role="menu" aria-label="Ordena les entrades">
+          <p class="eyebrow">Ordena les entrades</p>
+          ${options.map((option) => `
+            <button
+              type="button"
+              class="glossary-sort-option${sortOrder === option.id ? " is-active" : ""}"
+              data-glossary-sort-order="${option.id}"
+              role="menuitemradio"
+              aria-checked="${sortOrder === option.id ? "true" : "false"}"
+            >
+              <span class="glossary-sort-option-mark" aria-hidden="true">${option.mark}</span>
+              <span>
+                <strong>${option.label}</strong>
+                <small>${option.description}</small>
+              </span>
+            </button>
+          `).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderGlossarySortIcon() {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M5 6h14M5 12h10M5 18h6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.9"/>
+      <path d="m16 15 3 3 3-3M19 18V6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9"/>
+    </svg>
   `;
 }
 

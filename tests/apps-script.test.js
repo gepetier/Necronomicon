@@ -588,10 +588,10 @@ test("virtual users enforce the complete server-side role matrix", async (t) => 
     assert.equal(harness.readCampaign().campaigns.some((entry) => entry.id === "campaign-c"), true);
   });
 
-  await t.test("gm can edit and publish content but cannot see or replace permissions", () => {
+  await t.test("gm can manage roster content but cannot replace permissions", () => {
     const loaded = requestAs("gm", { action: "loadCampaign" }).response;
     assert.equal(loaded.ok, true);
-    assert.deepEqual(Object.keys(loaded.campaign.campaigns[0].state.access.users), ["gm@example.com"]);
+    assert.deepEqual(Object.keys(loaded.campaign.campaigns[0].state.access.users).sort(), ["admin@example.com", "gm@example.com", "other@example.com", "player@example.com"]);
 
     for (const request of [
       { action: "saveCharacter", campaignId: "campaign-b", character: { id: "hero-b-2", name: "GM edit" } },
@@ -673,6 +673,78 @@ test("virtual users enforce the complete server-side role matrix", async (t) => 
   });
 });
 
+
+
+test("Apps Script lets a GM manage a roster but blocks player escalation and unsafe deletion", () => {
+  const campaign = createCampaignLibrary({
+    usersB: {
+      "gm@example.com": { role: "gm" },
+      "player@example.com": { role: "player", characterIds: ["hero-b"] },
+    },
+  });
+  campaign.campaigns[1].state.chronicles[0].characterIds = ["hero-b"];
+  const harness = createAppsScriptHarness(campaign, { gm: "gm@example.com", player: "player@example.com" });
+  const updated = harness.handleRequest({
+    action: "saveCharacterRoster",
+    idToken: "gm",
+    campaignId: "campaign-b",
+    operationId: "roster-1",
+    characterId: "hero-b-2",
+    roster: { status: "retired" },
+    assignedEmails: ["player@example.com"],
+  });
+  assert.equal(updated.ok, true);
+  const stored = harness.readCampaign().campaigns[1].state;
+  assert.equal(stored.characters.find((character) => character.id === "hero-b-2").roster.status, "retired");
+  assert.deepEqual(stored.access.users["player@example.com"].characterIds.sort(), ["hero-b", "hero-b-2"]);
+
+  const denied = harness.handleRequest({
+    action: "saveCharacterRoster",
+    idToken: "player",
+    campaignId: "campaign-b",
+    operationId: "roster-2",
+    characterId: "hero-b-2",
+    roster: { status: "dead" },
+    assignedEmails: [],
+  });
+  assert.equal(denied.ok, false);
+
+  const protectedDelete = harness.handleRequest({
+    action: "deleteCharacter",
+    idToken: "gm",
+    campaignId: "campaign-b",
+    operationId: "delete-hero-b",
+    itemId: "hero-b",
+  });
+  assert.equal(protectedDelete.ok, false);
+
+  const unassigned = harness.handleRequest({
+    action: "saveCharacterRoster",
+    idToken: "gm",
+    campaignId: "campaign-b",
+    operationId: "roster-3",
+    characterId: "hero-b-2",
+    roster: { status: "retired" },
+    assignedEmails: [],
+  });
+  assert.equal(unassigned.ok, true);
+  const storedReference = harness.handleRequest({
+    action: "saveChronicle",
+    idToken: "gm",
+    campaignId: "campaign-b",
+    operationId: "chronicle-reference",
+    chronicle: { id: "session-assigned", title: "Assigned", content: "[[hero-b-2|Hero B 2]]" },
+  });
+  assert.equal(storedReference.ok, true);
+  const textualDelete = harness.handleRequest({
+    action: "deleteCharacter",
+    idToken: "gm",
+    campaignId: "campaign-b",
+    operationId: "delete-hero-b-2",
+    itemId: "hero-b-2",
+  });
+  assert.equal(textualDelete.ok, false);
+});
 
 test("Apps Script deletes one glossary entry without publishing the full catalog", () => {
   const campaign = createCampaignLibrary({

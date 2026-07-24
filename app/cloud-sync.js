@@ -162,6 +162,26 @@ export async function saveGlossaryEntryToCloud(idToken, entry, campaignId = "", 
   return saveItemToCloud(payload, compactPayload, idToken);
 }
 
+export async function saveCharacterRosterToCloud(idToken, characterId, roster, campaignId = "") {
+  return saveItemToCloud({
+    action: "saveCharacterRoster",
+    ...createAuthPayload(idToken),
+    campaignId,
+    characterId,
+    roster: roster?.roster || {},
+    assignedEmails: Array.isArray(roster?.assignedEmails) ? roster.assignedEmails : [],
+  }, null, idToken);
+}
+
+export async function deleteCharacterFromCloud(idToken, characterId, campaignId = "") {
+  return saveItemToCloud({
+    action: "deleteCharacter",
+    ...createAuthPayload(idToken),
+    campaignId,
+    itemId: characterId,
+  }, null, idToken);
+}
+
 export async function deleteChronicleFromCloud(idToken, chronicleId, campaignId = "") {
   return saveItemToCloud({
     action: "deleteChronicle",

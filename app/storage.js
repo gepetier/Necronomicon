@@ -15,6 +15,8 @@ const DEFAULT_ACCESS = {
     superadmin: {
       editAnyCharacter: true,
       editOwnCharacter: true,
+      manageCharacters: true,
+      deleteCharacters: true,
       editChronicles: true,
       editAssignedChronicles: true,
       editGlossary: true,
@@ -26,6 +28,8 @@ const DEFAULT_ACCESS = {
     gm: {
       editAnyCharacter: true,
       editOwnCharacter: true,
+      manageCharacters: true,
+      deleteCharacters: true,
       editChronicles: true,
       editAssignedChronicles: true,
       editGlossary: true,
@@ -37,6 +41,8 @@ const DEFAULT_ACCESS = {
     player: {
       editAnyCharacter: false,
       editOwnCharacter: true,
+      manageCharacters: false,
+      deleteCharacters: false,
       editChronicles: false,
       editAssignedChronicles: true,
       editGlossary: false,
@@ -152,6 +158,12 @@ export function migrateStoredState(payload) {
 
   if (version < 12) {
     nextState = migrateLegacyChronicleAndGlossaryImages(nextState);
+  }
+  if (version < 13) {
+    nextState = migrateCharacterRoster(nextState);
+  }
+  if (version < 14) {
+    nextState = migrateCharacterRosterPermissions(nextState);
   }
 
   return sanitizeState(nextState);
@@ -796,6 +808,40 @@ function stripLegacyInlineImages(value) {
   return value;
 }
 
+function migrateCharacterRoster(candidate) {
+  const next = structuredClone(candidate);
+  next.characters = Array.isArray(next.characters)
+    ? next.characters.map((character) => ({
+      ...character,
+      roster: sanitizeCharacterRoster(character?.roster),
+    }))
+    : next.characters;
+  next.ui = {
+    ...(next.ui || {}),
+    characterRosterFilter: ["active", "retired", "dead", "all"].includes(next.ui?.characterRosterFilter)
+      ? next.ui.characterRosterFilter
+      : "active",
+    characterRosterActionId: "",
+    newCharacterId: "",
+  };
+  return next;
+}
+
+function migrateCharacterRosterPermissions(candidate) {
+  const next = structuredClone(candidate);
+  const roles = next.access?.roles && typeof next.access.roles === "object" ? next.access.roles : {};
+  next.access = {
+    ...(next.access || {}),
+    roles: {
+      ...roles,
+      superadmin: { ...(roles.superadmin || {}), manageCharacters: true, deleteCharacters: true },
+      gm: { ...(roles.gm || roles.dm || {}), manageCharacters: true, deleteCharacters: true },
+      player: { ...(roles.player || roles.viewer || {}), manageCharacters: false, deleteCharacters: false },
+    },
+  };
+  return next;
+}
+
 function migrateGlossaryImages(candidate) {
   const next = structuredClone(candidate);
   const imageSeedIds = new Set(
@@ -1246,6 +1292,17 @@ function sanitizeCharacter(character, fallback) {
     playerNotes: sanitizePlayerNotes(character?.playerNotes),
     palette: Array.isArray(character?.palette) ? character.palette : characterFallback.palette,
     portrait: sanitizeCharacterPortrait(character, characterFallback),
+    roster: sanitizeCharacterRoster(character?.roster),
+  };
+}
+
+function sanitizeCharacterRoster(roster) {
+  const source = roster && typeof roster === "object" ? roster : {};
+  const status = ["active", "retired", "dead"].includes(source.status) ? source.status : "active";
+  return {
+    status,
+    changedAt: typeof source.changedAt === "string" ? source.changedAt : "",
+    changedBy: typeof source.changedBy === "string" ? source.changedBy : "",
   };
 }
 

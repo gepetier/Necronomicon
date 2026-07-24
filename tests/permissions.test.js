@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   canCreateChronicle,
+  canDeleteCharacter,
+  canManageCharacters,
   canCreateGlossaryEntry,
   canEditCharacter,
   canEditChronicle,
@@ -70,6 +72,8 @@ test("superadmin can manage, publish and edit everything", () => {
   assert.equal(canManageCampaigns(user), true);
   assert.equal(canPublishCampaign(user), true);
   assert.equal(canEditCharacter(user, "any-character"), true);
+  assert.equal(canManageCharacters(user), true);
+  assert.equal(canDeleteCharacter(user, { id: "any-character" }), true);
   assert.equal(canCreateChronicle(user), true);
   assert.equal(canEditChronicle(user, unassignedChronicle), true);
   assert.equal(canCreateGlossaryEntry(user), true);
