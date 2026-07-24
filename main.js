@@ -129,6 +129,7 @@ const glossaryImageUploadsInFlight = new Set();
 const glossaryImageUploadStates = new Map();
 const cloudAssetUploadReplacements = new Map();
 const GLOSSARY_UPLOAD_DEBUG_STORAGE_KEY = "necronomicon-glossary-upload-debug-v1";
+const GLOSSARY_MEDIA_OUTBOX_STORAGE_KEY = "necronomicon-glossary-media-outbox-v1";
 const GLOSSARY_UPLOAD_DEBUG_LIMIT = 80;
 const PLAYER_WELCOME_STORAGE_PREFIX = "necronomicon-player-welcome-v1";
 let glossaryUploadDebugEntries = loadGlossaryUploadDebugEntries();
@@ -291,6 +292,7 @@ function initialize() {
   document.addEventListener("input", handleInput);
   document.addEventListener("change", handleInput);
   window.addEventListener("focus", handleGlossaryFileDialogFocusReturn);
+  window.addEventListener("beforeunload", warnBeforeLeavingUnsyncedGlossaryMedia);
   window.addEventListener("pagehide", flushPendingPersist);
   sidebarToggle?.addEventListener("pointerenter", openSidebarPreview);
   sidebarToggle?.addEventListener("focus", openSidebarPreview);
@@ -1742,6 +1744,7 @@ function selectLoginCampaign(campaignId, options = {}) {
   cloudSession.status = "Preparat per sincronitzar la campanya oberta.";
   openCharactersAfterLogin({ forceWelcome: options.forceWelcome });
   persistStateImmediately({ skipCloud: true });
+  resumeGlossaryMediaOutboxForActiveCampaign();
   renderAuthCampaignSelection([]);
   updateAuthGate();
   render();
@@ -3629,7 +3632,24 @@ function saveGlossary(formData) {
       preserveExistingImageAssets: areStringListsEqual(previousImageAssets, entry.imageAssets),
     }
     : null;
-  showSaveNotice("Entrada desada", { cloud: true, cloudTarget });
+  const pendingAssetCount = countPendingCloudAssets(entry?.imageAssets);
+  if (pendingAssetCount) {
+    const outboxStored = queueGlossaryMediaOutbox(storageGetActiveCampaignMeta().id, entry);
+    appendGlossaryUploadDebug(
+      glossaryId,
+      outboxStored ? "cua Drive" : "cua Drive fallida",
+      outboxStored
+        ? pendingAssetCount + " imatge(s) local(s) pendent(s) de confirmar a Drive."
+        : "No s'ha pogut persistir la cua de recuperacio; no refresquis la pagina fins a la confirmacio de Drive.",
+    );
+  }
+  showSaveNotice(
+    pendingAssetCount ? "Entrada desada localment; pujant imatge a Drive..." : "Entrada desada",
+    { cloud: true, cloudTarget },
+  );
+  if (pendingAssetCount) {
+    scheduleCloudSave(0, { cloudTarget });
+  }
   void migrateEmbeddedAssets({
     announce: false,
     renderParts: currentModuleRenderParts(),
@@ -3807,6 +3827,7 @@ function switchCampaign(campaignId) {
   clearChronicleReturn();
   closeSidebarPreview();
   persistStateImmediately({ skipCloud: true });
+  resumeGlossaryMediaOutboxForActiveCampaign();
   render();
   showSaveNotice(`Campanya oberta: ${storageGetActiveCampaignMeta().name}`);
 }
@@ -3845,6 +3866,7 @@ function switchAccessibleCampaign(campaignId) {
   clearChronicleReturn();
   closeSidebarPreview();
   persistStateImmediately({ skipCloud: true });
+  resumeGlossaryMediaOutboxForActiveCampaign();
   render();
   showSaveNotice(`Campanya oberta: ${target.name}`);
 }
@@ -4106,14 +4128,147 @@ function shouldSkipCloudSync(options = {}) {
   return options.cloud !== true;
 }
 
+function getGlossaryCloudTargetId(target) {
+  if (target?.type !== "glossary") return "";
+  return String(target.entryId || target.entry?.id || "");
+}
+
+function countPendingCloudAssets(value) {
+  return collectAssetTokensFromValue(value).length;
+}
+
+function hasUnsyncedGlossaryMedia() {
+  if (!cloudSession.enabled) return false;
+  if (loadGlossaryMediaOutbox().length > 0) return true;
+  if (glossaryImageUploadsInFlight.size > 0) return true;
+
+  const entryHasPendingMedia = (entry) => countPendingCloudAssets(entry?.imageAssets) > 0;
+  if ((state.glossary || []).some(entryHasPendingMedia)) return true;
+
+  return Object.values(state.ui?.drafts?.glossary || {}).some(entryHasPendingMedia);
+}
+
+function warnBeforeLeavingUnsyncedGlossaryMedia(event) {
+  if (!hasUnsyncedGlossaryMedia()) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+function loadGlossaryMediaOutbox() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(GLOSSARY_MEDIA_OUTBOX_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item && item.campaignId && item.entryId && item.entry)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistGlossaryMediaOutbox(entries) {
+  try {
+    if (entries.length) {
+      localStorage.setItem(GLOSSARY_MEDIA_OUTBOX_STORAGE_KEY, JSON.stringify(entries));
+    } else {
+      localStorage.removeItem(GLOSSARY_MEDIA_OUTBOX_STORAGE_KEY);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function queueGlossaryMediaOutbox(campaignId, entry) {
+  const entryId = String(entry?.id || "");
+  if (!campaignId || !entryId || !countPendingCloudAssets(entry?.imageAssets)) return false;
+
+  const next = loadGlossaryMediaOutbox()
+    .filter((item) => item.campaignId !== campaignId || item.entryId !== entryId);
+  next.push({
+    campaignId,
+    entryId,
+    entry: structuredClone(entry),
+    queuedAt: new Date().toISOString(),
+  });
+  return persistGlossaryMediaOutbox(next);
+}
+
+function clearGlossaryMediaOutbox(campaignId, entryId) {
+  if (!campaignId || !entryId) return;
+  persistGlossaryMediaOutbox(
+    loadGlossaryMediaOutbox()
+      .filter((item) => item.campaignId !== campaignId || item.entryId !== entryId),
+  );
+}
+
+function resumeGlossaryMediaOutboxForActiveCampaign() {
+  const campaignId = storageGetActiveCampaignMeta().id;
+  const pending = loadGlossaryMediaOutbox().filter((item) => item.campaignId === campaignId);
+  if (!pending.length) return 0;
+
+  const targets = [];
+  pending.forEach((item) => {
+    const recovered = structuredClone(item.entry);
+    const existing = findGlossaryEntry(item.entryId);
+    if (existing) {
+      existing.imageAssets = [...new Set([
+        ...(Array.isArray(existing.imageAssets) ? existing.imageAssets : []),
+        ...(Array.isArray(recovered.imageAssets) ? recovered.imageAssets : []),
+      ])];
+    } else {
+      state.glossary.push(recovered);
+    }
+    const entry = findGlossaryEntry(item.entryId);
+    if (!entry) return;
+
+    const target = {
+      type: "glossary",
+      entryId: entry.id,
+      entry,
+      preserveExistingImageAssets: false,
+    };
+    targets.push(target);
+    appendGlossaryUploadDebug(
+      entry.id,
+      "Drive recuperat",
+      "Es repren una pujada pendent despres de refrescar o canviar de campanya.",
+    );
+  });
+
+  if (!targets.length) return 0;
+  storagePersistState(state);
+  targets.forEach((target) => pendingCloudSaveTargets.enqueue(target));
+  if (cloudSession.enabled && cloudSession.ready && cloudSession.idToken) {
+    scheduleCloudQueueDrain(0);
+  }
+  return targets.length;
+}
+
 function scheduleCloudSave(delay = 900, options = {}) {
+  const target = options.cloudTarget || inferCloudSaveTarget();
+  const glossaryId = getGlossaryCloudTargetId(target);
   if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) {
+    if (glossaryId) {
+      appendGlossaryUploadDebug(
+        glossaryId,
+        "Drive pendent",
+        "No s'ha iniciat la pujada: sessio activa=" + (cloudSession.enabled ? "si" : "no") + "; preparada=" + (cloudSession.ready ? "si" : "no") + "; identificada=" + (cloudSession.idToken ? "si" : "no") + ".",
+      );
+    }
     return;
   }
 
-  const target = options.cloudTarget || inferCloudSaveTarget();
-  if (target) pendingCloudSaveTargets.enqueue(target);
+  if (target) {
+    pendingCloudSaveTargets.enqueue(target);
+    if (glossaryId) {
+      appendGlossaryUploadDebug(glossaryId, "Drive en cua", "La sincronitzacio amb Drive esta programada.");
+    }
+  }
 
+  scheduleCloudQueueDrain(delay);
+}
+
+function scheduleCloudQueueDrain(delay = 900) {
   window.clearTimeout(cloudSaveTimer);
   cloudSaveTimer = window.setTimeout(() => {
     cloudSaveTimer = null;
@@ -4152,9 +4307,13 @@ async function pushStateToCloud(options = {}) {
 
   const target = resolveCloudSaveTarget(options.target || inferCloudSaveTarget());
   if (!target) return false;
+  const glossaryId = getGlossaryCloudTargetId(target);
 
   cloudSession.saving = true;
   cloudSession.status = "Desant canvis a Drive...";
+  if (glossaryId) {
+    appendGlossaryUploadDebug(glossaryId, "Drive inici", "S'inicia la sincronitzacio de l'entrada.");
+  }
   render([RENDER_PARTS.notice, RENDER_PARTS.options]);
   try {
     const campaignId = storageGetActiveCampaignMeta().id;
@@ -4199,6 +4358,11 @@ async function pushStateToCloud(options = {}) {
       assetReplacements = prepared.replacements;
       response = await saveChronicleToCloud(cloudSession.idToken, chroniclePayload, campaignId);
     } else if (target.type === "glossary") {
+      appendGlossaryUploadDebug(
+        glossaryId,
+        "Drive prepara",
+        countPendingCloudAssets(target.entry?.imageAssets) + " imatge(s) pendent(s) de transferir.",
+      );
       const prepared = await prepareCloudAssetPayload(target.entry, {
         campaignId,
         targetType: "glossary",
@@ -4226,10 +4390,26 @@ async function pushStateToCloud(options = {}) {
       ? "Canvis enviats a Drive; confirmacio no disponible per mida."
       : getConfirmedCloudSaveStatus(response?.driveFile);
     applyCloudAssetReplacements(assetReplacements);
+    if (glossaryId) {
+      clearGlossaryMediaOutbox(campaignId, glossaryId);
+
+      appendGlossaryUploadDebug(
+        glossaryId,
+        "Drive confirmat",
+        assetReplacements.size + " imatge(s) materialitzada(es) i entrada confirmada a Drive.",
+      );
+      showSaveNotice("Entrada i imatge confirmades a Drive.", { renderParts: [RENDER_PARTS.notice] });
+    }
     return true;
   } catch (error) {
     cloudSession.lastError = error instanceof Error ? error.message : String(error);
     cloudSession.status = cloudSession.lastError;
+    if (glossaryId) {
+      appendGlossaryUploadDebug(glossaryId, "error Drive", cloudSession.lastError);
+      showSaveNotice("La imatge encara no s'ha pujat: " + cloudSession.lastError, {
+        renderParts: [RENDER_PARTS.notice],
+      });
+    }
     return false;
   } finally {
     cloudSession.saving = false;
@@ -4242,6 +4422,7 @@ async function prepareCloudAssetPayload(value, context) {
   if (!records.length) return { payload: value, replacements: new Map() };
 
   const replacements = new Map();
+  const glossaryId = context?.targetType === "glossary" ? context.targetId : "";
   for (const record of records) {
     const source = record.source;
     if (isDriveAssetToken(source)) continue;
@@ -4256,12 +4437,18 @@ async function prepareCloudAssetPayload(value, context) {
 
     let assetRef = cloudAssetUploadReplacements.get(source) || "";
     if (!assetRef) {
+      if (glossaryId) {
+        appendGlossaryUploadDebug(glossaryId, "Drive pujant", "Transferint " + (asset.name || "imatge") + ".");
+      }
       const response = await saveAssetToCloud(cloudSession.idToken, asset, context);
       assetRef = String(response?.assetRef || "");
       if (!assetRef.startsWith("drive-asset://")) {
         throw new Error("Drive no ha retornat una referencia valida per a la imatge.");
       }
       cloudAssetUploadReplacements.set(source, assetRef);
+      if (glossaryId) {
+        appendGlossaryUploadDebug(glossaryId, "Drive actiu", (asset.name || "Imatge") + " desada a Drive.");
+      }
     }
     replacements.set(source, assetRef);
   }
