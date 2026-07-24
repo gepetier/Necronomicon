@@ -165,7 +165,10 @@
               user: authorized.user,
               campaign: authorized.campaign,
               assetBundle: [],
-              assetDiagnostics: getDriveAssetDiagnostics(authorized.campaign),
+              // No inspeccionem cada asset durant l'arrencada: cada consulta a
+              // Drive pot ser lenta i abans retenia el bloqueig global de la
+              // campanya. La revisio es fa explicitament des d'Opcions.
+              assetDiagnostics: [],
               capabilities: getClientCapabilities(),
               driveFile: getCurrentCampaignFileInfo(),
             });

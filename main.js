@@ -2658,10 +2658,10 @@ function renderOptionsModule() {
             ${missingAssetCount ? `<span class="badge warning">${missingAssetCount} imatges Drive no disponibles</span>` : ""}
           </div>
           <div class="options-actions">
-            ${publishEnabled && legacyAssetCount && cloudSession.capabilities?.repairCampaignAssets === true ? `
+            ${publishEnabled && cloudSession.capabilities?.repairCampaignAssets === true ? `
               <button type="button" class="secondary" data-repair-campaign-assets>
                 <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
-                <span>Repara imatges Drive</span>
+                <span>Revisa i repara imatges Drive</span>
               </button>
             ` : ""}
             ${publishEnabled ? `

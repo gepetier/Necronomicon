@@ -5,7 +5,10 @@ export const CLOUD_CONFIG = {
 
 const GOOGLE_IDENTITY_SCRIPT = "https://accounts.google.com/gsi/client";
 const CREDENTIAL_STORAGE_KEY = "necronomicon-google-credential";
-const JSONP_TIMEOUT_MS = 15000;
+// Apps Script pot necessitar uns segons addicionals en un arrencat en fred o
+// mentre espera el bloqueig de la campanya. Les lectures d'actius ja disposen
+// de 30 s; fem servir el mateix marge per a la campanya i les confirmacions.
+const JSONP_TIMEOUT_MS = 30000;
 const JSONP_MAX_PAYLOAD_LENGTH = 7000;
 
 let googleIdentityPromise = null;
@@ -341,13 +344,21 @@ function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const callbackName = `__necronomiconCloudCallback${Date.now()}${jsonpCounter++}`;
     const script = document.createElement("script");
+    let timedOut = false;
     const timeout = window.setTimeout(() => {
-      cleanup();
+      // La resposta JSONP pot arribar just després del límit. Conservem un
+      // callback inert fins que s'executi per evitar un ReferenceError global.
+      timedOut = true;
+      window.clearTimeout(timeout);
+      script.remove();
       reject(new Error("Google Drive no ha respost a temps."));
     }, timeoutMs);
 
     window[callbackName] = (response) => {
       cleanup();
+      if (timedOut) {
+        return;
+      }
       if (!response || response.ok === false) {
         reject(new Error(response?.error || "Resposta no valida de Google Drive."));
         return;
