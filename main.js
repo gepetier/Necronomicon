@@ -4515,7 +4515,12 @@ async function drainCloudSaveQueue() {
     while (pendingCloudSaveTargets.size > 0) {
       const target = pendingCloudSaveTargets.take();
       if (!target) break;
-      if (!(await pushStateToCloud({ target }))) {
+      const result = await pushStateToCloud({ target });
+      if (result !== true) {
+        if (result === "terminal") {
+          allSaved = false;
+          break;
+        }
         pendingCloudSaveTargets.prepend(target);
         allSaved = false;
         cloudSaveRetryTimer = window.setTimeout(() => {
@@ -4646,7 +4651,7 @@ async function pushStateToCloud(options = {}) {
         renderParts: [RENDER_PARTS.notice],
       });
     }
-    return false;
+    return error?.retryable === false ? "terminal" : false;
   } finally {
     cloudSession.saving = false;
     render([RENDER_PARTS.notice, RENDER_PARTS.options]);

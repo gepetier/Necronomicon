@@ -7,6 +7,8 @@ const GOOGLE_IDENTITY_SCRIPT = "https://accounts.google.com/gsi/client";
 const CREDENTIAL_STORAGE_KEY = "necronomicon-google-credential";
 const JSONP_TIMEOUT_MS = 15000;
 const JSONP_MAX_PAYLOAD_LENGTH = 7000;
+const ASSET_CLAIM_TIMEOUT_MS = 20000;
+const ASSET_CLAIM_RETRY_DELAY_MS = 500;
 
 let googleIdentityPromise = null;
 let jsonpCounter = 0;
@@ -221,11 +223,58 @@ export async function saveAssetToCloud(idToken, asset, context = {}) {
       targetId: context.targetId || "",
       asset,
     });
-    return jsonpRequest({ action: "claimAssetUpload", operationId });
+    return claimAssetUploadWithRetry(operationId);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Pujada Drive fallida per "${label}": ${detail}`);
+    const uploadError = new Error(`Pujada Drive fallida per "${label}": ${detail}`);
+    uploadError.retryable = error?.retryable !== false;
+    throw uploadError;
   }
+}
+
+async function claimAssetUploadWithRetry(operationId) {
+  const deadline = Date.now() + ASSET_CLAIM_TIMEOUT_MS;
+  let lastPendingError = null;
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await jsonpRequest({ action: "claimAssetUpload", operationId }, 5000);
+      if (response?.pending !== true) {
+        if (response?.failed === true) {
+          throw createAssetUploadRejectedError(response.error);
+        }
+        return response;
+      }
+      lastPendingError = new Error("Drive encara esta acabant de desar la imatge.");
+    } catch (error) {
+      if (!isAssetClaimPendingError(error)) {
+        throw error;
+      }
+      lastPendingError = error;
+    }
+
+    await delay(ASSET_CLAIM_RETRY_DELAY_MS);
+  }
+
+  const timeoutError = new Error("Drive no ha confirmat la pujada de la imatge abans de 20 segons.");
+  timeoutError.retryable = true;
+  timeoutError.cause = lastPendingError;
+  throw timeoutError;
+}
+
+function isAssetClaimPendingError(error) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /pujada de la imatge no s'ha pogut confirmar/i.test(message);
+}
+
+function createAssetUploadRejectedError(message) {
+  const error = new Error(String(message || "La pujada de la imatge ha estat rebutjada per Drive."));
+  error.retryable = false;
+  return error;
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 export async function loadAssetFromCloud(idToken, assetRef, campaignId = "") {

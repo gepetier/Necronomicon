@@ -129,19 +129,29 @@
         }
 
         if (request.action === "saveAsset") {
-          const current = loadCampaign();
-          const campaignId = normalizeCampaignId(request.campaignId);
-          const targetState = getCampaignStateForId(current, campaignId);
-          const actor = decorateUser(user, targetState.access || current.access);
-          assertCanUploadAsset(actor, current, campaignId, request.targetType, request.targetId);
-          const savedAsset = persistDriveAsset(request.asset, campaignId, request.targetType, request.targetId);
           const operationId = String(request.operationId || "");
-          CacheService.getScriptCache().put(
-            `asset-claim:${operationId}`,
-            JSON.stringify(savedAsset),
-            SESSION_CLAIM_TTL_SECONDS,
-          );
-          return ok({ operationId });
+          const claimCache = CacheService.getScriptCache();
+          try {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            assertCanUploadAsset(actor, current, campaignId, request.targetType, request.targetId);
+            const savedAsset = persistDriveAsset(request.asset, campaignId, request.targetType, request.targetId);
+            claimCache.put(
+              `asset-claim:${operationId}`,
+              JSON.stringify(savedAsset),
+              SESSION_CLAIM_TTL_SECONDS,
+            );
+            return ok({ operationId });
+          } catch (error) {
+            claimCache.put(
+              `asset-claim:${operationId}`,
+              JSON.stringify({ failed: true, error: String(error && error.message || error || "No s'ha pogut pujar la imatge.") }),
+              SESSION_CLAIM_TTL_SECONDS,
+            );
+            throw error;
+          }
         }
 
         if (request.action === "loadAsset") {
@@ -465,7 +475,7 @@
       const cache = CacheService.getScriptCache();
       const claimKey = `asset-claim:${String(request.operationId || "")}`;
       const value = cache.get(claimKey) || "";
-      if (!value) throw new Error("La pujada de la imatge no s'ha pogut confirmar.");
+      if (!value) return ok({ pending: true });
       cache.remove(claimKey);
       return ok(JSON.parse(value));
     }

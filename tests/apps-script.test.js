@@ -320,6 +320,36 @@ test("Apps Script stores glossary images as separate Drive files and serves auth
   assert.equal(loaded.dataUrl, "data:image/png;base64,aW1hdGdl");
 });
 
+test("Apps Script keeps an asset claim pending until the upload has completed", () => {
+  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
+  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
+
+  const pending = harness.handleRequest({ action: "claimAssetUpload", operationId: "not-yet-uploaded" });
+
+  assert.equal(pending.ok, true);
+  assert.equal(pending.pending, true);
+});
+
+test("Apps Script exposes a rejected asset upload to its later claim", () => {
+  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
+  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
+
+  const rejected = harness.handleRequest({
+    action: "saveAsset",
+    idToken: "admin",
+    operationId: "asset-rejected",
+    campaignId: "campaign-a",
+    targetType: "campaign",
+    asset: { name: "not-an-image.txt", mimeType: "text/plain", dataUrl: "data:text/plain;base64,YmFk" },
+  });
+  const claimed = harness.handleRequest({ action: "claimAssetUpload", operationId: "asset-rejected" });
+
+  assert.equal(rejected.ok, false);
+  assert.equal(claimed.ok, true);
+  assert.equal(claimed.failed, true);
+  assert.match(claimed.error, /imatge compatible/);
+});
+
 test("Apps Script exchanges the Google token for an opaque one-time claimed session", () => {
   const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
   const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
