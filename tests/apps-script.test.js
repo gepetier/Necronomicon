@@ -362,6 +362,26 @@ test("Apps Script exchanges the Google token for an opaque one-time claimed sess
   assert.equal(harness.handleRequest({ action: "claimSession", operationId: "claim-1" }).ok, false);
 });
 
+test("Apps Script defers Drive metadata while returning an authenticated campaign session", () => {
+  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
+  campaign.campaigns[0].state.glossary = [{
+    id: "missing-asset",
+    name: "Missing asset",
+    imageAssets: ["drive-asset://missing-file"],
+  }];
+  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
+
+  const initial = harness.handleRequest({ action: "loadCampaign", idToken: "admin" });
+  assert.equal(initial.ok, true);
+  assert.equal(initial.sessionToken, "server-session-token");
+  assert.deepEqual(initial.assetDiagnostics, []);
+  assert.equal(initial.driveFile, null);
+
+  const metadata = harness.handleRequest({ action: "loadCampaignMetadata", idToken: "admin" });
+  assert.equal(metadata.ok, true);
+  assert.deepEqual(metadata.assetDiagnostics, [{ token: "drive-asset://missing-file", status: "missing" }]);
+  assert.equal(metadata.driveFile.id, "campaign-file-id");
+});
 test("Apps Script stores glossary images as Drive files and defers the asset bundle", () => {
   const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
   const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });

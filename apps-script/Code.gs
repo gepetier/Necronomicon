@@ -6,7 +6,7 @@
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
-    const BACKEND_VERSION = "2026-07-24-character-roster";
+    const BACKEND_VERSION = "2026-07-27-world-map-pilot";
     const BACKUP_EVERY_REVISIONS = 20;
     const MAX_BACKUP_FILES = 40;
     const SESSION_TTL_SECONDS = 3600;
@@ -168,17 +168,25 @@
         }
 
         if (request.action === "loadCampaign") {
-          return withCampaignLock(() => {
-            const campaign = loadCampaign();
-            const authorized = createAuthorizedCampaignView(campaign, user);
-            return ok({
-              user: authorized.user,
-              campaign: authorized.campaign,
-              assetBundle: [],
-              assetDiagnostics: getDriveAssetDiagnostics(authorized.campaign),
-              capabilities: getClientCapabilities(),
-              driveFile: getCurrentCampaignFileInfo(),
-            });
+          const campaign = loadCampaign();
+          const authorized = createAuthorizedCampaignView(campaign, user);
+          return ok({
+            user: authorized.user,
+            campaign: authorized.campaign,
+            sessionToken: request.sessionToken ? "" : createSessionForUser(user),
+            assetBundle: [],
+            assetDiagnostics: [],
+            capabilities: getClientCapabilities(),
+            driveFile: null,
+          });
+        }
+
+        if (request.action === "loadCampaignMetadata") {
+          const campaign = loadCampaign();
+          const authorized = createAuthorizedCampaignView(campaign, user);
+          return ok({
+            assetDiagnostics: getDriveAssetDiagnostics(authorized.campaign),
+            driveFile: getCurrentCampaignFileInfo(),
           });
         }
 
@@ -360,6 +368,20 @@
           });
         }
 
+        if (request.action === "saveWorldMap") {
+          return withCampaignLock(() => {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            if (!canManageCampaign(actor)) throw new Error("No tens permisos per actualitzar el mapa de campanya.");
+            updateCampaignStateValue(current, campaignId, "worldMap", normalizeWorldMap(request.worldMap));
+            const driveFile = persistCampaignUnlocked(current, user.email, getCampaignRevision(current), request.operationId);
+            const authorized = createAuthorizedCampaignView(current, user);
+            return ok({ user: authorized.user, campaign: authorized.campaign, capabilities: getClientCapabilities(), driveFile });
+          });
+        }
+
         if (request.action === "saveCharacterRoster") {
           return withCampaignLock(() => {
             const current = loadCampaign();
@@ -455,11 +477,19 @@
 
     function createServerSession(request) {
       const user = verifyGoogleToken(request.idToken || "");
-      const sessionToken = Utilities.getUuid();
-      const cache = CacheService.getScriptCache();
-      cache.put(`session:${sessionToken}`, JSON.stringify(user), SESSION_TTL_SECONDS);
-      cache.put(`session-claim:${String(request.operationId || "")}`, sessionToken, SESSION_CLAIM_TTL_SECONDS);
+      const sessionToken = createSessionForUser(user);
+      CacheService.getScriptCache().put(
+        `session-claim:${String(request.operationId || "")}`,
+        sessionToken,
+        SESSION_CLAIM_TTL_SECONDS,
+      );
       return ok({ operationId: String(request.operationId || "") });
+    }
+
+    function createSessionForUser(user) {
+      const sessionToken = Utilities.getUuid();
+      CacheService.getScriptCache().put(`session:${sessionToken}`, JSON.stringify(user), SESSION_TTL_SECONDS);
+      return sessionToken;
     }
 
     function claimServerSession(request) {
@@ -820,6 +850,44 @@
       }
 
       syncTopLevelCampaignFields(campaign);
+    }
+
+    function updateCampaignStateValue(campaign, campaignId, key, value) {
+      if (!Array.isArray(campaign.campaigns)) {
+        campaign[key] = value;
+        return;
+      }
+      const targetId = resolveCampaignId(campaign, campaignId);
+      if (!targetId) throw new Error("Campanya no trobada per desar el mapa.");
+      const now = new Date().toISOString();
+      let updated = false;
+      campaign.campaigns = campaign.campaigns.map((entry) => {
+        if (!entry || entry.id !== targetId || !entry.state) return entry;
+        updated = true;
+        return {
+          ...entry,
+          updatedAt: now,
+          state: { ...entry.state, meta: { ...(entry.state.meta || {}), updatedAt: now }, [key]: value },
+        };
+      });
+      if (!updated) throw new Error("Campanya no trobada per desar el mapa.");
+      syncTopLevelCampaignFields(campaign);
+    }
+
+    function normalizeWorldMap(value) {
+      if (!value || typeof value !== "object") throw new Error("Mapa de campanya no valid.");
+      const validStatuses = { hidden: true, discovered: true, visited: true };
+      const hexes = Array.isArray(value.hexes) ? value.hexes.slice(0, 300).map((hex) => ({
+        id: String(hex && hex.id || ""),
+        q: Number(hex && hex.q),
+        r: Number(hex && hex.r),
+        status: validStatuses[hex && hex.status] ? hex.status : "hidden",
+        name: String(hex && hex.name || "").slice(0, 120),
+        terrain: String(hex && hex.terrain || "").slice(0, 200),
+        description: String(hex && hex.description || "").slice(0, 4000),
+        chronicleIds: Array.isArray(hex && hex.chronicleIds) ? hex.chronicleIds.map(String).slice(0, 30) : [],
+      })).filter((hex) => Number.isFinite(hex.q) && Number.isFinite(hex.r)) : [];
+      return { id: String(value.id || "world-map").slice(0, 120), title: String(value.title || "Atles de campanya").slice(0, 160), subtitle: String(value.subtitle || "").slice(0, 280), hexes };
     }
 
     function normalizeCharacterRosterStatus(status) {
@@ -1629,6 +1697,8 @@
         preserveExistingImageAssets: true,
         driveAssetFiles: true,
         characterRosterManagement: true,
+        worldMapManagement: true,
+        deferredCampaignMetadata: true,
       };
     }
 

@@ -1030,6 +1030,7 @@ function sanitizeState(candidate) {
   safe.glossary = Array.isArray(candidate.glossary) && candidate.glossary.length
     ? candidate.glossary.map((entry, index) => sanitizeGlossary(entry, seedData.glossary[index] || seedData.glossary[0]))
     : safe.glossary;
+  safe.worldMap = sanitizeWorldMap(candidate.worldMap, safe.meta.id);
   safe.access = sanitizeAccess(candidate.access);
   safe.ui = {
     ...safe.ui,
@@ -1074,6 +1075,34 @@ function sanitizeState(candidate) {
   }
 
   return safe;
+}
+
+function sanitizeWorldMap(candidate, campaignId) {
+  const fallback = campaignId === DEFAULT_CAMPAIGN_ID ? structuredClone(seedData.worldMap) : null;
+  if (!candidate || typeof candidate !== "object") return fallback;
+
+  const validStatuses = new Set(["hidden", "discovered", "visited"]);
+  const hexes = Array.isArray(candidate.hexes)
+    ? candidate.hexes
+      .map((hex) => ({
+        id: String(hex?.id || `${hex?.q}:${hex?.r}`),
+        q: Number(hex?.q),
+        r: Number(hex?.r),
+        status: validStatuses.has(hex?.status) ? hex.status : "hidden",
+        name: String(hex?.name || ""),
+        terrain: String(hex?.terrain || ""),
+        description: String(hex?.description || ""),
+        chronicleIds: Array.isArray(hex?.chronicleIds) ? hex.chronicleIds.map(String) : [],
+      }))
+      .filter((hex) => Number.isFinite(hex.q) && Number.isFinite(hex.r))
+    : (fallback?.hexes || []);
+
+  return {
+    id: String(candidate.id || fallback?.id || "world-map"),
+    title: String(candidate.title || fallback?.title || "Atles de campanya"),
+    subtitle: String(candidate.subtitle || fallback?.subtitle || ""),
+    hexes,
+  };
 }
 
 function withBaskinsSeedCharacter(state) {

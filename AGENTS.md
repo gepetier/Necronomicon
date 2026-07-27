@@ -9,6 +9,8 @@ Fitxers principals: `main.js` (orquestració/UI), `styles.css` (estils), `data.j
 ## Comandes
 
 - `npm.cmd run dev`: Vite a `5173`; reutilitza'l si ja està actiu.
+- Google OAuth only permits `http://localhost:5173`: never use `127.0.0.1` or Vite fallback ports (`5174+`). If `5173` is unavailable, stop this project's Vite processes, check IPv4 and IPv6 listeners, and wait for that port to be released before testing.
+- Before local OAuth testing, verify that this exact origin is registered under Authorized JavaScript origins for the configured Google OAuth Client ID. Deploying `Code.gs` does not configure OAuth origins.
 - `npm.cmd run verify:fast`: build + unitats.
 - `npm.cmd run qa:smoke`: regressió curta i captures.
 - `npm.cmd run qa:functional`, `qa:ui`, `qa:edit`, `qa:persistence`: suites dirigides.

@@ -5,7 +5,9 @@ export const CLOUD_CONFIG = {
 
 const GOOGLE_IDENTITY_SCRIPT = "https://accounts.google.com/gsi/client";
 const CREDENTIAL_STORAGE_KEY = "necronomicon-google-credential";
-const JSONP_TIMEOUT_MS = 15000;
+// Apps Script can take longer than 15 seconds immediately after a deployment
+// or a cold start. Keep the callback alive long enough for that first load.
+const JSONP_TIMEOUT_MS = 45000;
 const JSONP_MAX_PAYLOAD_LENGTH = 7000;
 const ASSET_CLAIM_TIMEOUT_MS = 20000;
 const ASSET_CLAIM_RETRY_DELAY_MS = 500;
@@ -13,6 +15,14 @@ const ASSET_CLAIM_RETRY_DELAY_MS = 500;
 let googleIdentityPromise = null;
 let jsonpCounter = 0;
 let serverSessionToken = "";
+
+function recordCloudStartupProfile(stage, startedAt, details = {}) {
+  if (typeof window.__necronomiconRecordStartupProfile !== "function") return;
+  window.__necronomiconRecordStartupProfile(stage, {
+    elapsedMs: Date.now() - startedAt,
+    ...details,
+  });
+}
 
 export function getStoredCredential() {
   const credential = window.sessionStorage.getItem(CREDENTIAL_STORAGE_KEY) || "";
@@ -113,9 +123,19 @@ export function promptGoogleSignIn() {
 }
 
 export async function loadCampaignFromCloud(idToken) {
-  await establishServerSession(idToken);
-  return jsonpRequest({
+  const startedAt = Date.now();
+  const response = await jsonpRequest({
     action: "loadCampaign",
+    ...createAuthPayload(idToken),
+  });
+  serverSessionToken = String(response?.sessionToken || serverSessionToken || "");
+  recordCloudStartupProfile("load-campaign-jsonp-complete", startedAt);
+  return response;
+}
+
+export async function loadCampaignMetadataFromCloud(idToken) {
+  return jsonpRequest({
+    action: "loadCampaignMetadata",
     ...createAuthPayload(idToken),
   });
 }
@@ -162,6 +182,15 @@ export async function saveGlossaryEntryToCloud(idToken, entry, campaignId = "", 
     ? createGlossaryEntryPayloadWithoutImages(payload)
     : null;
   return saveItemToCloud(payload, compactPayload, idToken);
+}
+
+export async function saveWorldMapToCloud(idToken, worldMap, campaignId = "") {
+  return saveItemToCloud({
+    action: "saveWorldMap",
+    ...createAuthPayload(idToken),
+    campaignId,
+    worldMap,
+  }, null, idToken);
 }
 
 export async function saveCharacterRosterToCloud(idToken, characterId, roster, campaignId = "") {
@@ -373,8 +402,12 @@ async function establishServerSession(idToken) {
   if (serverSessionToken || !idToken) return serverSessionToken;
   const operationId = createOperationId();
   try {
+    const postStartedAt = Date.now();
     await postWithoutCors({ action: "createSession", idToken, operationId });
+    recordCloudStartupProfile("create-session-post-complete", postStartedAt);
+    const claimStartedAt = Date.now();
     const response = await jsonpRequest({ action: "claimSession", operationId });
+    recordCloudStartupProfile("claim-session-jsonp-complete", claimStartedAt);
     serverSessionToken = String(response?.sessionToken || "");
   } catch {
     serverSessionToken = "";

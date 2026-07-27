@@ -32,6 +32,9 @@ import {
   saveGlossary as saveGlossaryEntry,
 } from "./app/glossary.js";
 import {
+  renderWorldMapModule as renderWorldMapView,
+} from "./app/world-map.js";
+import {
   escapeAttribute,
   escapeHtml,
   formatShortDate,
@@ -99,6 +102,7 @@ import {
   getStoredCredential,
   isCredentialUsable,
   loadCampaignFromCloud,
+  loadCampaignMetadataFromCloud,
   loadAssetFromCloud,
   loadGoogleIdentity,
   promptGoogleSignIn,
@@ -110,6 +114,7 @@ import {
   saveCharacterRosterToCloud,
   saveChronicleToCloud,
   saveGlossaryEntryToCloud,
+  saveWorldMapToCloud,
   storeCredential,
 } from "./app/cloud-sync.js";
 import { createCloudSaveQueue } from "./app/cloud-save-queue.js";
@@ -146,6 +151,7 @@ const saveNoticeEl = document.querySelector("#saveNotice");
 const charactersModule = document.querySelector("#charactersModule");
 const chroniclesModule = document.querySelector("#chroniclesModule");
 const glossaryModule = document.querySelector("#glossaryModule");
+const mapModule = document.querySelector("#mapModule");
 const campaignsModule = document.querySelector("#campaignsModule");
 const optionsModule = document.querySelector("#optionsModule");
 const sidebarContextPanel = document.querySelector("#sidebarContextPanel");
@@ -180,6 +186,78 @@ const IMAGE_OPTIMIZATION_OPTIONS = {
 const runtimeParams = new URLSearchParams(window.location.search);
 const authPreviewMode = runtimeParams.has("authPreview");
 const qaMode = runtimeParams.has("qaRun") || runtimeParams.has("captureRun");
+const startupProfileEnabled = true;
+const startupProfileStartedAt = Date.now();
+const startupProfile = [];
+const startupProfileId = [startupProfileStartedAt, Math.random().toString(36).slice(2)].join("-");
+const STARTUP_PROFILE_STORAGE_KEY = "necronomicon-startup-profile";
+const STARTUP_PROFILE_LOG_LIMIT = 8;
+
+function recordStartupProfile(stage, details = {}) {
+  if (!startupProfileEnabled) return;
+  const entry = { stage, atMs: Date.now() - startupProfileStartedAt, ...details };
+  startupProfile.push(entry);
+  document.documentElement.dataset.startupProfile = JSON.stringify(startupProfile);
+  console.info("[Necronomicon startup]", entry);
+  if (["campaign-ready", "campaign-load-failed"].includes(stage)) persistStartupProfile();
+}
+
+window.__necronomiconRecordStartupProfile = recordStartupProfile;
+recordStartupProfile("module-loaded");
+
+function persistStartupProfile() {
+  try {
+    const existing = JSON.parse(window.localStorage.getItem(STARTUP_PROFILE_STORAGE_KEY) || "[]");
+    const history = Array.isArray(existing) ? existing : [];
+    const record = { id: startupProfileId, capturedAt: new Date().toISOString(), entries: startupProfile };
+    const index = history.findIndex((entry) => entry?.id === startupProfileId);
+    if (index >= 0) history[index] = record;
+    else history.unshift(record);
+    window.localStorage.setItem(STARTUP_PROFILE_STORAGE_KEY, JSON.stringify(history.slice(0, STARTUP_PROFILE_LOG_LIMIT)));
+  } catch { /* The log is auxiliary. */ }
+}
+
+const STARTUP_STAGE_LABELS = {
+  "module-loaded": "Mòdul carregat",
+  "initialize-start": "Inicialització local",
+  "local-rendered": "Interfície local pintada",
+  "cloud-session-start": "Autenticació iniciada",
+  "google-identity-loaded": "Google Identity disponible",
+  "stored-credential-found": "Sessió local recuperada",
+  "campaign-load-start": "Lectura de campanya iniciada",
+  "load-campaign-jsonp-complete": "Resposta remota rebuda",
+  "campaign-response-received": "Dades de campanya rebudes",
+  "asset-bundle-localized": "Paquet d'actius aplicat",
+  "cloud-state-persisted": "Còpia local actualitzada",
+  "campaign-ready": "Campanya disponible",
+  "background-media-migration-finished": "Migració de mitjans en segon pla",
+  "background-publish-finished": "Publicació inicial en segon pla",
+  "background-metadata-finished": "Metadades de Drive actualitzades",
+  "campaign-load-failed": "Arrencada fallida",
+};
+
+function getLatestStartupProfile() {
+  try {
+    const history = JSON.parse(window.localStorage.getItem(STARTUP_PROFILE_STORAGE_KEY) || "[]");
+    const profile = Array.isArray(history) ? history[0] : null;
+    return Array.isArray(profile?.entries) && profile.entries.length ? profile : null;
+  } catch { return null; }
+}
+
+function formatStartupDuration(value) {
+  const milliseconds = Math.max(0, Number(value) || 0);
+  return milliseconds >= 1000 ? `${(milliseconds / 1000).toFixed(milliseconds >= 10000 ? 1 : 2)} s` : `${Math.round(milliseconds)} ms`;
+}
+
+function renderStartupProfileCard() {
+  const profile = getLatestStartupProfile();
+  if (!profile) return `<article class="section-card options-card startup-profile-card"><div class="options-card-copy"><p class="eyebrow">Log d'arrencada</p><h3>Encara no hi ha cap entrada</h3><p>El compendi desa automàticament les fases de cada inici de sessió.</p></div></article>`;
+  const entries = profile.entries;
+  const completed = entries.find((entry) => ["campaign-ready", "campaign-load-failed"].includes(entry.stage));
+  const total = completed?.atMs ?? entries[entries.length - 1]?.atMs ?? 0;
+  const rows = entries.map((entry) => `<div><dt>${escapeHtml(STARTUP_STAGE_LABELS[entry.stage] || entry.stage)}</dt><dd>${escapeHtml(formatStartupDuration(entry.atMs))}</dd></div>`).join("");
+  return `<article class="section-card options-card startup-profile-card"><div class="options-card-copy"><p class="eyebrow">Log d'arrencada</p><h3>Darrera arrencada</h3><p>Registre automàtic de les fases executades. Els processos en segon pla poden aparèixer després d'haver obert la campanya.</p></div><div class="options-stat-list"><span class="badge">Disponible en: ${escapeHtml(formatStartupDuration(total))}</span></div><details class="options-diagnostics"><summary>Veure el registre</summary><dl>${rows}</dl></details></article>`;
+}
 const AUTH_FEEDBACK = {
   booting: {
     action: "Carregant el client de login i preparant Google Identity.",
@@ -191,7 +269,7 @@ const AUTH_FEEDBACK = {
   },
   openingSignIn: {
     action: "L'usuari ha premut el segell i s'obre el flux de login.",
-    text: "Algú et mira desde l'abisme",
+    text: "AlgÃƒÂº et mira desde l'abisme",
   },
   missingCredential: {
     action: "Google no ha retornat cap credencial despres del login.",
@@ -214,7 +292,7 @@ const AUTH_FEEDBACK = {
     text: "Preparant la primera ofrena.",
   },
   campaignReady: {
-    action: "La campanya ja esta carregada i es pot obrir la interfície.",
+    action: "La campanya ja esta carregada i es pot obrir la interfÃƒÂ­cie.",
     text: "El llibre s'obre.",
   },
 };
@@ -251,6 +329,7 @@ const RENDER_PARTS = {
   characters: "characters",
   chronicles: "chronicles",
   glossary: "glossary",
+  map: "map",
   campaigns: "campaigns",
   options: "options",
   themes: "themes",
@@ -260,6 +339,7 @@ const OFFICE_NAV_LABELS = {
   characters: "Contactes",
   chronicles: "Documents",
   glossary: "Referencies",
+  map: "Atles",
   campaigns: "Arxius",
   options: "Configuracio",
 };
@@ -267,6 +347,7 @@ const DEFAULT_NAV_LABELS = {
   characters: "Personatges",
   chronicles: "Croniques",
   glossary: "Glossari",
+  map: "Mapa",
   campaigns: "Campanyes",
   options: "Opcions",
 };
@@ -276,6 +357,7 @@ const FULL_RENDER_PARTS = [
   RENDER_PARTS.characters,
   RENDER_PARTS.chronicles,
   RENDER_PARTS.glossary,
+  RENDER_PARTS.map,
   RENDER_PARTS.campaigns,
   RENDER_PARTS.options,
   RENDER_PARTS.themes,
@@ -285,6 +367,7 @@ const FULL_RENDER_PARTS = [
 initialize();
 
 function initialize() {
+  recordStartupProfile("initialize-start");
   ensureUiStateShape();
   applyCaptureUserOverride();
 
@@ -304,6 +387,7 @@ function initialize() {
   sidebar?.addEventListener("pointerleave", closeSidebarPreview);
 
   render();
+  recordStartupProfile("local-rendered");
   installQaHooks();
   void migrateEmbeddedAssets({ announce: false });
   void initializeCloudSession();
@@ -418,6 +502,7 @@ function handleClick(event) {
     return;
   }
 
+
   if (event.target.closest("[data-cloud-publish]")) {
     if (!canPublishCampaign()) {
       denyPermission("No tens permisos per publicar tota la campanya.");
@@ -516,6 +601,31 @@ function handleClick(event) {
     }
     clearChronicleReturn();
     persistAndRender();
+    return;
+  }
+
+  const mapStatusButton = event.target.closest("[data-map-hex-status]");
+  if (mapStatusButton) {
+    updateMapHexStatus(mapStatusButton.dataset.mapHexKey || "", mapStatusButton.dataset.mapHexStatus || "");
+    return;
+  }
+
+  const mapHex = event.target.closest("[data-map-hex]");
+  if (mapHex) {
+    state.ui.selectedMapHexId = mapHex.dataset.mapHex || "0:0";
+    persistAndRender([RENDER_PARTS.notice, RENDER_PARTS.map]);
+    return;
+  }
+
+  const mapChronicle = event.target.closest("[data-map-chronicle]");
+  if (mapChronicle) {
+    const chronicleId = mapChronicle.dataset.mapChronicle || "";
+    if (state.chronicles.some((chronicle) => chronicle.id === chronicleId)) {
+      state.ui.currentModule = "chronicles";
+      state.ui.selectedChronicleId = chronicleId;
+      state.ui.showChronicleLanding = false;
+      persistAndRender();
+    }
     return;
   }
 
@@ -995,6 +1105,11 @@ function handleKeydown(event) {
 
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
+    const mapHex = target instanceof SVGElement ? target.closest("[data-map-hex]") : null;
+    if (mapHex && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      mapHex.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
     return;
   }
 
@@ -1023,7 +1138,7 @@ function handleKeydown(event) {
     return;
   }
 
-  const actionableCard = target.closest("[data-character-card], [data-chronicle-id], [data-glossary-id]");
+  const actionableCard = target.closest("[data-character-card], [data-chronicle-id], [data-glossary-id], [data-map-hex]");
   if (!actionableCard) {
     return;
   }
@@ -1454,6 +1569,9 @@ function render(parts = FULL_RENDER_PARTS) {
   if (renderSet.has(RENDER_PARTS.glossary)) {
     renderGlossaryModule();
   }
+  if (renderSet.has(RENDER_PARTS.map)) {
+    renderWorldMapModule();
+  }
   if (renderSet.has(RENDER_PARTS.campaigns)) {
     renderCampaignsModule();
   }
@@ -1481,6 +1599,7 @@ function getRenderedRoots(renderSet) {
   if (renderSet.has(RENDER_PARTS.characters) && charactersModule) roots.push(charactersModule);
   if (renderSet.has(RENDER_PARTS.chronicles) && chroniclesModule) roots.push(chroniclesModule);
   if (renderSet.has(RENDER_PARTS.glossary) && glossaryModule) roots.push(glossaryModule);
+  if (renderSet.has(RENDER_PARTS.map) && mapModule) roots.push(mapModule);
   if (renderSet.has(RENDER_PARTS.campaigns) && campaignsModule) roots.push(campaignsModule);
   if (renderSet.has(RENDER_PARTS.options) && optionsModule) roots.push(optionsModule);
   return roots.length ? [...new Set(roots)] : [document.body];
@@ -1502,10 +1621,10 @@ function applyOfficeVocabulary(roots = [document.body]) {
     [/campanya/g, "projecte"],
     [/Personatges/g, "Contactes"],
     [/personatges/g, "contactes"],
-    [/Cròniques|Croniques/g, "Documents"],
-    [/cròniques|croniques/g, "documents"],
-    [/Crònica|Cronica/g, "Document"],
-    [/crònica|cronica/g, "document"],
+    [/CrÃƒÂ²niques|Croniques/g, "Documents"],
+    [/crÃƒÂ²niques|croniques/g, "documents"],
+    [/CrÃƒÂ²nica|Cronica/g, "Document"],
+    [/crÃƒÂ²nica|cronica/g, "document"],
     [/Glossari/g, "Referencies"],
     [/glossari/g, "referencies"],
     [/Compendi/g, "Espai de treball"],
@@ -1598,6 +1717,7 @@ function toggleOfficeMode() {
 }
 
 async function initializeCloudSession() {
+  recordStartupProfile("cloud-session-start");
   if (!cloudSession.enabled) {
     updateAuthGate();
     return;
@@ -1631,12 +1751,14 @@ async function initializeCloudSession() {
   updateAuthFeedback("booting");
   try {
     await loadGoogleIdentity();
+    recordStartupProfile("google-identity-loaded");
     renderGoogleButton(googleSignInButton, (response) => {
       void handleGoogleCredential(response?.credential || "");
     });
 
     const storedCredential = getStoredCredential();
     if (isCredentialUsable(storedCredential)) {
+      recordStartupProfile("stored-credential-found");
       await handleGoogleCredential(storedCredential, { silent: true });
       return;
     }
@@ -1644,6 +1766,7 @@ async function initializeCloudSession() {
     clearStoredCredential();
     cloudSession.ready = false;
     updateAuthFeedback("waitingForSignIn");
+    recordStartupProfile("waiting-for-google-sign-in");
     promptGoogleSignIn();
   } catch (error) {
     cloudSession.ready = false;
@@ -1672,12 +1795,15 @@ async function handleGoogleCredential(credential, options = {}) {
   updateAuthFeedback(options.silent ? "restoringSession" : "loadingCampaign");
   cloudSession.awaitingServer = true;
   updateAuthGate();
+  recordStartupProfile("campaign-load-start", { silent: Boolean(options.silent) });
 
   try {
     const response = await loadCampaignFromCloud(credential);
+    recordStartupProfile("campaign-response-received");
     const localBeforeCloud = state;
     const localCatalogBeforeCloud = storageGetCampaignCatalog();
     const localizedCampaign = await localizeDriveAssetBundle(response.campaign, response.assetBundle);
+    recordStartupProfile("asset-bundle-localized");
     const cloudHasCampaignCatalog = Array.isArray(localizedCampaign?.campaigns);
     const cloudState = storageMigrateStoredState({
       version: response.version || 0,
@@ -1712,14 +1838,14 @@ async function handleGoogleCredential(credential, options = {}) {
     cloudSession.lastError = "";
     ensureUiStateShape();
     persistStateImmediately({ skipCloud: true });
-    const migratedEmbeddedAssets = await migrateEmbeddedAssets({ announce: false });
+    recordStartupProfile("cloud-state-persisted");
     updateAuthFeedback(shouldSeedCloud ? "firstPublish" : "campaignReady");
     prepareCampaignSelectionAfterLogin();
-    if ((shouldSeedCloud || migratedEmbeddedAssets) && canPublishCampaign()) {
-      await pushStateToCloud({ target: { type: "campaign" } });
-      cloudSession.pendingInitialPublish = false;
-    }
+    recordStartupProfile("campaign-ready");
+    void refreshCampaignMetadata();
+    void completeDeferredStartupTasks(shouldSeedCloud);
   } catch (error) {
+    recordStartupProfile("campaign-load-failed", { error: error instanceof Error ? error.message : String(error) });
     clearStoredCredential();
     cloudSession.idToken = "";
     cloudSession.user = null;
@@ -1731,6 +1857,36 @@ async function handleGoogleCredential(credential, options = {}) {
   }
 }
 
+async function refreshCampaignMetadata() {
+  if (!cloudSession.idToken) return;
+  try {
+    const response = await loadCampaignMetadataFromCloud(cloudSession.idToken);
+    cloudSession.assetDiagnostics = Array.isArray(response.assetDiagnostics) ? response.assetDiagnostics : [];
+    cloudSession.driveFile = response.driveFile || cloudSession.driveFile;
+    if (state.ui.currentModule === "options") render([RENDER_PARTS.options]);
+  } catch (error) {
+    console.warn("No s'ha pogut actualitzar la diagnosi de Drive en segon pla.", error);
+  } finally {
+    recordStartupProfile("background-metadata-finished");
+    persistStartupProfile();
+  }
+}
+
+async function completeDeferredStartupTasks(shouldSeedCloud) {
+  try {
+    const migratedEmbeddedAssets = await migrateEmbeddedAssets({ announce: false });
+    recordStartupProfile("background-media-migration-finished", { migrated: Boolean(migratedEmbeddedAssets) });
+    if ((shouldSeedCloud || migratedEmbeddedAssets) && canPublishCampaign()) {
+      await pushStateToCloud({ target: { type: "campaign" } });
+      cloudSession.pendingInitialPublish = false;
+      recordStartupProfile("background-publish-finished");
+    }
+  } catch (error) {
+    console.warn("No s'ha pogut completar el manteniment d'arrencada en segon pla.", error);
+  } finally {
+    persistStartupProfile();
+  }
+}
 function stateHasUnmaterializedCloudMedia(candidate) {
   const payload = storageCreateCloudCampaignPayload(stripTransientUiState(candidate));
   return collectMediaSourceRecordsFromValue(payload)
@@ -1918,19 +2074,19 @@ function renderPlayerWelcome() {
     <div class="player-welcome-copy">
       <p class="eyebrow">Benvingut a ${escapeHtml(campaign.name)}</p>
       <h2 id="playerWelcomeTitle" style="--welcome-name-size:${characterNameSize}">${escapeHtml(character.name)}</h2>
-      <p class="player-welcome-role">${escapeHtml([character.lineage, character.className].filter(Boolean).join(" · "))}</p>
+      <p class="player-welcome-role">${escapeHtml([character.lineage, character.className].filter(Boolean).join(" Ã‚Â· "))}</p>
       <p class="player-welcome-summary">${escapeHtml(character.summary || character.quickNotes || "La teva historia comenca aqui.")}</p>
     </div>
     <div class="player-welcome-footer">
       ${latestChronicle ? `
         <div class="player-welcome-context">
-          <span>Darrera crònica relacionada</span>
+          <span>Darrera crÃƒÂ²nica relacionada</span>
           <strong>${escapeHtml(latestChronicle.chapter || latestChronicle.title)}</strong>
           <small>${escapeHtml(latestChronicle.title || latestChronicle.summary || "")}</small>
         </div>
       ` : `<div class="player-welcome-context"><span>La teva campanya</span><strong>${escapeHtml(campaign.name)}</strong></div>`}
       <div class="player-welcome-actions">
-        ${latestChronicle ? `<button type="button" class="secondary" data-open-player-chronicle>Repassa la crònica</button>` : ""}
+        ${latestChronicle ? `<button type="button" class="secondary" data-open-player-chronicle>Repassa la crÃƒÂ²nica</button>` : ""}
         <button type="button" class="primary" data-enter-player-character>Entra com ${escapeHtml(character.name)}</button>
       </div>
     </div>
@@ -2172,6 +2328,9 @@ function currentModuleRenderParts() {
   if (state.ui.currentModule === "glossary") {
     return [RENDER_PARTS.notice, RENDER_PARTS.glossary, RENDER_PARTS.themes, RENDER_PARTS.assets];
   }
+  if (state.ui.currentModule === "map") {
+    return [RENDER_PARTS.notice, RENDER_PARTS.map, RENDER_PARTS.themes, RENDER_PARTS.assets];
+  }
 
   if (state.ui.currentModule === "campaigns") {
     return [RENDER_PARTS.notice, RENDER_PARTS.campaigns, RENDER_PARTS.themes, RENDER_PARTS.assets];
@@ -2377,6 +2536,16 @@ function renderGlossaryModule() {
   });
 }
 
+function renderWorldMapModule() {
+  if (!mapModule) return;
+  renderWorldMapView({
+    state,
+    rootEl: mapModule,
+    findChronicle: (id) => state.chronicles.find((chronicle) => chronicle.id === id) || null,
+    canManageWorldMap: canPublishCampaign(),
+  });
+}
+
 function renderCampaignsModule() {
   if (!campaignsModule) {
     return;
@@ -2509,7 +2678,7 @@ function renderCampaignInvitePanel(campaign) {
     : null;
   const characterOptions = state.characters.map((character) => `
     <option value="${escapeAttribute(character.id)}" ${createdInvite?.characterId === character.id ? "selected" : ""}>
-      ${escapeHtml(character.name)} · ${escapeHtml(character.className || character.title || "Personatge")}
+      ${escapeHtml(character.name)} Ã‚Â· ${escapeHtml(character.className || character.title || "Personatge")}
     </option>
   `).join("");
 
@@ -2688,6 +2857,8 @@ function renderOptionsModule() {
             </dl>
           </details>
         </article>
+
+        ${renderStartupProfileCard()}
 
         ${publishEnabled || campaignsEditable ? `
           <article class="section-card options-card">
@@ -2869,7 +3040,7 @@ function renderCampaignAccessSummary(activeMeta, currentUserAccess) {
 function renderAccessSummary(currentUserAccess) {
   const permissions = currentUserAccess.permissions || {};
   const granted = [
-    permissions.manageCharacters ? "Gestió de personatges" : permissions.editAnyCharacter || permissions.editOwnCharacter ? "Fitxes assignades" : "",
+    permissions.manageCharacters ? "GestiÃƒÂ³ de personatges" : permissions.editAnyCharacter || permissions.editOwnCharacter ? "Fitxes assignades" : "",
     permissions.editChronicles ? "Totes les croniques" : permissions.editAssignedChronicles ? "Croniques assignades" : "",
     permissions.editGlossary ? "Tot el glossari" : permissions.editAssignedGlossary ? "Glossari assignat" : "",
     permissions.publishCampaign ? "Publicacio de campanya" : "",
@@ -3143,7 +3314,7 @@ function createCharacter() {
   state.ui.characterRosterActionId = "";
   clearCharacterDrafts(id);
   persistAndRender();
-  showSaveNotice("Fitxa nova preparada. Es pujarà a Drive quan la desis.");
+  showSaveNotice("Fitxa nova preparada. Es pujarÃƒÂ  a Drive quan la desis.");
 }
 
 function updateCharacterRosterStatus(characterId, status) {
@@ -3189,7 +3360,7 @@ function saveCharacterAssignment(formData) {
   state.access = normalizeAccessShape({ ...access, users });
   state.ui.characterRosterActionId = "";
   persistAndRender(FULL_RENDER_PARTS, { cloud: true, cloudTarget: { type: "characterRoster", characterId } });
-  showSaveNotice("Assignació de jugadors desada", { cloud: true, cloudTarget: { type: "characterRoster", characterId } });
+  showSaveNotice("AssignaciÃƒÂ³ de jugadors desada", { cloud: true, cloudTarget: { type: "characterRoster", characterId } });
 }
 
 function getCharacterDeletionBlockers(characterId) {
@@ -3213,15 +3384,15 @@ function deleteCharacter(characterId) {
   const blockers = getCharacterDeletionBlockers(characterId);
   const messages = [
     blockers.assigned.length ? `${blockers.assigned.length} jugador(s) assignat(s)` : "",
-    blockers.chronicles.length ? `${blockers.chronicles.length} crònica/ques relacionada/es` : "",
+    blockers.chronicles.length ? `${blockers.chronicles.length} crÃƒÂ²nica/ques relacionada/es` : "",
     blockers.glossary.length ? `${blockers.glossary.length} entrada/des de glossari relacionada/es` : "",
-    blockers.references.length ? `${blockers.references.length} referència/ces textual(s)` : "",
+    blockers.references.length ? `${blockers.references.length} referÃƒÂ¨ncia/ces textual(s)` : "",
   ].filter(Boolean);
   if (messages.length) {
-    showSaveNotice(`No es pot eliminar ${character.name}: ${messages.join(", ")}. Retira o marca com a mort la fitxa per conservar la història.`);
+    showSaveNotice(`No es pot eliminar ${character.name}: ${messages.join(", ")}. Retira o marca com a mort la fitxa per conservar la histÃƒÂ²ria.`);
     return;
   }
-  if (!window.confirm(`Eliminar definitivament la fitxa de ${character.name}? Aquesta acció no es pot desfer.`)) return;
+  if (!window.confirm(`Eliminar definitivament la fitxa de ${character.name}? Aquesta acciÃƒÂ³ no es pot desfer.`)) return;
   state.characters = state.characters.filter((item) => item.id !== characterId);
   state.ui.selectedCharacterId = state.characters[0]?.id || "";
   state.ui.showCharacterGrid = true;
@@ -3433,7 +3604,7 @@ function getDndStatusContext(button) {
 
 function createDndStatusEffect(context, duration = 1) {
   if (context.current.effects.length >= 20) {
-    showSaveNotice("Ja hi ha 20 estats actius; neteja’n un abans d’afegir-ne més.");
+    showSaveNotice("Ja hi ha 20 estats actius; netejaÃ¢â‚¬â„¢n un abans dÃ¢â‚¬â„¢afegir-ne mÃƒÂ©s.");
     return null;
   }
   const effect = { id: "dnd-status-" + context.key, name: context.label, duration };
@@ -3715,7 +3886,7 @@ function resolveChronicleEditBeforeSwitch() {
 
   if (hasPendingDraft) {
     const shouldSave = window.confirm(
-      "Hi ha canvis pendents en aquesta cronica. Prem D'acord per desar-los i continuar o Cancel·la per descartar-los i continuar.",
+      "Hi ha canvis pendents en aquesta cronica. Prem D'acord per desar-los i continuar o CancelÃ‚Â·la per descartar-los i continuar.",
     );
 
     if (shouldSave) {
@@ -3861,6 +4032,42 @@ function saveGlossary(formData) {
     renderParts: currentModuleRenderParts(),
     cloud: true,
     cloudTarget,
+  });
+}
+
+function updateMapHexStatus(hexKey, status) {
+  if (!canPublishCampaign()) {
+    denyPermission("No tens permisos per revelar hexes del mapa.");
+    return;
+  }
+  if (!state.worldMap || !["hidden", "discovered", "visited"].includes(status)) return;
+  const [q, r] = String(hexKey).split(":").map(Number);
+  if (!Number.isFinite(q) || !Number.isFinite(r)) return;
+
+  const keyMatches = (hex) => Number(hex.q) === q && Number(hex.r) === r;
+  const existing = state.worldMap.hexes.find(keyMatches);
+  const nextHex = {
+    id: existing?.id || `meledar-${q}-${r}`,
+    q,
+    r,
+    status,
+    name: existing?.name || "Territori sense nom",
+    terrain: existing?.terrain || "Territori pendent de descriure",
+    description: existing?.description || "",
+    chronicleIds: existing?.chronicleIds || [],
+  };
+  state.worldMap = {
+    ...state.worldMap,
+    hexes: existing ? state.worldMap.hexes.map((hex) => keyMatches(hex) ? nextHex : hex) : [...state.worldMap.hexes, nextHex],
+  };
+  state.ui.selectedMapHexId = `${q}:${r}`;
+  const canSyncWorldMap = cloudSession.capabilities?.worldMapManagement === true;
+  const localOnlyNotice = cloudSession.enabled && cloudSession.ready && cloudSession.idToken && !canSyncWorldMap
+    ? " (desat localment; falta desplegar Apps Script)"
+    : "";
+  showSaveNotice(`Hex ${q >= 0 ? "+" : ""}${q}, ${r >= 0 ? "+" : ""}${r}: ${status === "visited" ? "visitat" : status === "discovered" ? "descobert" : "ocultat"}${localOnlyNotice}`, {
+    cloud: canSyncWorldMap,
+    cloudTarget: canSyncWorldMap ? { type: "worldMap", worldMap: state.worldMap } : null,
   });
 }
 
@@ -4616,6 +4823,8 @@ async function pushStateToCloud(options = {}) {
           target.preserveExistingImageAssets === true
           && cloudSession.capabilities?.preserveExistingImageAssets === true,
       });
+    } else if (target.type === "worldMap") {
+      response = await saveWorldMapToCloud(cloudSession.idToken, target.worldMap, campaignId);
     }
     cloudSession.lastSyncAt = new Date().toISOString();
     cloudSession.lastError = "";
@@ -4882,6 +5091,9 @@ function resolveCloudSaveTarget(target) {
     const entry = entryId ? findGlossaryEntry(entryId) : target.entry;
     return entry ? { ...target, entryId: entry.id, entry } : null;
   }
+  if (target.type === "worldMap") {
+    return state.worldMap ? { type: "worldMap", worldMap: state.worldMap } : null;
+  }
 
   return target;
 }
@@ -5049,7 +5261,7 @@ function deleteChronicle() {
     denyPermission("No tens permisos per esborrar aquesta cronica.");
     return;
   }
-  if (!window.confirm("Vols esborrar aquesta crònica? Aquesta acció no es pot desfer.")) {
+  if (!window.confirm("Vols esborrar aquesta crÃƒÂ²nica? Aquesta acciÃƒÂ³ no es pot desfer.")) {
     return;
   }
 
@@ -5245,7 +5457,7 @@ function setQuickGlossaryUploadStatus(form, status = "", message = "") {
   });
 
   if (submitButton instanceof HTMLButtonElement) {
-    submitButton.textContent = processing ? "Processant imatge..." : "Crea i enllaça";
+    submitButton.textContent = processing ? "Processant imatge..." : "Crea i enllaÃƒÂ§a";
   }
   if (statusElement instanceof HTMLElement) {
     statusElement.classList.remove("processing", "success", "error");
@@ -5288,7 +5500,7 @@ function deleteGlossaryEntry() {
     denyPermission("No tens permisos per esborrar aquesta entrada del glossari.");
     return;
   }
-  if (!window.confirm("Vols esborrar aquesta entrada del glossari? Aquesta acció no es pot desfer.")) {
+  if (!window.confirm("Vols esborrar aquesta entrada del glossari? Aquesta acciÃƒÂ³ no es pot desfer.")) {
     return;
   }
 
@@ -5380,7 +5592,7 @@ function toggleModuleEdit(module) {
 }
 
 function ensureUiStateShape() {
-  const validModules = new Set(["characters", "chronicles", "glossary", "campaigns", "options"]);
+  const validModules = new Set(["characters", "chronicles", "glossary", "map", "campaigns", "options"]);
   state.ui.currentModule = validModules.has(state.ui.currentModule) ? state.ui.currentModule : "characters";
   state.ui.showChronicleLanding = typeof state.ui.showChronicleLanding === "boolean" ? state.ui.showChronicleLanding : true;
   state.ui.sidebarPinned = typeof state.ui.sidebarPinned === "boolean" ? state.ui.sidebarPinned : false;
@@ -5428,6 +5640,7 @@ function ensureUiStateShape() {
   state.ui.newCharacterId = typeof state.ui.newCharacterId === "string" ? state.ui.newCharacterId : "";
   state.ui.newChronicleId = typeof state.ui.newChronicleId === "string" ? state.ui.newChronicleId : "";
   state.ui.newGlossaryId = typeof state.ui.newGlossaryId === "string" ? state.ui.newGlossaryId : "";
+  state.ui.selectedMapHexId = typeof state.ui.selectedMapHexId === "string" ? state.ui.selectedMapHexId : "0:0";
   state.ui.chronicleIndexSearch = typeof state.ui.chronicleIndexSearch === "string" ? state.ui.chronicleIndexSearch : "";
 }
 
@@ -5789,7 +6002,7 @@ function refreshGlossaryUploadDebugPanels() {
 function formatGlossaryUploadDebugText(glossaryId) {
   return glossaryUploadDebugEntries
     .filter((entry) => entry.glossaryId === glossaryId)
-    .map((entry) => `[${entry.at}] ${entry.stage}${entry.detail ? ` · ${entry.detail}` : ""}`)
+    .map((entry) => `[${entry.at}] ${entry.stage}${entry.detail ? ` Ã‚Â· ${entry.detail}` : ""}`)
     .join("\n");
 }
 
@@ -6291,7 +6504,7 @@ function getViewStateLabel(view) {
 
   if (view.currentModule === "chronicles") {
     const chronicle = state.chronicles.find((item) => item.id === view.selectedChronicleId);
-    return chronicle ? `${chronicle.chapter} · ${chronicle.title}` : "la crònica anterior";
+    return chronicle ? `${chronicle.chapter} Ã‚Â· ${chronicle.title}` : "la crÃƒÂ²nica anterior";
   }
 
   if (view.currentModule === "characters") {
@@ -6339,7 +6552,7 @@ function getCurrentPlayerNoteContext() {
     return {
       item: character,
       title: character.name || "Personatge",
-      contextLabel: `${character.lineage || "Companyia"} · ${character.className || "Fitxa activa"}`,
+      contextLabel: `${character.lineage || "Companyia"} Ã‚Â· ${character.className || "Fitxa activa"}`,
       buttonLabel: "Notes de jugadors",
       emptyMessage: "Encara no hi ha notes de jugadors per aquest personatge.",
     };
@@ -6353,10 +6566,10 @@ function getCurrentPlayerNoteContext() {
 
     return {
       item: chronicle,
-      title: chronicle.title || chronicle.chapter || "Crònica",
-      contextLabel: chronicle.chapter || "Crònica activa",
+      title: chronicle.title || chronicle.chapter || "CrÃƒÂ²nica",
+      contextLabel: chronicle.chapter || "CrÃƒÂ²nica activa",
       buttonLabel: "Notes de jugadors",
-      emptyMessage: "Encara no hi ha notes de jugadors per aquesta crònica.",
+      emptyMessage: "Encara no hi ha notes de jugadors per aquesta crÃƒÂ²nica.",
     };
   }
 
@@ -6796,7 +7009,7 @@ function normalizeReferenceToken(value) {
   return String(value || "")
     .normalize("NFD")
     .replaceAll(/\p{Diacritic}/gu, "")
-    .replaceAll(/[\u2018\u2019\u201B\u2032`´]/g, "'")
+    .replaceAll(/[\u2018\u2019\u201B\u2032`Ã‚Â´]/g, "'")
     .toLowerCase()
     .replaceAll(/[^\p{L}0-9]+/gu, " ")
     .trim()
@@ -6867,12 +7080,12 @@ function resolveTokenIndex(source, cursor) {
 }
 
 function isReferenceTokenChar(character) {
-  return /[\p{L}0-9'’-]/u.test(character || "");
+  return /[\p{L}0-9'Ã¢â‚¬â„¢-]/u.test(character || "");
 }
 
 function getCurrentToken(textarea) {
   return getActiveToken(textarea)?.token || "";
-  const match = before.match(/([\p{L}0-9'’-]{2,})$/u);
+  const match = before.match(/([\p{L}0-9'Ã¢â‚¬â„¢-]{2,})$/u);
 }
 
 function insertReference(textarea, referenceId, referenceLabel, referenceStart, referenceEnd) {
@@ -7148,7 +7361,7 @@ function applyRichFormatting(textarea, action) {
   }
 
   if (action === "heading") {
-    prefixSelectedLines(textarea, "## ", "Subtítol");
+    prefixSelectedLines(textarea, "## ", "SubtÃƒÂ­tol");
     return;
   }
 

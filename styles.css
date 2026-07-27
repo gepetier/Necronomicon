@@ -886,7 +886,7 @@ body.sidebar-pinned .app-shell {
 }
 
 .campaign-edit-disclosure[open] summary::after {
-  content: "−";
+  content: "âˆ’";
 }
 
 .campaign-edit-disclosure summary:focus-visible {
@@ -3085,7 +3085,7 @@ history-list,
 }
 
 .dnd-status-trigger > span::after {
-  content: "✦";
+  content: "âœ¦";
   color: #fff4ca;
   font-size: 0.68rem;
   line-height: 1;
@@ -8816,7 +8816,7 @@ select {
 }
 
 .glossary-image-picker-status.success::before {
-  content: "✓";
+  content: "âœ“";
   color: #fff;
   background: #467653;
 }
@@ -10005,7 +10005,7 @@ body.office-mode .character-card .tag-list .tag:nth-child(n+2) {
 }
 
 
-/* Gestió de companyia: estat persistent i accions de GM. */
+/* GestiÃ³ de companyia: estat persistent i accions de GM. */
 .character-roster-header {
   align-items: flex-start;
 }
@@ -10231,3 +10231,60 @@ body.office-mode .character-card .tag-list .tag:nth-child(n+2) {
 body.office-mode .character-roster-toolbar { margin-bottom: 0.65rem; }
 body.office-mode .character-roster-actions { top: 0.5rem; right: 0.75rem; }
 body.office-mode .character-roster-popover { z-index: 20; }
+
+.world-map-shell { padding: clamp(1rem, 2.2vw, 2rem); overflow: hidden; }
+.world-map-head { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin-bottom: 1.2rem; }
+.world-map-head h3 { margin: 0.25rem 0; }
+.world-map-head p:last-child { margin: 0; color: var(--muted); }
+.world-map-legend { display: flex; flex-wrap: wrap; gap: 0.5rem 0.85rem; font-size: 0.76rem; color: #6b4c37; font-weight: 700; }
+.world-map-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.world-map-swatch { display: inline-block; width: 0.8rem; height: 0.8rem; clip-path: polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0 50%); }
+.world-map-swatch.is-hidden { background: rgba(23, 18, 22, 0.82); }
+.world-map-swatch.is-discovered { background: rgba(198, 162, 106, 0.78); }
+.world-map-swatch.is-visited { background: rgba(122, 52, 42, 0.88); }
+.world-map-layout { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(240px, 0.65fr); gap: 1.1rem; align-items: start; }
+.world-map-stage { position: relative; aspect-ratio: 3 / 2; min-height: 280px; overflow: hidden; border-radius: calc(var(--radius-xl) - 0.3rem); background: #2a1c19; box-shadow: inset 0 0 0 1px rgba(255, 229, 184, 0.28), 0 14px 28px rgba(20, 12, 9, 0.25); }
+.world-map-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 56px rgba(25, 12, 7, 0.62); }
+.world-map-stage img, .world-map-grid { position: absolute; inset: 0; width: 100%; height: 100%; }
+.world-map-stage img { object-fit: cover; }
+.world-map-grid { z-index: 1; overflow: visible; }
+.world-map-hex-group { cursor: pointer; outline: none; }
+.world-map-hex { stroke: rgba(255, 236, 190, 0.46); stroke-width: 3; transition: fill 160ms ease, stroke 160ms ease, stroke-width 160ms ease; }
+.world-map-hex.is-hidden { fill: rgba(20, 15, 19, 0.72); }
+.world-map-hex.is-discovered { fill: rgba(194, 152, 82, 0.22); }
+.world-map-hex.is-visited { fill: rgba(117, 41, 37, 0.36); }
+.world-map-hex-group:hover .world-map-hex, .world-map-hex-group:focus-visible .world-map-hex { stroke: #ffe1a3; stroke-width: 7; fill: rgba(255, 218, 139, 0.22); }
+.world-map-hex-group.is-selected .world-map-hex { stroke: #fff1cc; stroke-width: 9; filter: drop-shadow(0 0 8px rgba(251, 203, 115, 0.95)); }
+.world-map-hex-label { pointer-events: none; fill: #fff1d2; font-size: 18px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(48, 25, 15, 0.86); stroke-width: 7; stroke-linejoin: round; }
+.world-map-detail { min-height: 100%; padding: 1.2rem; border-radius: calc(var(--radius-xl) - 0.3rem); background: linear-gradient(145deg, rgba(92, 56, 37, 0.94), rgba(52, 31, 27, 0.97)); color: #fff2d6; box-shadow: inset 0 0 0 1px rgba(238, 200, 138, 0.22); }
+.world-map-detail h3 { margin: 0.4rem 0 0.55rem; font-size: clamp(1.3rem, 2.1vw, 1.8rem); }
+.world-map-detail > p { line-height: 1.55; color: rgba(255, 237, 207, 0.88); }
+.world-map-detail .eyebrow { color: #eac980; margin: 0 0 0.35rem; }
+.world-map-terrain { font-weight: 700; color: #f4d897 !important; }
+.world-map-status { display: inline-flex; margin-top: 0.1rem; padding: 0.18rem 0.5rem; border-radius: 999px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.world-map-status.is-hidden { background: rgba(8, 8, 10, 0.45); }
+.world-map-status.is-discovered { background: rgba(202, 157, 81, 0.35); }
+.world-map-status.is-visited { background: rgba(152, 60, 51, 0.55); }
+.world-map-chronicles { display: grid; gap: 0.45rem; margin-top: 1.2rem; }
+.world-map-chronicles button { display: grid; gap: 0.1rem; padding: 0.7rem; text-align: left; color: #fff2d6; background: rgba(255, 243, 213, 0.08); border: 1px solid rgba(242, 204, 139, 0.25); border-radius: var(--radius-md); }
+.world-map-chronicles button:hover, .world-map-chronicles button:focus-visible { background: rgba(255, 243, 213, 0.16); border-color: rgba(255, 223, 161, 0.62); }
+.world-map-chronicles span, .world-map-chronicles small { color: #e5c787; font-size: 0.72rem; }
+.world-map-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; margin-top: 1.35rem; padding-top: 1rem; border-top: 1px solid rgba(255, 233, 193, 0.19); }
+.world-map-controls > span { width: 100%; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.1em; color: #eac980; }
+.world-map-controls .secondary { min-height: 2rem; padding: 0.35rem 0.55rem; font-size: 0.75rem; color: #fff0d2; border-color: rgba(255, 231, 190, 0.28); }
+.world-map-controls .secondary.is-active { background: rgba(232, 178, 91, 0.25); border-color: #f0cc87; }
+.world-map-empty { padding: 2rem; }
+
+@media (max-width: 980px) {
+  .world-map-layout { grid-template-columns: 1fr; }
+  .world-map-detail { min-height: 0; }
+}
+
+@media (max-width: 620px) {
+  .world-map-shell { margin-inline: -0.15rem; padding: 0.9rem; }
+  .world-map-head { align-items: start; flex-direction: column; }
+  .world-map-legend { gap: 0.4rem 0.65rem; }
+  .world-map-stage { min-height: 220px; border-radius: var(--radius-lg); }
+  .world-map-hex-label { font-size: 13px; stroke-width: 5; }
+  .world-map-detail { padding: 1rem; }
+}
