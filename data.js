@@ -1,5 +1,5 @@
 ﻿export const STORAGE_KEY = "campaign-compendium";
-export const DATA_VERSION = 14;
+export const DATA_VERSION = 15;
 
 
 const CHARACTER_PORTRAITS = {
@@ -996,6 +996,19 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
       palette: ["#cfc8b5", "#8f7651"],
     },
   ],
+  worldMap: {
+    id: "meledar-hex-pilot",
+    title: "Atles de Meledar",
+    subtitle: "Pilot de descoberta hexagonal",
+    hexes: [
+      { id: "meledar-0-0", q: 0, r: 0, status: "visited", name: "El Sagnatori", terrain: "Fossa de sang i túnels rituals", description: "Una cicatriu subterrània de pedra, sang i portals. El grup hi va descobrir el preu real dels sacrificis i va escapar per les galeries inferiors.", chronicleIds: ["sagnatori", "sala-dels-plaers"] },
+      { id: "meledar--1-0", q: -1, r: 0, status: "visited", name: "Galeries del Receptor", terrain: "Coves minerals i mecanismes antics", description: "Passadissos de roca viva que condueixen al Receptor i a la criatura mineral encadenada.", chronicleIds: ["sala-dels-plaers"] },
+      { id: "meledar-0--1", q: 0, r: -1, status: "discovered", name: "Cingleres de Kaelor", terrain: "Penya-segats, altars i torres de silenci", description: "Les torres del culte vigilen les rutes que baixen cap al cor de la fossa.", chronicleIds: ["ritual-fossa"] },
+      { id: "meledar-1--1", q: 1, r: -1, status: "discovered", name: "Desert de les Cendres Blanques", terrain: "Erms salins i caravanes perdudes", description: "Una plana pàl·lida que reflecteix la llum com un os antic. Ningú no sap qui habita sota la sal.", chronicleIds: [] },
+      { id: "meledar--1-1", q: -1, r: 1, status: "discovered", name: "Bosc de les Veus Fondes", terrain: "Bosc vell, rius negres i ruïnes cobertes", description: "Els arbres amaguen camins que només apareixen quan algú pronuncia un nom oblidat.", chronicleIds: [] },
+      { id: "meledar-1-0", q: 1, r: 0, status: "discovered", name: "Pell de Drac", terrain: "Badlands volcàniques", description: "Crestes de basalt i fumaroles encerclen una antiga ruta de guerra.", chronicleIds: [] },
+    ],
+  },
   ui: {
     currentModule: "characters",
     selectedCharacterId: "ilu",
@@ -1013,6 +1026,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     glossarySortOrder: "alphabetical",
     glossarySortMenuOpen: false,
     selectedGlossaryId: "acantilado-del-silencio",
+    worldMapZoom: 1,
     editModes: {
       characters: false,
       chronicles: false,

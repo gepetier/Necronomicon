@@ -75,9 +75,9 @@ export function normalizeAccessShape(access) {
   };
   const users = Object.fromEntries(
     Object.entries(sourceUsers)
-      .filter(([email]) => typeof email === "string" && email.includes("@"))
-      .map(([email, user]) => [
-        email.toLowerCase(),
+      .filter(([identity]) => typeof identity === "string" && identity.trim())
+      .map(([identity, user]) => [
+        String(identity).trim().toLowerCase(),
         {
           ...(user && typeof user === "object" ? user : {}),
           role: normalizeRoleId(user?.role || "player"),

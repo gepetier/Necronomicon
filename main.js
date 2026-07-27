@@ -32,6 +32,10 @@ import {
   saveGlossary as saveGlossaryEntry,
 } from "./app/glossary.js";
 import {
+  clampWorldMapZoom,
+  renderWorldMapModule as renderWorldMapView,
+} from "./app/world-map.js";
+import {
   escapeAttribute,
   escapeHtml,
   formatShortDate,
@@ -59,7 +63,6 @@ import {
   exportAssetBundle,
   hydrateAssetReferences,
   importAssetBundle,
-  localizeDriveAssetBundle,
   materializeAssetTokens,
   setDriveAssetLoader,
   storeAssetDataUrl,
@@ -91,18 +94,13 @@ import {
 } from "./app/permissions.js";
 import {
   CLOUD_CONFIG,
-  clearStoredCredential,
-  decodeCredential,
+  clearStoredLoginName,
   deleteCharacterFromCloud,
   deleteChronicleFromCloud,
   deleteGlossaryEntryFromCloud,
-  getStoredCredential,
-  isCredentialUsable,
+  getStoredLoginName,
   loadCampaignFromCloud,
   loadAssetFromCloud,
-  loadGoogleIdentity,
-  promptGoogleSignIn,
-  renderGoogleButton,
   repairCampaignAssetsInCloud,
   saveCampaignToCloud,
   saveAssetToCloud,
@@ -110,7 +108,7 @@ import {
   saveCharacterRosterToCloud,
   saveChronicleToCloud,
   saveGlossaryEntryToCloud,
-  storeCredential,
+  storeLoginName,
 } from "./app/cloud-sync.js";
 import { createCloudSaveQueue } from "./app/cloud-save-queue.js";
 import { activateDialogFocus, deactivateDialogFocus, setAuthPageInert, trapDialogFocus } from "./app/dialog-focus.js";
@@ -146,6 +144,7 @@ const saveNoticeEl = document.querySelector("#saveNotice");
 const charactersModule = document.querySelector("#charactersModule");
 const chroniclesModule = document.querySelector("#chroniclesModule");
 const glossaryModule = document.querySelector("#glossaryModule");
+const mapModule = document.querySelector("#mapModule");
 const campaignsModule = document.querySelector("#campaignsModule");
 const optionsModule = document.querySelector("#optionsModule");
 const sidebarContextPanel = document.querySelector("#sidebarContextPanel");
@@ -158,7 +157,7 @@ const richMediaPicker = document.querySelector("#richMediaPicker");
 const backupImportPicker = document.querySelector("#backupImportPicker");
 const quickGlossaryModal = document.querySelector("#quickGlossaryModal");
 const authGate = document.querySelector("#authGate");
-const googleSignInButton = document.querySelector("#googleSignInButton");
+const authLoginForm = document.querySelector("[data-auth-login-form]");
 const authStatus = document.querySelector("[data-auth-status]");
 const authCampaignSelect = document.querySelector("[data-auth-campaign-select]");
 const playerWelcome = document.querySelector("#playerWelcome");
@@ -182,24 +181,24 @@ const authPreviewMode = runtimeParams.has("authPreview");
 const qaMode = runtimeParams.has("qaRun") || runtimeParams.has("captureRun");
 const AUTH_FEEDBACK = {
   booting: {
-    action: "Carregant el client de login i preparant Google Identity.",
+    action: "Preparant l'entrada al compendi.",
     text: "Encenent espelmes...",
   },
   waitingForSignIn: {
-    action: "Esperant que l'usuari premi el segell per iniciar sessio.",
+    action: "Escriu el teu nom per entrar.",
     text: "Toca l'abisme...",
   },
   openingSignIn: {
-    action: "L'usuari ha premut el segell i s'obre el flux de login.",
+    action: "L'usuari obre el segell per escriure el seu nom.",
     text: "Algú et mira desde l'abisme",
   },
-  missingCredential: {
-    action: "Google no ha retornat cap credencial despres del login.",
-    text: "El poder no t'es atorgat",
+  missingLoginName: {
+    action: "Escriu un nom per continuar.",
+    text: "El nom encara no ha estat escrit",
   },
-  invalidCredential: {
-    action: "La credencial rebuda no es pot validar localment.",
-    text: "No tens un pacte amb l'antic, encara...",
+  invalidLoginName: {
+    action: "Aquest nom no és vàlid.",
+    text: "El nom no obre aquest segell",
   },
   restoringSession: {
     action: "S'ha trobat una sessio recordada i s'esta recuperant.",
@@ -221,7 +220,7 @@ const AUTH_FEEDBACK = {
 const cloudSession = {
   enabled: authPreviewMode || !qaMode,
   ready: qaMode && !authPreviewMode,
-  idToken: "",
+  loginName: "",
   user: null,
   status: authPreviewMode ? "" : qaMode ? "Mode QA local" : getAuthFeedbackText("booting"),
   saving: false,
@@ -237,9 +236,9 @@ const cloudSession = {
 };
 
 setDriveAssetLoader(async (assetRef) => {
-  if (!cloudSession.ready || !cloudSession.idToken) return null;
+  if (!cloudSession.ready || !cloudSession.loginName) return null;
   return loadAssetFromCloud(
-    cloudSession.idToken,
+    cloudSession.loginName,
     assetRef,
     storageGetActiveCampaignMeta().id,
   );
@@ -251,6 +250,7 @@ const RENDER_PARTS = {
   characters: "characters",
   chronicles: "chronicles",
   glossary: "glossary",
+  map: "map",
   campaigns: "campaigns",
   options: "options",
   themes: "themes",
@@ -260,6 +260,7 @@ const OFFICE_NAV_LABELS = {
   characters: "Contactes",
   chronicles: "Documents",
   glossary: "Referencies",
+  map: "Atles",
   campaigns: "Arxius",
   options: "Configuracio",
 };
@@ -267,6 +268,7 @@ const DEFAULT_NAV_LABELS = {
   characters: "Personatges",
   chronicles: "Croniques",
   glossary: "Glossari",
+  map: "Mapa",
   campaigns: "Campanyes",
   options: "Opcions",
 };
@@ -276,6 +278,7 @@ const FULL_RENDER_PARTS = [
   RENDER_PARTS.characters,
   RENDER_PARTS.chronicles,
   RENDER_PARTS.glossary,
+  RENDER_PARTS.map,
   RENDER_PARTS.campaigns,
   RENDER_PARTS.options,
   RENDER_PARTS.themes,
@@ -292,6 +295,7 @@ function initialize() {
   document.addEventListener("pointerdown", handleReferenceSuggestionPointerDown, true);
   document.addEventListener("keydown", handleKeydown);
   document.addEventListener("keyup", handleKeyup);
+  document.addEventListener("wheel", handleWorldMapWheel, { passive: false });
   document.addEventListener("submit", handleSubmit);
   document.addEventListener("input", handleInput);
   document.addEventListener("change", handleInput);
@@ -428,9 +432,9 @@ function handleClick(event) {
   }
 
   if (event.target.closest("[data-cloud-logout]")) {
-    clearStoredCredential();
+    clearStoredLoginName();
     cloudSession.ready = false;
-    cloudSession.idToken = "";
+    cloudSession.loginName = "";
     cloudSession.user = null;
     cloudSession.revision = 0;
     cloudSession.selectingCampaign = false;
@@ -495,8 +499,7 @@ function handleClick(event) {
     if (authPreviewMode) {
       return;
     }
-    updateAuthFeedback("openingSignIn", { renderOptions: false });
-    promptGoogleSignIn();
+    authLoginForm?.querySelector("input[name='loginName']")?.focus();
     return;
   }
 
@@ -516,6 +519,12 @@ function handleClick(event) {
     }
     clearChronicleReturn();
     persistAndRender();
+    return;
+  }
+
+  const mapZoom = event.target.closest("[data-map-zoom]");
+  if (mapZoom) {
+    adjustWorldMapZoom(mapZoom.dataset.mapZoom === "in" ? 0.2 : -0.2);
     return;
   }
 
@@ -1221,6 +1230,13 @@ function handleInput(event) {
     return;
   }
 
+  if (event.target instanceof HTMLInputElement && event.target.dataset.characterPortraitPicker !== undefined) {
+    if (event.type === "change") {
+      void handleCharacterPortraitSelection(event.target);
+    }
+    return;
+  }
+
   if (event.target instanceof HTMLInputElement && event.target.dataset.richMediaPicker !== undefined) {
     void handleRichMediaSelection(event.target);
     return;
@@ -1358,6 +1374,10 @@ function handleSubmit(event) {
 
   const formData = new FormData(form);
 
+  if (form.dataset.authLoginForm !== undefined) {
+    void handleLoginName(readString(formData, "loginName"));
+    return;
+  }
 
   if (form.dataset.form === "character-assignment") {
     saveCharacterAssignment(formData);
@@ -1436,6 +1456,7 @@ function handleSubmit(event) {
 function render(parts = FULL_RENDER_PARTS) {
   const renderSet = new Set(parts);
   applyOfficeMode();
+  document.body.classList.toggle("world-map-active", state.ui.currentModule === "map");
   updateAuthGate();
   renderPlayerWelcome();
 
@@ -1453,6 +1474,9 @@ function render(parts = FULL_RENDER_PARTS) {
   }
   if (renderSet.has(RENDER_PARTS.glossary)) {
     renderGlossaryModule();
+  }
+  if (renderSet.has(RENDER_PARTS.map)) {
+    renderWorldMapModule();
   }
   if (renderSet.has(RENDER_PARTS.campaigns)) {
     renderCampaignsModule();
@@ -1481,6 +1505,7 @@ function getRenderedRoots(renderSet) {
   if (renderSet.has(RENDER_PARTS.characters) && charactersModule) roots.push(charactersModule);
   if (renderSet.has(RENDER_PARTS.chronicles) && chroniclesModule) roots.push(chroniclesModule);
   if (renderSet.has(RENDER_PARTS.glossary) && glossaryModule) roots.push(glossaryModule);
+  if (renderSet.has(RENDER_PARTS.map) && mapModule) roots.push(mapModule);
   if (renderSet.has(RENDER_PARTS.campaigns) && campaignsModule) roots.push(campaignsModule);
   if (renderSet.has(RENDER_PARTS.options) && optionsModule) roots.push(optionsModule);
   return roots.length ? [...new Set(roots)] : [document.body];
@@ -1629,55 +1654,34 @@ async function initializeCloudSession() {
   }
 
   updateAuthFeedback("booting");
-  try {
-    await loadGoogleIdentity();
-    renderGoogleButton(googleSignInButton, (response) => {
-      void handleGoogleCredential(response?.credential || "");
-    });
-
-    const storedCredential = getStoredCredential();
-    if (isCredentialUsable(storedCredential)) {
-      await handleGoogleCredential(storedCredential, { silent: true });
-      return;
-    }
-
-    clearStoredCredential();
-    cloudSession.ready = false;
-    updateAuthFeedback("waitingForSignIn");
-    promptGoogleSignIn();
-  } catch (error) {
-    cloudSession.ready = false;
-    const message = runtimeParams.has("inviteCampaign")
-      ? "Aquesta invitacio no correspon al compte de Google o ja no esta activa. Prova amb el correu convidat."
-      : error instanceof Error ? error.message : String(error);
-    updateCloudStatus(message, { error: true });
+  const storedLoginName = getStoredLoginName();
+  if (storedLoginName) {
+    await handleLoginName(storedLoginName, { silent: true });
+    return;
   }
+  cloudSession.ready = false;
+  updateAuthFeedback("waitingForSignIn");
 }
 
-async function handleGoogleCredential(credential, options = {}) {
-  if (!credential) {
-    updateAuthFeedback("missingCredential", { error: true });
+async function handleLoginName(loginName, options = {}) {
+  const normalizedLoginName = String(loginName || "").trim().replace(/\s+/g, " ").slice(0, 48);
+  if (!normalizedLoginName) {
+    updateAuthFeedback("missingLoginName", { error: true });
     return;
   }
 
-  const decoded = decodeCredential(credential);
-  if (!decoded?.email) {
-    updateAuthFeedback("invalidCredential", { error: true });
-    return;
-  }
-
-  cloudSession.idToken = credential;
-  cloudSession.user = decoded;
-  storeCredential(credential);
+  cloudSession.loginName = normalizedLoginName;
+  cloudSession.user = { name: normalizedLoginName };
+  storeLoginName(normalizedLoginName);
   updateAuthFeedback(options.silent ? "restoringSession" : "loadingCampaign");
   cloudSession.awaitingServer = true;
   updateAuthGate();
 
   try {
-    const response = await loadCampaignFromCloud(credential);
+    const response = await loadCampaignFromCloud(normalizedLoginName);
     const localBeforeCloud = state;
     const localCatalogBeforeCloud = storageGetCampaignCatalog();
-    const localizedCampaign = await localizeDriveAssetBundle(response.campaign, response.assetBundle);
+    const localizedCampaign = response.campaign;
     const cloudHasCampaignCatalog = Array.isArray(localizedCampaign?.campaigns);
     const cloudState = storageMigrateStoredState({
       version: response.version || 0,
@@ -1697,7 +1701,7 @@ async function handleGoogleCredential(credential, options = {}) {
       }
       : cloudState;
     cloudSession.user = {
-      ...decoded,
+      ...cloudSession.user,
       ...(response.user || {}),
     };
     cloudSession.capabilities = response.capabilities || {};
@@ -1720,8 +1724,8 @@ async function handleGoogleCredential(credential, options = {}) {
       cloudSession.pendingInitialPublish = false;
     }
   } catch (error) {
-    clearStoredCredential();
-    cloudSession.idToken = "";
+    clearStoredLoginName();
+    cloudSession.loginName = "";
     cloudSession.user = null;
     cloudSession.revision = 0;
     cloudSession.ready = false;
@@ -1777,7 +1781,7 @@ function prepareCampaignSelectionAfterLogin() {
     : null;
   if (invitedCampaignId && !invitedCampaign) {
     cloudSession.selectingCampaign = true;
-    cloudSession.status = "Aquesta invitacio no esta disponible per al compte de Google connectat.";
+    cloudSession.status = "Aquesta invitacio no esta disponible en aquesta sessio compartida.";
     renderAuthCampaignSelection(accessibleCampaigns);
     updateAuthGate();
     return;
@@ -2020,7 +2024,7 @@ function renderAuthCampaignSelection(campaigns = getAccessibleCampaignsForCurren
       <div class="auth-campaign-empty">
         <p class="eyebrow">Sense campanyes</p>
         <h3>No hi ha cap campanya assignada</h3>
-        <p>Demana al superadmin o GM que afegeixi el teu correu als permisos d'una campanya.</p>
+        <p>Demana al superadmin o GM que afegeixi el teu nom als permisos d'una campanya.</p>
       </div>
     `;
 
@@ -2029,7 +2033,7 @@ function renderAuthCampaignSelection(campaigns = getAccessibleCampaignsForCurren
       <div class="auth-campaign-head">
         <p class="eyebrow">Compendis actius</p>
         <h2>Tria campanya</h2>
-        <p>${escapeHtml(cloudSession.user?.email || "Usuari connectat")}</p>
+        <p>${escapeHtml(cloudSession.user?.name || "Usuari connectat")}</p>
       </div>
       <div class="auth-campaign-list">
         ${campaignRows}
@@ -2133,11 +2137,7 @@ function formatRoleLabel(roleId) {
 }
 
 function renderAuthPreviewButton() {
-  if (!googleSignInButton) {
-    return;
-  }
-
-  googleSignInButton.innerHTML = "";
+  // El preview conserva el segell, però l'entrada real és sempre per nom.
 }
 
 function getAuthFeedbackText(key) {
@@ -2171,6 +2171,10 @@ function currentModuleRenderParts() {
 
   if (state.ui.currentModule === "glossary") {
     return [RENDER_PARTS.notice, RENDER_PARTS.glossary, RENDER_PARTS.themes, RENDER_PARTS.assets];
+  }
+
+  if (state.ui.currentModule === "map") {
+    return [RENDER_PARTS.notice, RENDER_PARTS.map, RENDER_PARTS.themes, RENDER_PARTS.assets];
   }
 
   if (state.ui.currentModule === "campaigns") {
@@ -2277,7 +2281,7 @@ function getCloudSyncState() {
     return "syncing";
   }
 
-  if (cloudSession.lastError || (cloudSession.enabled && (!cloudSession.ready || !cloudSession.idToken))) {
+  if (cloudSession.lastError || (cloudSession.enabled && (!cloudSession.ready || !cloudSession.loginName))) {
     return "unsynced";
   }
 
@@ -2374,6 +2378,16 @@ function renderGlossaryModule() {
     canCreateGlossaryEntry: canCreateGlossaryEntry(),
     canDeleteGlossaryEntry,
     getGlossaryImageUploadState: (glossaryId) => glossaryImageUploadStates.get(glossaryId) || null,
+  });
+}
+
+function renderWorldMapModule() {
+  if (!mapModule) return;
+  renderWorldMapView({
+    state,
+    rootEl: mapModule,
+    findChronicle: (id) => state.chronicles.find((chronicle) => chronicle.id === id) || null,
+    updateHexStatus: cycleWorldMapHexStatus,
   });
 }
 
@@ -2520,13 +2534,13 @@ function renderCampaignInvitePanel(campaign) {
         <div class="campaign-invite-copy">
           <p class="eyebrow">Nova incorporacio</p>
           <h5>Assigna-li un personatge</h5>
-          <p>El correu dona acces a ${escapeHtml(campaign.name)}. L'enllac nomes prepara una arribada directa i no substitueix la validacio de Google.</p>
+          <p>La invitació prepara una arribada directa a ${escapeHtml(campaign.name)}. La sessió es valida amb la connexió compartida de Drive.</p>
         </div>
         <form data-form="campaign-invite" class="campaign-invite-form">
           <input type="hidden" name="campaignId" value="${escapeAttribute(campaign.id)}" />
           <label class="field">
-            <span>Correu de Google</span>
-            <input name="inviteEmail" type="email" autocomplete="off" placeholder="jugador@gmail.com" value="${escapeAttribute(createdInvite?.email || "")}" required />
+            <span>Identificador de jugador</span>
+            <input name="inviteEmail" type="text" autocomplete="off" placeholder="nom del jugador" value="${escapeAttribute(createdInvite?.email || "")}" required />
           </label>
           <label class="field">
             <span>Personatge</span>
@@ -2586,7 +2600,7 @@ function renderCampaignReadonlyPanel(currentUserAccess, visibleCampaigns) {
         <p>Pots canviar el focus entre les campanyes accessibles. La creacio, edicio i eliminacio requereixen permisos de gestio.</p>
       </div>
       <div class="options-stat-list">
-        <span class="badge">${escapeHtml(currentUserAccess.email || "Usuari local")}</span>
+        <span class="badge">${escapeHtml(cloudSession.user?.name || currentUserAccess.email || "Usuari local")}</span>
         <span class="badge">${visibleCampaigns.length} campanyes accessibles</span>
       </div>
     </article>
@@ -2599,7 +2613,7 @@ function renderNoAccessibleCampaigns(currentUserAccess) {
       <div class="campaign-switch-copy">
         <p class="eyebrow">Sense acces</p>
         <h4>No tens cap campanya disponible</h4>
-        <p>${escapeHtml(currentUserAccess.email || "Usuari connectat")}</p>
+        <p>${escapeHtml(cloudSession.user?.name || currentUserAccess.email || "Usuari connectat")}</p>
       </div>
     </article>
   `;
@@ -2615,7 +2629,7 @@ function renderOptionsModule() {
   const lastSavedLabel = formatShortDate(state.ui.lastSaved?.at) || "Encara no";
   const lastSyncLabel = formatShortDate(cloudSession.lastSyncAt) || "Encara no";
   const currentUserAccess = getCurrentUserAccess();
-  const userLabel = currentUserAccess.email || "No connectat";
+  const userLabel = cloudSession.user?.name || currentUserAccess.email || "No connectat";
   const roleLabel = currentUserAccess.role || "local";
   const permissionsEditable = canManagePermissions();
   const campaignsEditable = canManageCampaigns();
@@ -2782,7 +2796,6 @@ function getCloudDiagnostics() {
   const capabilities = cloudSession.capabilities || {};
   return [
     { label: "Frontend sync", value: SYNC_CLIENT_VERSION },
-    { label: "OAuth client", value: CLOUD_CONFIG.clientId || "-" },
     { label: "Apps Script /exec", value: CLOUD_CONFIG.apiUrl || "-", url: Boolean(CLOUD_CONFIG.apiUrl) },
     { label: "Backend sync", value: capabilities.backendVersion || "No confirmat" },
     { label: "Drive folder", value: driveFile.folderId || capabilities.driveFolderId || "No confirmat" },
@@ -2878,7 +2891,7 @@ function renderAccessSummary(currentUserAccess) {
   return `
     <div class="access-summary-panel">
       <div class="options-stat-list">
-        <span class="badge">${escapeHtml(currentUserAccess.email || "Usuari local")}</span>
+        <span class="badge">${escapeHtml(cloudSession.user?.name || currentUserAccess.email || "Usuari local")}</span>
         <span class="badge">Rol: ${escapeHtml(formatRoleLabel(currentUserAccess.role))}</span>
         ${currentUserAccess.characterIds?.length
           ? `<span class="badge">${currentUserAccess.characterIds.length} fitxes assignades</span>`
@@ -3255,6 +3268,37 @@ function saveCharacterEdits() {
   });
 }
 
+async function handleCharacterPortraitSelection(input) {
+  const characterId = String(input.dataset.characterId || "");
+  const character = findCharacter(characterId);
+  const file = Array.from(input.files || []).find((item) => item instanceof File) || null;
+  input.value = "";
+
+  if (!character || !file) return;
+  if (!canEditCharacter(character)) {
+    denyPermission("No tens permisos per editar el retrat d'aquesta fitxa.");
+    return;
+  }
+  if (!String(file.type || "").startsWith("image/")) {
+    showSaveNotice("Selecciona un fitxer d'imatge valid.");
+    return;
+  }
+
+  try {
+    const assetToken = await storeAssetFile(file);
+    if (!assetToken) throw new Error("No s'ha pogut preparar el retrat.");
+    state.ui.drafts.characters.overview[characterId] = {
+      ...(state.ui.drafts.characters.overview[characterId] || {}),
+      portrait: assetToken,
+    };
+    persistStateImmediately({ skipCloud: true });
+    render([RENDER_PARTS.characters, RENDER_PARTS.notice]);
+    showSaveNotice("Retrat preparat localment. Desa la fitxa per confirmar-lo a Drive.");
+  } catch (error) {
+    showSaveNotice(`No s'ha pogut preparar el retrat: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function discardCharacterChanges() {
   const character = getSelectedCharacter();
   if (!character) {
@@ -3291,6 +3335,9 @@ function applyCharacterOverviewDraft(character) {
   formData.set("className", draft.className !== undefined ? String(draft.className) : character.className || "");
   formData.set("level", draft.level !== undefined ? String(draft.level) : String(character.level || 1));
   formData.set("sigil", draft.sigil !== undefined ? String(draft.sigil) : character.sigil || "");
+  if (draft.portrait !== undefined) {
+    character.portrait = String(draft.portrait || "");
+  }
   formData.set("summary", draft.summary !== undefined ? String(draft.summary) : character.summary || "");
   formData.set("quickNotes", draft.quickNotes !== undefined ? String(draft.quickNotes) : character.quickNotes || "");
 
@@ -3954,8 +4001,8 @@ function createPlayerInvitation(formData) {
   const email = readString(formData, "inviteEmail").trim().toLowerCase();
   const characterId = readString(formData, "inviteCharacterId");
   const character = state.characters.find((item) => item.id === characterId);
-  if (campaignId !== activeCampaign.id || !email.includes("@") || !character) {
-    showSaveNotice("Revisa el correu i el personatge de la invitacio.");
+  if (campaignId !== activeCampaign.id || !email || !character) {
+    showSaveNotice("Revisa el nom i el personatge de la invitació.");
     return;
   }
 
@@ -4317,6 +4364,42 @@ function persistAndRender(parts = FULL_RENDER_PARTS, options = {}) {
   render(parts);
 }
 
+function adjustWorldMapZoom(delta) {
+  const nextZoom = clampWorldMapZoom((Number(state.ui.worldMapZoom) || 1) + delta);
+  if (nextZoom === state.ui.worldMapZoom) return;
+  state.ui.worldMapZoom = nextZoom;
+  persistAndRender([RENDER_PARTS.map], { skipCloud: true });
+}
+
+function cycleWorldMapHexStatus(coordinate) {
+  if (!state.worldMap || !/^[-+]?\d+:[-+]?\d+$/.test(coordinate)) return;
+  const [q, r] = coordinate.split(":").map(Number);
+  const hexes = Array.isArray(state.worldMap.hexes) ? state.worldMap.hexes : [];
+  const index = hexes.findIndex((hex) => Number(hex.q) === q && Number(hex.r) === r);
+  const current = index >= 0 ? hexes[index] : { q, r, status: "hidden" };
+  const statusOrder = ["hidden", "discovered", "visited"];
+  const nextStatus = statusOrder[(statusOrder.indexOf(current.status) + 1) % statusOrder.length];
+  const nextHex = {
+    ...current,
+    id: current.id || `${state.worldMap.id || "map"}-${q}-${r}`,
+    q,
+    r,
+    status: nextStatus,
+  };
+
+  state.worldMap.hexes = index >= 0
+    ? hexes.map((hex, hexIndex) => (hexIndex === index ? nextHex : hex))
+    : [...hexes, nextHex];
+  persistAndRender([RENDER_PARTS.map], { cloudTarget: { type: "campaign" } });
+}
+
+function handleWorldMapWheel(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (state.ui.currentModule !== "map" || !target?.closest("[data-world-map-viewport]")) return;
+  event.preventDefault();
+  adjustWorldMapZoom(event.deltaY < 0 ? 0.2 : -0.2);
+}
+
 function schedulePersistState(delay = 180, options = {}) {
   window.clearTimeout(persistStateTimer);
   persistStateTimer = window.setTimeout(() => {
@@ -4467,7 +4550,7 @@ function resumeGlossaryMediaOutboxForActiveCampaign() {
   if (!targets.length) return 0;
   storagePersistState(state);
   targets.forEach((target) => pendingCloudSaveTargets.enqueue(target));
-  if (cloudSession.enabled && cloudSession.ready && cloudSession.idToken) {
+  if (cloudSession.enabled && cloudSession.ready && cloudSession.loginName) {
     scheduleCloudQueueDrain(0);
   }
   return targets.length;
@@ -4476,12 +4559,12 @@ function resumeGlossaryMediaOutboxForActiveCampaign() {
 function scheduleCloudSave(delay = 900, options = {}) {
   const target = options.cloudTarget || inferCloudSaveTarget();
   const glossaryId = getGlossaryCloudTargetId(target);
-  if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) {
+  if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.loginName) {
     if (glossaryId) {
       appendGlossaryUploadDebug(
         glossaryId,
         "Drive pendent",
-        "No s'ha iniciat la pujada: sessio activa=" + (cloudSession.enabled ? "si" : "no") + "; preparada=" + (cloudSession.ready ? "si" : "no") + "; identificada=" + (cloudSession.idToken ? "si" : "no") + ".",
+        "No s'ha iniciat la pujada: sessio activa=" + (cloudSession.enabled ? "si" : "no") + "; preparada=" + (cloudSession.ready ? "si" : "no") + "; identificada=" + (cloudSession.loginName ? "si" : "no") + ".",
       );
     }
     return;
@@ -4506,7 +4589,7 @@ function scheduleCloudQueueDrain(delay = 900) {
 }
 
 async function drainCloudSaveQueue() {
-  if (cloudSaveInFlight || !cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) return false;
+  if (cloudSaveInFlight || !cloudSession.enabled || !cloudSession.ready || !cloudSession.loginName) return false;
   window.clearTimeout(cloudSaveRetryTimer);
   cloudSaveRetryTimer = null;
   cloudSaveInFlight = true;
@@ -4532,7 +4615,7 @@ async function drainCloudSaveQueue() {
 }
 
 async function pushStateToCloud(options = {}) {
-  if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.idToken) return false;
+  if (!cloudSession.enabled || !cloudSession.ready || !cloudSession.loginName) return false;
 
   const target = resolveCloudSaveTarget(options.target || inferCloudSaveTarget());
   if (!target) return false;
@@ -4556,7 +4639,7 @@ async function pushStateToCloud(options = {}) {
       const campaignPayload = prepared.payload;
       assetReplacements = prepared.replacements;
       response = await saveCampaignToCloud(
-        cloudSession.idToken,
+        cloudSession.loginName,
         campaignPayload,
         { expectedRevision: cloudSession.revision },
       );
@@ -4568,22 +4651,22 @@ async function pushStateToCloud(options = {}) {
       });
       const characterPayload = prepared.payload;
       assetReplacements = prepared.replacements;
-      response = await saveCharacterToCloud(cloudSession.idToken, characterPayload, campaignId, {
+      response = await saveCharacterToCloud(cloudSession.loginName, characterPayload, campaignId, {
         preserveExistingPortrait:
           target.preserveExistingPortrait === true
           && cloudSession.capabilities?.preserveExistingCharacterPortrait === true,
       });
     } else if (target.type === "characterRoster") {
-      response = await saveCharacterRosterToCloud(cloudSession.idToken, target.characterId, {
+      response = await saveCharacterRosterToCloud(cloudSession.loginName, target.characterId, {
         roster: state.characters.find((item) => item.id === target.characterId)?.roster || {},
         assignedEmails: getCharacterAssignments(target.characterId),
       }, campaignId);
     } else if (target.type === "deleteCharacter") {
-      response = await deleteCharacterFromCloud(cloudSession.idToken, target.characterId, campaignId);
+      response = await deleteCharacterFromCloud(cloudSession.loginName, target.characterId, campaignId);
     } else if (target.type === "deleteChronicle") {
-      response = await deleteChronicleFromCloud(cloudSession.idToken, target.chronicleId, campaignId);
+      response = await deleteChronicleFromCloud(cloudSession.loginName, target.chronicleId, campaignId);
     } else if (target.type === "deleteGlossary") {
-      response = await deleteGlossaryEntryFromCloud(cloudSession.idToken, target.entryId, campaignId);
+      response = await deleteGlossaryEntryFromCloud(cloudSession.loginName, target.glossaryId, campaignId);
     } else if (target.type === "chronicle") {
       const prepared = await prepareCloudAssetPayload(target.chronicle, {
         campaignId,
@@ -4592,7 +4675,7 @@ async function pushStateToCloud(options = {}) {
       });
       const chroniclePayload = prepared.payload;
       assetReplacements = prepared.replacements;
-      response = await saveChronicleToCloud(cloudSession.idToken, chroniclePayload, campaignId);
+      response = await saveChronicleToCloud(cloudSession.loginName, chroniclePayload, campaignId);
     } else if (target.type === "glossary") {
       appendGlossaryUploadDebug(
         glossaryId,
@@ -4606,7 +4689,7 @@ async function pushStateToCloud(options = {}) {
       });
       const glossaryPayload = prepared.payload;
       assetReplacements = prepared.replacements;
-      response = await saveGlossaryEntryToCloud(cloudSession.idToken, glossaryPayload, campaignId, {
+      response = await saveGlossaryEntryToCloud(cloudSession.loginName, glossaryPayload, campaignId, {
         preserveExistingImageAssets:
           target.preserveExistingImageAssets === true
           && cloudSession.capabilities?.preserveExistingImageAssets === true,
@@ -4676,7 +4759,7 @@ async function prepareCloudAssetPayload(value, context) {
       if (glossaryId) {
         appendGlossaryUploadDebug(glossaryId, "Drive pujant", "Transferint " + (asset.name || "imatge") + ".");
       }
-      const response = await saveAssetToCloud(cloudSession.idToken, asset, context);
+      const response = await saveAssetToCloud(cloudSession.loginName, asset, context);
       assetRef = String(response?.assetRef || "");
       if (!assetRef.startsWith("drive-asset://")) {
         throw new Error("Drive no ha retornat una referencia valida per a la imatge.");
@@ -4800,7 +4883,7 @@ async function repairCampaignAssets() {
   cloudSession.status = "Reparant referencies d'imatge a Drive...";
   render([RENDER_PARTS.notice, RENDER_PARTS.options]);
   try {
-    const response = await repairCampaignAssetsInCloud(cloudSession.idToken, storageGetActiveCampaignMeta().id);
+    const response = await repairCampaignAssetsInCloud(cloudSession.loginName, storageGetActiveCampaignMeta().id);
     if (response?.campaign) {
       state = storageMigrateStoredState({ version: response.version || 0, state: response.campaign });
       ensureUiStateShape();
@@ -5375,7 +5458,7 @@ function toggleModuleEdit(module) {
 }
 
 function ensureUiStateShape() {
-  const validModules = new Set(["characters", "chronicles", "glossary", "campaigns", "options"]);
+  const validModules = new Set(["characters", "chronicles", "glossary", "map", "campaigns", "options"]);
   state.ui.currentModule = validModules.has(state.ui.currentModule) ? state.ui.currentModule : "characters";
   state.ui.showChronicleLanding = typeof state.ui.showChronicleLanding === "boolean" ? state.ui.showChronicleLanding : true;
   state.ui.sidebarPinned = typeof state.ui.sidebarPinned === "boolean" ? state.ui.sidebarPinned : false;
@@ -5423,6 +5506,7 @@ function ensureUiStateShape() {
   state.ui.newCharacterId = typeof state.ui.newCharacterId === "string" ? state.ui.newCharacterId : "";
   state.ui.newChronicleId = typeof state.ui.newChronicleId === "string" ? state.ui.newChronicleId : "";
   state.ui.newGlossaryId = typeof state.ui.newGlossaryId === "string" ? state.ui.newGlossaryId : "";
+  state.ui.worldMapZoom = clampWorldMapZoom(state.ui.worldMapZoom);
   state.ui.chronicleIndexSearch = typeof state.ui.chronicleIndexSearch === "string" ? state.ui.chronicleIndexSearch : "";
 }
 
@@ -7046,6 +7130,8 @@ function createGlossaryReferenceTooltip(entry) {
     const image = document.createElement("img");
     if (isAssetToken(imageSource)) {
       image.dataset.assetSrc = imageSource;
+    } else if (/^data:/i.test(imageSource)) {
+      image.dataset.assetSrc = "asset://unconfirmed-media";
     } else {
       image.src = imageSource;
     }

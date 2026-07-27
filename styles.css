@@ -1455,9 +1455,32 @@ body.auth-waiting-server .auth-sigil-login::after {
   outline-offset: 8px;
 }
 
+.auth-login-form {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 1.4rem);
+  left: 50%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  width: min(360px, 88vw);
+  transform: translateX(-50%);
+}
+
+.auth-login-form input {
+  min-width: 0;
+  color: #3d2218;
+  background: rgba(255, 242, 214, 0.96);
+  border: 1px solid rgba(232, 187, 107, 0.72);
+}
+
+.auth-login-form button {
+  white-space: nowrap;
+}
+
 .auth-status {
   position: absolute;
-  top: calc(100% + 0.9rem);
+  top: calc(100% + 5.1rem);
   left: 50%;
   z-index: 5;
   width: min(280px, 72vw);
@@ -1480,7 +1503,7 @@ body.auth-waiting-server .auth-sigil-login::after {
 }
 
 body.auth-waiting-server .auth-status {
-  top: calc(100% + 1.25rem);
+  top: calc(100% + 5.25rem);
 }
 
 .auth-status:empty {
@@ -8773,6 +8796,23 @@ select {
   font-size: 0.92rem;
 }
 
+.character-portrait-picker-preview {
+  width: min(180px, 100%);
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border: 1px solid rgba(121, 77, 40, 0.28);
+  border-radius: 12px;
+  background: rgba(63, 35, 20, 0.1);
+}
+
+.character-portrait-picker-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+
 .glossary-image-picker-status {
   display: flex;
   align-items: center;
@@ -10231,3 +10271,745 @@ body.office-mode .character-card .tag-list .tag:nth-child(n+2) {
 body.office-mode .character-roster-toolbar { margin-bottom: 0.65rem; }
 body.office-mode .character-roster-actions { top: 0.5rem; right: 0.75rem; }
 body.office-mode .character-roster-popover { z-index: 20; }
+
+/* Mapa: una sola superfície immersiva, amb el context de cada hex només sota demanda. */
+body.world-map-active {
+  overflow: hidden;
+}
+
+body.world-map-active .app-shell {
+  display: block;
+  min-height: 100dvh;
+}
+
+body.world-map-active .sidebar {
+  display: none;
+}
+
+body.world-map-active .main-content {
+  min-height: 100dvh;
+  padding: 0;
+}
+
+#mapModule.module-view.active {
+  display: block;
+  min-height: 100dvh;
+}
+
+.world-map-shell {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+  background: #000;
+}
+
+.world-map-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  outline: none;
+  touch-action: pan-x pan-y;
+}
+
+.world-map-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform: scale(var(--map-zoom));
+  transform-origin: 50% 50%;
+  transition: transform 220ms ease;
+}
+
+.world-map-canvas > img,
+.world-map-grid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.world-map-canvas > img {
+  object-fit: cover;
+  user-select: none;
+  pointer-events: none;
+}
+
+.world-map-grid {
+  overflow: visible;
+}
+
+.world-map-hex-group {
+  cursor: help;
+  outline: none;
+}
+
+.world-map-hex {
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 160ms ease, stroke-width 160ms ease;
+}
+
+/* Sense revelar: la capa és negre pur. */
+.world-map-hex.is-hidden {
+  fill: #000;
+  stroke: #000;
+}
+
+/* Descobert: la boira no desapareix, es desfà amb una màscara difusa. */
+.world-map-hex.is-discovered {
+  fill: rgba(0, 0, 0, 0.72);
+  stroke: rgba(0, 0, 0, 0.95);
+  filter: url(#world-map-discovery-blur);
+}
+
+/* Visitat: no hi ha cap capa de boira. */
+.world-map-hex.is-visited {
+  fill: transparent;
+  stroke: rgba(255, 239, 195, 0.28);
+}
+
+.world-map-hex-group:hover .world-map-hex.is-visited,
+.world-map-hex-group:focus-visible .world-map-hex.is-visited {
+  stroke: rgba(255, 244, 210, 0.92);
+  stroke-width: 3;
+}
+
+.world-map-hex-tooltip {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.world-map-hex-group:hover .world-map-hex-tooltip,
+.world-map-hex-group:focus-visible .world-map-hex-tooltip {
+  opacity: 1;
+}
+
+.world-map-hex-tooltip > div {
+  display: grid;
+  gap: 0.18rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.7rem 0.8rem;
+  overflow: hidden;
+  color: #fff8e8;
+  background: rgba(5, 5, 5, 0.92);
+  border: 1px solid rgba(255, 234, 187, 0.46);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  font: 14px/1.25 "Palatino Linotype", "Book Antiqua", Palatino, serif;
+}
+
+.world-map-hex-tooltip strong { font-size: 1rem; }
+.world-map-hex-tooltip span,
+.world-map-hex-tooltip small { color: #e4c68d; font-size: 0.72rem; }
+.world-map-hex-tooltip p { display: -webkit-box; overflow: hidden; margin: 0.1rem 0; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+
+.world-map-hud {
+  position: absolute;
+  z-index: 2;
+  right: 1rem;
+  bottom: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #fff6df;
+  background: rgba(0, 0, 0, 0.68);
+  border: 1px solid rgba(255, 238, 198, 0.22);
+  border-radius: 999px;
+  padding: 0.28rem;
+  backdrop-filter: blur(8px);
+}
+
+.world-map-level { padding: 0 0.45rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+.world-map-zoom-controls { display: flex; gap: 0.2rem; }
+.world-map-hud button { width: 2.15rem; min-height: 2.15rem; padding: 0; color: #fff6df; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 238, 198, 0.18); box-shadow: none; font-size: 1.2rem; }
+.world-map-hud button:hover { transform: none; background: rgba(255, 255, 255, 0.18); }
+.world-map-exit { position: fixed; top: 1rem; left: 1rem; }
+
+@media (max-width: 720px) {
+  .world-map-hud { right: 0.65rem; bottom: 0.65rem; }
+  .world-map-level { display: none; }
+  .world-map-exit { top: 0.65rem; left: 0.65rem; }
+  .world-map-hex-tooltip > div { font-size: 12px; }
+}
+
+/* Mapa: controls i lectura subordinats al terreny. */
+.world-map-shell {
+  isolation: isolate;
+  background: #050505;
+}
+
+.world-map-shell::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(4, 3, 2, 0.42), transparent 18%, transparent 76%, rgba(4, 3, 2, 0.56)),
+    linear-gradient(90deg, rgba(4, 3, 2, 0.28), transparent 12%, transparent 88%, rgba(4, 3, 2, 0.28));
+}
+
+.world-map-header,
+.world-map-inspector,
+.world-map-hud {
+  z-index: 3;
+}
+
+.world-map-header {
+  position: absolute;
+  top: clamp(0.8rem, 2vw, 1.5rem);
+  left: clamp(0.8rem, 2vw, 1.5rem);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: #f6e9ce;
+}
+
+.world-map-exit {
+  position: static;
+  display: grid;
+  width: 2.4rem;
+  min-height: 2.4rem;
+  padding: 0;
+  place-items: center;
+  color: #f9eed8;
+  background: rgba(12, 10, 8, 0.72);
+  border: 1px solid rgba(244, 221, 177, 0.28);
+  border-radius: 50%;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.world-map-exit:hover,
+.world-map-exit:focus-visible {
+  transform: translateX(-2px);
+  background: rgba(41, 31, 20, 0.94);
+}
+
+.world-map-title {
+  display: grid;
+  gap: 0.1rem;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+}
+
+.world-map-title span,
+.world-map-inspector-kicker {
+  color: #d4ae72;
+  font: 700 0.62rem/1 "Aptos", "Trebuchet MS", sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.world-map-title strong {
+  font-size: 1.03rem;
+  font-weight: 600;
+}
+
+.world-map-hex-group {
+  cursor: crosshair;
+}
+
+.world-map-hex {
+  transition: fill 180ms ease, stroke 180ms ease, stroke-width 180ms ease, opacity 180ms ease;
+}
+
+.world-map-hex.is-hidden {
+  fill: #000;
+  stroke: #000;
+}
+
+.world-map-hex.is-discovered {
+  fill: rgba(0, 0, 0, 0.69);
+  stroke: rgba(13, 10, 8, 0.94);
+  filter: url(#world-map-discovery-blur);
+}
+
+.world-map-hex.is-visited {
+  stroke: rgba(247, 224, 179, 0.2);
+}
+
+.world-map-hex-group:hover .world-map-hex,
+.world-map-hex-group:focus-visible .world-map-hex {
+  stroke: rgba(243, 208, 141, 0.86);
+  stroke-width: 2.5;
+}
+
+.world-map-hex-group:hover .world-map-hex.is-hidden,
+.world-map-hex-group:focus-visible .world-map-hex.is-hidden {
+  stroke: rgba(247, 225, 181, 0.44);
+}
+
+.world-map-inspector {
+  position: absolute;
+  top: clamp(4.7rem, 8vw, 6.1rem);
+  left: clamp(0.8rem, 2vw, 1.5rem);
+  display: grid;
+  gap: 0.3rem;
+  width: min(20rem, calc(100vw - 2rem));
+  min-height: 3.4rem;
+  padding: 0.7rem 0.8rem;
+  color: #f8eedb;
+  background: linear-gradient(105deg, rgba(11, 10, 8, 0.84), rgba(11, 10, 8, 0.56));
+  border-left: 1px solid rgba(226, 185, 118, 0.5);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(9px);
+  opacity: 0.72;
+  transition: opacity 160ms ease, background 160ms ease;
+}
+
+.world-map-inspector.is-active {
+  background: linear-gradient(105deg, rgba(11, 10, 8, 0.92), rgba(11, 10, 8, 0.72));
+  opacity: 1;
+}
+
+.world-map-inspector strong {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.world-map-inspector > span:not(.world-map-inspector-kicker),
+.world-map-inspector small {
+  color: #e1bf88;
+  font: 600 0.7rem/1.25 "Aptos", "Trebuchet MS", sans-serif;
+}
+
+.world-map-inspector p {
+  margin: 0.05rem 0 0;
+  color: rgba(255, 245, 226, 0.84);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.world-map-hud {
+  right: clamp(0.8rem, 2vw, 1.5rem);
+  bottom: clamp(0.8rem, 2vw, 1.5rem);
+  gap: 0.45rem;
+  padding: 0.3rem 0.35rem 0.3rem 0.7rem;
+  background: rgba(10, 9, 7, 0.78);
+  border-color: rgba(242, 216, 170, 0.26);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+}
+
+.world-map-level,
+.world-map-zoom-value {
+  padding: 0;
+  color: #f1dfbc;
+  font: 700 0.62rem/1 "Aptos", "Trebuchet MS", sans-serif;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.world-map-zoom-value {
+  color: rgba(241, 223, 188, 0.62);
+  letter-spacing: 0.06em;
+}
+
+.world-map-hud button {
+  width: 2rem;
+  min-height: 2rem;
+  border-radius: 50%;
+  font-size: 1.05rem;
+}
+
+@media (max-width: 720px) {
+  .world-map-header { top: 0.75rem; left: 0.75rem; }
+  .world-map-inspector { top: 4.25rem; left: 0.75rem; width: min(17.5rem, calc(100vw - 1.5rem)); }
+  .world-map-hud { right: 0.75rem; bottom: 0.75rem; }
+  .world-map-level { display: inline; }
+  .world-map-zoom-value { display: none; }
+}
+
+/* El marge exterior és territori incert, no una extensió accidental de l'art. */
+.world-map-viewport {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at center, rgba(123, 112, 91, 0.13), transparent 54%),
+    repeating-linear-gradient(45deg, rgba(235, 223, 194, 0.025) 0 1px, transparent 1px 11px),
+    linear-gradient(135deg, #272825, #1b1d1c 52%, #292723);
+}
+
+.world-map-viewport::before,
+.world-map-viewport::after {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.world-map-viewport::before {
+  content: "";
+  inset: 1.35rem;
+  border: 1px solid rgba(219, 198, 155, 0.1);
+  box-shadow: inset 0 0 4rem rgba(0, 0, 0, 0.45);
+}
+
+.world-map-viewport::after {
+  content: "HERE BE DRAGONS";
+  right: clamp(1.2rem, 7vw, 7rem);
+  bottom: clamp(4.8rem, 11vh, 8rem);
+  color: rgba(229, 213, 178, 0.18);
+  font: 700 clamp(0.62rem, 1vw, 0.8rem)/1 "Aptos", "Trebuchet MS", sans-serif;
+  letter-spacing: 0.32em;
+  transform: rotate(-8deg);
+}
+
+.world-map-canvas {
+  z-index: 1;
+}
+
+.world-map-art,
+.world-map-grid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.world-map-art {
+  overflow: visible;
+}
+
+.world-map-hex-group {
+  cursor: pointer;
+}
+
+.world-map-inspector.is-active::after {
+  content: "Doble clic per canviar l'estat";
+  margin-top: 0.12rem;
+  color: rgba(231, 203, 151, 0.58);
+  font: 600 0.61rem/1.2 "Aptos", "Trebuchet MS", sans-serif;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 720px) {
+  .world-map-viewport::before { inset: 0.7rem; }
+  .world-map-viewport::after { right: 1rem; bottom: 4.6rem; font-size: 0.56rem; }
+  .world-map-inspector.is-active::after { content: "Doble toc per canviar l'estat"; }
+}
+
+/* Atles il·luminat: la carta de navegació és el substrat de tot el mapa. */
+.world-map-shell {
+  background: #24180e url("./resources/mapes/meledar-cartography-underlay.png") center / cover no-repeat;
+}
+
+.world-map-shell::after {
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(12, 8, 4, 0.18), transparent 22%, transparent 74%, rgba(12, 8, 4, 0.38));
+}
+
+.world-map-viewport {
+  isolation: auto;
+  background: transparent;
+}
+
+.world-map-viewport::before,
+.world-map-viewport::after {
+  content: none;
+}
+
+.world-map-canvas {
+  z-index: 1;
+}
+
+.world-map-canvas > img {
+  z-index: 1;
+  opacity: 0.8;
+  filter: saturate(0.84) contrast(1.04) brightness(0.94);
+}
+
+.world-map-grid {
+  z-index: 2;
+}
+
+.world-map-header {
+  position: absolute;
+  z-index: 4;
+  top: 0.4rem;
+  left: 50%;
+  display: grid;
+  gap: 0;
+  justify-items: center;
+  width: min(31rem, 56vw);
+  color: #f4d594;
+  transform: translateX(-50%);
+}
+
+.world-map-title {
+  position: relative;
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.62rem 3.4rem 0.58rem;
+  color: #f2ca7b;
+  background: linear-gradient(180deg, rgba(26, 17, 12, 0.98), rgba(10, 8, 6, 0.94));
+  border: 1px solid rgba(202, 149, 72, 0.72);
+  border-radius: 0 0 1.6rem 1.6rem;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5), inset 0 1px rgba(255, 229, 165, 0.16);
+  text-align: center;
+  text-shadow: 0 2px 10px #000;
+}
+
+.world-map-title::before,
+.world-map-title::after {
+  content: "✦";
+  position: absolute;
+  top: 50%;
+  color: rgba(221, 165, 78, 0.72);
+  font-size: 0.7rem;
+  transform: translateY(-50%);
+}
+
+.world-map-title::before { left: 1.25rem; }
+.world-map-title::after { right: 1.25rem; }
+
+.world-map-title strong {
+  font-family: "Baskerville Old Face", "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: clamp(1rem, 1.8vw, 1.45rem);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.world-map-title span {
+  color: rgba(239, 205, 144, 0.8);
+  font: 700 0.58rem/1 "Aptos", "Trebuchet MS", sans-serif;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+}
+
+.world-map-exit {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 2rem;
+  margin-top: -1px;
+  padding: 0.38rem 1rem;
+  color: #e7c87f;
+  background: linear-gradient(180deg, #20150d, #100c08);
+  border: 1px solid rgba(197, 141, 65, 0.68);
+  border-radius: 0 0 1rem 1rem;
+  box-shadow: 0 7px 15px rgba(0, 0, 0, 0.4);
+  font: 700 0.64rem/1 "Aptos", "Trebuchet MS", sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.world-map-exit span {
+  font-family: Georgia, serif;
+  font-size: 0.95rem;
+}
+
+.world-map-exit:hover,
+.world-map-exit:focus-visible {
+  transform: none;
+  color: #fff0ba;
+  background: linear-gradient(180deg, #3c2513, #191008);
+}
+
+.world-map-hex-group {
+  cursor: crosshair;
+}
+
+.world-map-hex.is-hidden {
+  fill: #000;
+  stroke: #000;
+}
+
+.world-map-hex.is-discovered {
+  fill: rgba(0, 0, 0, 0.68);
+  stroke: rgba(7, 5, 3, 0.94);
+}
+
+.world-map-hex.is-visited {
+  stroke: rgba(235, 192, 108, 0.18);
+}
+
+.world-map-hex-group:hover .world-map-hex,
+.world-map-hex-group:focus-visible .world-map-hex {
+  stroke: #e5ae52;
+  stroke-width: 2.7;
+  filter: drop-shadow(0 0 8px rgba(235, 167, 59, 0.55));
+}
+
+.world-map-hex-group:hover .world-map-hex.is-hidden,
+.world-map-hex-group:focus-visible .world-map-hex.is-hidden {
+  stroke: rgba(221, 160, 70, 0.55);
+}
+
+.world-map-inspector {
+  position: absolute;
+  z-index: 4;
+  top: auto;
+  left: 50%;
+  bottom: 1.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+  width: min(48rem, calc(100vw - 19rem));
+  min-height: 4.7rem;
+  padding: 0.7rem 1rem;
+  color: #f5dfb0;
+  background: linear-gradient(100deg, rgba(15, 10, 6, 0.97), rgba(31, 19, 11, 0.91));
+  border: 1px solid rgba(191, 132, 52, 0.68);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), inset 0 1px rgba(255, 230, 175, 0.1);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 1rem);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.world-map-inspector.is-active {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.world-map-inspector-mark {
+  display: grid;
+  flex: 0 0 2.85rem;
+  width: 2.85rem;
+  height: 2.85rem;
+  place-items: center;
+  color: #edb95e;
+  background: radial-gradient(circle, rgba(116, 39, 22, 0.88), rgba(31, 14, 8, 0.96));
+  border: 1px solid rgba(218, 155, 66, 0.78);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 3px rgba(13, 8, 5, 0.76);
+  font-size: 1.25rem;
+}
+
+.world-map-inspector-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.world-map-inspector-kicker,
+.world-map-inspector-copy small {
+  color: #d4a45a;
+  font: 700 0.6rem/1.15 "Aptos", "Trebuchet MS", sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.world-map-inspector-copy strong {
+  color: #f5d99b;
+  font-family: "Baskerville Old Face", "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.world-map-inspector-copy p {
+  display: -webkit-box;
+  max-width: 58rem;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(250, 233, 198, 0.86);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.world-map-hud {
+  position: absolute;
+  z-index: 4;
+  right: 1.25rem;
+  bottom: 1.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.62rem;
+  padding: 0.45rem 0.55rem 0.45rem 0.8rem;
+  color: #e9c77e;
+  background: linear-gradient(100deg, rgba(19, 12, 7, 0.97), rgba(38, 23, 12, 0.94));
+  border: 1px solid rgba(185, 125, 46, 0.7);
+  border-radius: 0.28rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px rgba(255, 228, 165, 0.1);
+  backdrop-filter: none;
+}
+
+.world-map-level {
+  padding: 0;
+  color: #d5a85f;
+  font: 700 0.58rem/1 "Aptos", "Trebuchet MS", sans-serif;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.world-map-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.world-map-zoom-value {
+  min-width: 2.7rem;
+  color: #f0d89d;
+  font: 700 0.7rem/1 "Aptos", "Trebuchet MS", sans-serif;
+  text-align: center;
+}
+
+.world-map-hud button {
+  width: 1.85rem;
+  min-height: 1.85rem;
+  padding: 0;
+  color: #f3d994;
+  background: rgba(5, 4, 3, 0.56);
+  border-color: rgba(210, 149, 62, 0.52);
+  border-radius: 50%;
+  font-size: 1rem;
+}
+
+.world-map-hud button:hover {
+  background: rgba(103, 61, 20, 0.72);
+}
+
+.world-map-grid {
+  overflow: hidden;
+}
+
+.world-map-hidden-underlay {
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.world-map-hex.is-hidden {
+  fill: rgba(0, 0, 0, 0.7);
+  stroke: #000;
+}
+
+.world-map-hex.is-discovered {
+  fill: url(#world-map-discovery-fog);
+  stroke: rgba(7, 5, 3, 0.94);
+  filter: none;
+}
+
+/* La vora es construeix amb meitats d'hexàgon i només avança amb la descoberta. */
+.world-map-partial-hex {
+  pointer-events: none;
+}
+
+.world-map-partial-hex polygon {
+  fill: url(#world-map-hidden-chart);
+  fill-opacity: 0.8;
+  stroke: rgba(225, 177, 90, 0.42);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+  filter: none;
+}
+
+@media (max-width: 720px) {
+  .world-map-header { top: 0.25rem; width: min(23rem, 86vw); }
+  .world-map-title { padding: 0.52rem 2.5rem; }
+  .world-map-title strong { font-size: 0.92rem; }
+  .world-map-title span { font-size: 0.48rem; }
+  .world-map-exit { min-height: 1.8rem; padding: 0.32rem 0.76rem; font-size: 0.55rem; }
+  .world-map-inspector { bottom: 4.9rem; width: calc(100vw - 1.5rem); min-height: 4.35rem; padding: 0.6rem 0.7rem; }
+  .world-map-inspector-copy p { -webkit-line-clamp: 2; }
+  .world-map-hud { right: 0.75rem; bottom: 0.8rem; }
+  .world-map-level { display: none; }
+}

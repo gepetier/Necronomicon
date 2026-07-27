@@ -559,6 +559,10 @@ function renderAssetAttribute(attribute, source) {
     return `data-asset-${attribute}="${escapeAttribute(source)}"`;
   }
 
+  if (/^data:/i.test(String(source || ""))) {
+    return `data-asset-${attribute}="asset://unconfirmed-media"`;
+  }
+
   const kind = attribute === "href" ? "file" : inferRenderedMediaKind(source);
   const safeSource = sanitizeMediaSource(source, kind);
   return safeSource

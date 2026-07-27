@@ -1,223 +1,141 @@
 export const CLOUD_CONFIG = {
-  clientId: "386167885974-voguggv8fbvmqioec1p38vu3qf1fj33f.apps.googleusercontent.com",
   apiUrl: "https://script.google.com/macros/s/AKfycbwPm3QcltPGib-vwLWiElMZuELd-tq5aS2qohR_oNZt96IiPNOwumMYoIw7KZKJmBfXKQ/exec",
+  // Visible al navegador: diferencia aquesta instal·lació, però no és una
+  // contrasenya personal. L'accés real a Drive és el del desplegament.
+  serviceAccessKey: "necronomicon-shared-drive-gateway-v1",
 };
 
-const GOOGLE_IDENTITY_SCRIPT = "https://accounts.google.com/gsi/client";
-const CREDENTIAL_STORAGE_KEY = "necronomicon-google-credential";
+const LOGIN_NAME_STORAGE_KEY = "necronomicon-login-name";
 // Apps Script pot necessitar uns segons addicionals en un arrencat en fred o
 // mentre espera el bloqueig de la campanya. Les lectures d'actius ja disposen
 // de 30 s; fem servir el mateix marge per a la campanya i les confirmacions.
 const JSONP_TIMEOUT_MS = 30000;
 const JSONP_MAX_PAYLOAD_LENGTH = 7000;
 
-let googleIdentityPromise = null;
 let jsonpCounter = 0;
 let serverSessionToken = "";
 
-export function getStoredCredential() {
-  const credential = window.sessionStorage.getItem(CREDENTIAL_STORAGE_KEY) || "";
-  window.localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
-  return credential;
+export function getStoredLoginName() {
+  return window.localStorage.getItem(LOGIN_NAME_STORAGE_KEY) || "";
+}
+export function storeLoginName(loginName) {
+  const normalized = normalizeLoginName(loginName);
+  if (normalized) window.localStorage.setItem(LOGIN_NAME_STORAGE_KEY, normalized);
 }
 
-export function storeCredential(credential) {
-  if (credential) {
-    window.sessionStorage.setItem(CREDENTIAL_STORAGE_KEY, credential);
-    window.localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
-  }
-}
-
-export function clearStoredCredential() {
+export function clearStoredLoginName() {
   serverSessionToken = "";
-  window.sessionStorage.removeItem(CREDENTIAL_STORAGE_KEY);
-  window.localStorage.removeItem(CREDENTIAL_STORAGE_KEY);
+  window.localStorage.removeItem(LOGIN_NAME_STORAGE_KEY);
 }
 
-export function decodeCredential(credential) {
-  const payload = decodeJwtPayload(credential);
-  if (!payload) {
-    return null;
-  }
-
-  const expiresAt = Number(payload.exp || 0) * 1000;
-  return {
-    email: String(payload.email || "").toLowerCase(),
-    name: String(payload.name || payload.email || ""),
-    picture: String(payload.picture || ""),
-    expiresAt,
-  };
+export function normalizeLoginName(loginName) {
+  return String(loginName || "").trim().replace(/\s+/g, " ").slice(0, 48);
 }
 
-export function isCredentialUsable(credential) {
-  const decoded = decodeCredential(credential);
-  const payload = decodeJwtPayload(credential);
-  return Boolean(
-    decoded
-      && decoded.email
-      && decoded.expiresAt > Date.now() + 60000
-      && payload?.aud === CLOUD_CONFIG.clientId,
-  );
-}
-
-export async function loadGoogleIdentity() {
-  if (window.google?.accounts?.id) {
-    return window.google;
-  }
-
-  if (!googleIdentityPromise) {
-    googleIdentityPromise = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = GOOGLE_IDENTITY_SCRIPT;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => resolve(window.google);
-      script.onerror = () => reject(new Error("No s'ha pogut carregar Google Identity Services."));
-      document.head.append(script);
-    });
-  }
-
-  return googleIdentityPromise;
-}
-
-export function renderGoogleButton(rootEl, callback) {
-  if (!rootEl || !window.google?.accounts?.id) {
-    return;
-  }
-
-  rootEl.innerHTML = "";
-  window.google.accounts.id.initialize({
-    client_id: CLOUD_CONFIG.clientId,
-    callback,
-    auto_select: true,
-    cancel_on_tap_outside: false,
-  });
-  window.google.accounts.id.renderButton(rootEl, {
-    theme: "filled_black",
-    size: "large",
-    text: "signin_with",
-    shape: "pill",
-    logo_alignment: "left",
-    width: 320,
-  });
-  const removeHiddenGoogleButtonFromTabOrder = () => {
-    rootEl.querySelectorAll("iframe").forEach((iframe) => iframe.setAttribute("tabindex", "-1"));
-  };
-  removeHiddenGoogleButtonFromTabOrder();
-  window.requestAnimationFrame(removeHiddenGoogleButtonFromTabOrder);
-}
-
-export function promptGoogleSignIn() {
-  if (window.google?.accounts?.id) {
-    window.google.accounts.id.prompt();
-  }
-}
-
-export async function loadCampaignFromCloud(idToken) {
-  await establishServerSession(idToken);
+export async function loadCampaignFromCloud(loginName) {
+  await establishServerSession(loginName);
   return jsonpRequest({
     action: "loadCampaign",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
   });
 }
-
-export async function saveCampaignToCloud(idToken, campaign, options = {}) {
+export async function saveCampaignToCloud(loginName, campaign, options = {}) {
   return postAndConfirm({
     action: "saveCampaign",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaign,
     expectedRevision: Math.max(0, Number(options.expectedRevision) || 0),
-  }, idToken);
+  }, loginName);
 }
 
-export async function saveCharacterToCloud(idToken, character, campaignId = "", options = {}) {
+export async function saveCharacterToCloud(loginName, character, campaignId = "", options = {}) {
   const payload = {
     action: "saveCharacter",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaignId,
     character,
   };
   const compactPayload = options.preserveExistingPortrait
     ? createCharacterPayloadWithoutPortrait(payload)
     : null;
-  return saveItemToCloud(payload, compactPayload, idToken);
+  return saveItemToCloud(payload, compactPayload, loginName);
 }
 
-export async function saveChronicleToCloud(idToken, chronicle, campaignId = "") {
+export async function saveChronicleToCloud(loginName, chronicle, campaignId = "") {
   return saveItemToCloud({
     action: "saveChronicle",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaignId,
     chronicle,
-  }, null, idToken);
+  }, null, loginName);
 }
 
-export async function saveGlossaryEntryToCloud(idToken, entry, campaignId = "", options = {}) {
+export async function saveGlossaryEntryToCloud(loginName, entry, campaignId = "", options = {}) {
   const payload = {
     action: "saveGlossaryEntry",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaignId,
     entry,
   };
   const compactPayload = options.preserveExistingImageAssets
     ? createGlossaryEntryPayloadWithoutImages(payload)
     : null;
-  return saveItemToCloud(payload, compactPayload, idToken);
+  return saveItemToCloud(payload, compactPayload, loginName);
 }
 
-export async function saveCharacterRosterToCloud(idToken, characterId, roster, campaignId = "") {
+export async function saveCharacterRosterToCloud(loginName, characterId, roster, campaignId = "") {
   return saveItemToCloud({
     action: "saveCharacterRoster",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaignId,
     characterId,
     roster: roster?.roster || {},
     assignedEmails: Array.isArray(roster?.assignedEmails) ? roster.assignedEmails : [],
-  }, null, idToken);
+  }, null, loginName);
 }
 
-export async function deleteCharacterFromCloud(idToken, characterId, campaignId = "") {
+export async function deleteCharacterFromCloud(loginName, characterId, campaignId = "") {
   return saveItemToCloud({
     action: "deleteCharacter",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaignId,
     itemId: characterId,
-  }, null, idToken);
+  }, null, loginName);
 }
 
-export async function deleteChronicleFromCloud(idToken, chronicleId, campaignId = "") {
+export async function deleteChronicleFromCloud(loginName, chronicleId, campaignId = "") {
   return saveItemToCloud({
     action: "deleteChronicle",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaignId,
     itemId: chronicleId,
-  }, null, idToken);
+  }, null, loginName);
 }
 
-export async function deleteGlossaryEntryFromCloud(idToken, entryId, campaignId = "") {
+export async function deleteGlossaryEntryFromCloud(loginName, entryId, campaignId = "") {
   return saveItemToCloud({
     action: "deleteGlossaryEntry",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaignId,
     itemId: entryId,
-  }, null, idToken);
+  }, null, loginName);
 }
 
-export async function repairCampaignAssetsInCloud(idToken, campaignId = "") {
+export async function repairCampaignAssetsInCloud(loginName, campaignId = "") {
   return saveItemToCloud({
     action: "repairCampaignAssets",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaignId,
-  }, null, idToken);
+  }, null, loginName);
 }
-export async function saveAssetToCloud(idToken, asset, context = {}) {
+export async function saveAssetToCloud(loginName, asset, context = {}) {
   const label = String(asset?.name || asset?.id || "imatge").trim() || "imatge";
   try {
-    await establishServerSession(idToken);
+    await establishServerSession(loginName);
     const operationId = createOperationId();
     await postWithoutCors({
       action: "saveAsset",
-      ...createAuthPayload(idToken),
+      ...createAuthPayload(loginName),
       operationId,
       campaignId: context.campaignId || "",
       targetType: context.targetType || "campaign",
@@ -231,11 +149,11 @@ export async function saveAssetToCloud(idToken, asset, context = {}) {
   }
 }
 
-export async function loadAssetFromCloud(idToken, assetRef, campaignId = "") {
-  await establishServerSession(idToken);
+export async function loadAssetFromCloud(loginName, assetRef, campaignId = "") {
+  await establishServerSession(loginName);
   return jsonpRequest({
     action: "loadAsset",
-    ...createAuthPayload(idToken),
+    ...createAuthPayload(loginName),
     campaignId,
     assetRef,
   }, 30000);
@@ -271,7 +189,7 @@ export function createCharacterPayloadWithoutPortrait(payload) {
   };
 }
 
-async function saveItemToCloud(payload, compactPayload = null, idToken = "") {
+async function saveItemToCloud(payload, compactPayload = null, loginName = "") {
   const operationId = createOperationId();
   const confirmedPayload = { ...payload, operationId };
   const confirmedCompactPayload = compactPayload ? { ...compactPayload, operationId } : null;
@@ -291,13 +209,13 @@ async function saveItemToCloud(payload, compactPayload = null, idToken = "") {
     }
   }
 
-  return postAndConfirm(confirmedPayload, idToken);
+  return postAndConfirm(confirmedPayload, loginName);
 }
 
-async function postAndConfirm(payload, idToken = "") {
+async function postAndConfirm(payload, loginName = "") {
   const operationId = String(payload.operationId || createOperationId());
   await postWithoutCors({ ...payload, operationId });
-  const response = await loadCampaignFromCloud(idToken);
+  const response = await loadCampaignFromCloud(loginName);
   assertConfirmedOperation(response, operationId);
   return response;
 }
@@ -323,11 +241,16 @@ function createOperationId() {
   return `sync-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-async function establishServerSession(idToken) {
-  if (serverSessionToken || !idToken) return serverSessionToken;
+async function establishServerSession(loginName) {
+  if (serverSessionToken || !loginName) return serverSessionToken;
   const operationId = createOperationId();
   try {
-    await postWithoutCors({ action: "createSession", idToken, operationId });
+    await postWithoutCors({
+      action: "createSession",
+      loginName: normalizeLoginName(loginName),
+      accessKey: CLOUD_CONFIG.serviceAccessKey,
+      operationId,
+    });
     const response = await jsonpRequest({ action: "claimSession", operationId });
     serverSessionToken = String(response?.sessionToken || "");
   } catch {
@@ -336,8 +259,13 @@ async function establishServerSession(idToken) {
   return serverSessionToken;
 }
 
-function createAuthPayload(idToken) {
-  return serverSessionToken ? { sessionToken: serverSessionToken } : { idToken };
+function createAuthPayload(loginName) {
+  return serverSessionToken
+    ? { sessionToken: serverSessionToken }
+    : {
+      loginName: normalizeLoginName(loginName),
+      accessKey: CLOUD_CONFIG.serviceAccessKey,
+    };
 }
 
 function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
@@ -396,25 +324,4 @@ async function postWithoutCors(payload) {
     body: JSON.stringify(payload),
     keepalive: JSON.stringify(payload).length < 60000,
   });
-}
-
-function decodeJwtPayload(token) {
-  const parts = String(token || "").split(".");
-  if (parts.length < 2) {
-    return null;
-  }
-
-  try {
-    const normalized = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = `${normalized}${"=".repeat((4 - normalized.length % 4) % 4)}`;
-    const binary = window.atob(padded);
-    const json = decodeURIComponent(
-      Array.from(binary)
-        .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`)
-        .join(""),
-    );
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
 }

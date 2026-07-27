@@ -112,6 +112,8 @@ function buildScenarios() {
     { name: "glossary-return", ...desktop, fileName: "glossary-return-desktop.png" },
     { name: "glossary-edit", ...desktop, fileName: "glossary-edit-desktop.png" },
     { name: "glossary-image-ready", ...desktop, fileName: "glossary-image-ready-desktop.png" },
+    { name: "world-map", ...desktop, fileName: "world-map-desktop.png" },
+    { name: "world-map-regional", ...desktop, fileName: "world-map-regional-desktop.png" },
     { name: "auth-landing", ...mobile, fileName: "auth-landing-mobile.png" },
     { name: "auth-waiting", ...mobile, fileName: "auth-waiting-mobile.png" },
     { name: "auth-campaign-select", ...mobile, fileName: "auth-campaign-select-mobile.png" },
@@ -156,6 +158,8 @@ function buildScenarios() {
     { name: "glossary-return", ...mobile, fileName: "glossary-return-mobile.png" },
     { name: "glossary-edit", ...mobile, fileName: "glossary-edit-mobile.png" },
     { name: "glossary-image-ready", ...mobile, fileName: "glossary-image-ready-mobile.png" },
+    { name: "world-map", ...mobile, fileName: "world-map-mobile.png" },
+    { name: "world-map-regional", ...mobile, fileName: "world-map-regional-mobile.png" },
   ];
 }
 
@@ -204,6 +208,7 @@ function filterScenarios(allScenarios, filters) {
     campaigns: ["campaigns-dashboard"],
     baskins: ["baskins-character"],
     options: ["options-tools", "options-player-access", "options-permission-users"],
+    map: ["world-map"],
     desktop: ["-desktop"],
     mobile: ["-mobile"],
   };

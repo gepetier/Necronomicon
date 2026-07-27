@@ -1642,6 +1642,7 @@ function renderCharacterEditor(character, tab, state) {
                   <span>Sigil</span>
                   <input name="sigil" maxlength="2" value="${escapeAttribute(readDraftValue(overviewDraft.sigil, character.sigil))}" />
                 </label>
+                ${renderCharacterPortraitPicker(character, overviewDraft)}
                 ${renderRichTextareaField("summary", "Resum curt", readDraftValue(overviewDraft.summary, character.summary), 4)}
                 ${renderRichTextareaField("quickNotes", "Capacitats ràpides", readDraftValue(overviewDraft.quickNotes, character.quickNotes), 4)}
               </div>
@@ -1663,6 +1664,33 @@ function renderCharacterEditor(character, tab, state) {
         )}
       </div>
     </section>
+  `;
+}
+
+function renderCharacterPortraitPicker(character, draft) {
+  const portrait = readDraftValue(draft.portrait, character.portrait || "");
+  const inputId = `character-portrait-${character.id}`;
+  return `
+    <label class="field span-2">
+      <span>Retrat</span>
+      <div class="glossary-image-picker character-portrait-picker">
+        <label class="secondary glossary-image-picker-button" for="${escapeAttribute(inputId)}">
+          <input
+            id="${escapeAttribute(inputId)}"
+            type="file"
+            accept="image/*"
+            data-character-portrait-picker
+            data-character-id="${escapeAttribute(character.id)}"
+            class="glossary-image-picker-input"
+          />
+          <span class="module-action-icon">+</span>
+          <span>${portrait ? "Substitueix retrat" : "Afegeix retrat"}</span>
+        </label>
+        ${portrait
+          ? `<div class="character-portrait-picker-preview"><img ${renderCharacterAssetAttribute(portrait)} alt="Previsualitzacio del retrat de ${escapeAttribute(character.name)}" /></div>`
+          : '<p class="glossary-image-picker-empty">Encara no hi ha cap retrat. Desa la fitxa per pujar-lo a Drive.</p>'}
+      </div>
+    </label>
   `;
 }
 

@@ -124,6 +124,20 @@ async function runScenario(context, scenarioName) {
     "auth-campaign-select": async () => {},
     "player-welcome": async () => {},
     "characters-grid": async () => {},
+    "world-map": async () => {
+      await context.click('[data-module-link="map"]');
+      const hex = context.query('[data-map-hex="0:0"]');
+      if (hex instanceof context.win.SVGElement) hex.focus();
+    },
+    "world-map-regional": async () => {
+      await context.click('[data-module-link="map"]');
+      await context.click('[data-map-zoom="in"]');
+      await context.click('[data-map-zoom="in"]');
+      await context.click('[data-map-zoom="in"]');
+      await context.click('[data-map-zoom="in"]');
+      const hex = context.query('[data-map-hex="0:0"]');
+      if (hex instanceof context.win.SVGElement) hex.focus();
+    },
     "sidebar-preview": async () => {
       const toggle = context.query("[data-sidebar-toggle]");
       if (!(toggle instanceof context.win.HTMLElement)) {

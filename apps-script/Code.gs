@@ -1,12 +1,17 @@
     const CONFIG = {
       CLIENT_ID: "386167885974-voguggv8fbvmqioec1p38vu3qf1fj33f.apps.googleusercontent.com",
+      // El desplegament és qui accedeix a Drive amb el compte que n'és
+      // propietari. Aquesta clau només identifica el client compartit; no és
+      // una credencial personal de Drive.
+      SERVICE_ACCESS_KEY: "necronomicon-shared-drive-gateway-v1",
+      SERVICE_USER_EMAIL: "sharegepeto@gmail.com",
       DRIVE_FOLDER_ID: "1zyOcMrfnJ88RJ7PKWesT16ciS3MrlQI6",
       CAMPAIGN_FILE_NAME: "campaign.json",
       ASSET_FOLDER_NAME: "assets",
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
-    const BACKEND_VERSION = "2026-07-24-character-roster";
+    const BACKEND_VERSION = "2026-07-27-shared-drive-session";
     const BACKUP_EVERY_REVISIONS = 20;
     const MAX_BACKUP_FILES = 40;
     const SESSION_TTL_SECONDS = 3600;
@@ -125,7 +130,7 @@
 
         const user = resolveRequestUser(request);
         if (!user.email) {
-          throw new Error("Usuari Google no validat.");
+          throw new Error("Nom d'accés no validat.");
         }
 
         if (request.action === "saveAsset") {
@@ -443,16 +448,22 @@
       return {
         action: params.action || "",
         idToken: params.idToken || "",
+        loginName: params.loginName || "",
+        accessKey: params.accessKey || "",
       };
     }
 
     function createServerSession(request) {
-      const user = verifyGoogleToken(request.idToken || "");
-      const sessionToken = Utilities.getUuid();
-      const cache = CacheService.getScriptCache();
-      cache.put(`session:${sessionToken}`, JSON.stringify(user), SESSION_TTL_SECONDS);
-      cache.put(`session-claim:${String(request.operationId || "")}`, sessionToken, SESSION_CLAIM_TTL_SECONDS);
+      const user = resolveInitialSessionUser(request);
+      const sessionToken = createSessionForUser(user);
+      CacheService.getScriptCache().put(`session-claim:${String(request.operationId || "")}`, sessionToken, SESSION_CLAIM_TTL_SECONDS);
       return ok({ operationId: String(request.operationId || "") });
+    }
+
+    function createSessionForUser(user) {
+      const sessionToken = Utilities.getUuid();
+      CacheService.getScriptCache().put(`session:${sessionToken}`, JSON.stringify(user), SESSION_TTL_SECONDS);
+      return sessionToken;
     }
 
     function claimServerSession(request) {
@@ -547,33 +558,42 @@
 
     function resolveRequestUser(request) {
       const sessionToken = String(request.sessionToken || "");
-      if (!sessionToken) return verifyGoogleToken(request.idToken || "");
+      if (!sessionToken) return resolveInitialSessionUser(request);
       const cached = CacheService.getScriptCache().get(`session:${sessionToken}`);
       if (!cached) throw new Error("La sessio ha caducat. Torna a iniciar sessio.");
       return JSON.parse(cached);
     }
 
-    function verifyGoogleToken(idToken) {
-      if (!idToken) {
-        throw new Error("Falta token de Google.");
+    function resolveInitialSessionUser(request) {
+      if (String(request.accessKey || "") === CONFIG.SERVICE_ACCESS_KEY) {
+        const loginName = normalizeDisplayLoginName(request.loginName);
+        if (!loginName) throw new Error("Escriu un nom per entrar.");
+        return {
+          email: CONFIG.SERVICE_USER_EMAIL,
+          name: loginName,
+          loginName,
+        };
       }
 
+      // Compatibilitat temporal per a sessions antigues ja obertes abans del
+      // canvi a l'accés compartit. El client actual no envia cap token Google.
+      return verifyGoogleToken(request.idToken || "");
+    }
+
+    function normalizeDisplayLoginName(value) {
+      return String(value || "").trim().replace(/\s+/g, " ").slice(0, 48);
+    }
+
+    function verifyGoogleToken(idToken) {
+      if (!idToken) throw new Error("Falta token de Google.");
       const response = UrlFetchApp.fetch(
         `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
         { muteHttpExceptions: true },
       );
-      if (response.getResponseCode() !== 200) {
-        throw new Error("Google no ha acceptat el token.");
-      }
-
+      if (response.getResponseCode() !== 200) throw new Error("Google no ha acceptat el token.");
       const payload = JSON.parse(response.getContentText());
-      if (payload.aud !== CONFIG.CLIENT_ID) {
-        throw new Error("El token no pertany a aquesta aplicacio.");
-      }
-      if (String(payload.email_verified) !== "true") {
-        throw new Error("El correu Google no esta verificat.");
-      }
-
+      if (payload.aud !== CONFIG.CLIENT_ID) throw new Error("El token no pertany a aquesta aplicacio.");
+      if (String(payload.email_verified) !== "true") throw new Error("El correu Google no esta verificat.");
       return {
         email: String(payload.email || "").toLowerCase(),
         name: String(payload.name || payload.email || ""),
@@ -696,19 +716,23 @@
     }
 
     function normalizeAccessUsers(users) {
-      return Object.keys(users || {}).reduce((nextUsers, email) => {
-        const user = users[email] || {};
-        const normalizedEmail = String(email || "").toLowerCase();
-        if (!normalizedEmail || normalizedEmail.indexOf("@") === -1) {
+      return Object.keys(users || {}).reduce((nextUsers, identity) => {
+        const user = users[identity] || {};
+        const normalizedIdentity = normalizeLoginName(identity);
+        if (!normalizedIdentity) {
           return nextUsers;
         }
-        nextUsers[normalizedEmail] = {
+        nextUsers[normalizedIdentity] = {
           ...user,
           role: normalizeRoleId(user.role || "player"),
           characterIds: Array.isArray(user.characterIds) ? user.characterIds.map(String) : [],
         };
         return nextUsers;
       }, {});
+    }
+
+    function normalizeLoginName(value) {
+      return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
     }
 
     function normalizeRoleId(role) {

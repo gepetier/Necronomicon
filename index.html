@@ -59,6 +59,18 @@
               Glossari
             </button>
             <button
+              id="module-tab-map"
+              type="button"
+              class="module-link"
+              data-module-link="map"
+              role="tab"
+              aria-selected="false"
+              aria-controls="mapModule"
+              tabindex="-1"
+            >
+              Mapa
+            </button>
+            <button
               id="module-tab-campaigns"
               type="button"
               class="module-link"
@@ -92,6 +104,7 @@
         <section id="charactersModule" class="module-view active" role="tabpanel" aria-labelledby="module-tab-characters"></section>
         <section id="chroniclesModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-chronicles" hidden></section>
         <section id="glossaryModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-glossary" hidden></section>
+        <section id="mapModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-map" hidden></section>
         <section id="campaignsModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-campaigns" hidden></section>
         <section id="optionsModule" class="module-view" role="tabpanel" aria-labelledby="module-tab-options" hidden></section>
       </main>
@@ -102,8 +115,11 @@
         <h2 id="authTitle" class="sr-only">Obre el segell</h2>
         <div class="auth-sigil-login">
           <div class="auth-wait-ring" aria-hidden="true"></div>
-          <div id="googleSignInButton" class="google-signin-button" aria-hidden="true"></div>
           <button type="button" class="auth-sigil-button" data-auth-logo-login aria-label="Obre el segell" aria-describedby="authStatus"></button>
+          <form class="auth-login-form" data-auth-login-form>
+            <input name="loginName" type="text" maxlength="48" autocomplete="nickname" placeholder="El teu nom" aria-label="El teu nom" required />
+            <button type="submit" class="primary">Entra al compendi</button>
+          </form>
           <p id="authStatus" class="auth-status" data-auth-status role="status" aria-live="polite"></p>
         </div>
         <div class="auth-campaign-select" data-auth-campaign-select hidden></div>
