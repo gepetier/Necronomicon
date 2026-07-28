@@ -45,6 +45,7 @@ export function createCloudSaveQueue() {
 export function getCloudSaveTargetKey(target) {
   if (!target || typeof target !== "object") return "";
   if (target.type === "campaign") return "campaign";
+  if (target.type === "worldMap") return target.worldMap ? "worldMap" : "";
   const id = target.characterId
     || target.character?.id
     || target.chronicleId

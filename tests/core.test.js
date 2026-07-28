@@ -429,6 +429,13 @@ test("storage version 14 enables character roster management for the legacy GM r
   assert.equal(migrated.access.roles.player.manageCharacters, false);
 });
 
+test("storage version 15 seeds the Meledar hex-map pilot", () => {
+  const legacy = structuredClone(seedData);
+  delete legacy.worldMap;
+  const migrated = migrateStoredState({ version: 14, state: legacy });
+  assert.equal(migrated.worldMap.id, "meledar-hex-pilot");
+  assert.equal(migrated.worldMap.hexes.find((hex) => hex.q === 0 && hex.r === 0)?.name, "El Sagnatori");
+});
 test("storage seeds Ruth Baskin only for a Baskins Savage Worlds campaign", () => {
   const baskins = migrateStoredState({
     version: DATA_VERSION,
