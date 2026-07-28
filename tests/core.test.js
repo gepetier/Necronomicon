@@ -34,6 +34,7 @@ import {
   updateCampaign,
 } from "../app/storage.js";
 import { plainTextFromRichText, renderRichText } from "../app/utils.js";
+import { saveCharacterOverview } from "../app/characters.js";
 import { createCloudSaveQueue } from "../app/cloud-save-queue.js";
 import { sanitizeMediaSource } from "../app/media-source.js";
 
@@ -74,7 +75,7 @@ test("media sources reject executable and unsafe data URLs", () => {
   assert.equal(sanitizeMediaSource("data:text/html,<script>alert(1)</script>", "file"), "");
   assert.equal(sanitizeMediaSource("file:///C:/secret.txt", "file"), "");
   assert.equal(sanitizeMediaSource("https://example.com/map.webp", "image"), "https://example.com/map.webp");
-  assert.equal(sanitizeMediaSource("resources/imatges/ilu.jpg", "image"), "resources/imatges/ilu.jpg");
+  assert.equal(sanitizeMediaSource("resources/imatges/ilu.png", "image"), "resources/imatges/ilu.png");
   assert.match(sanitizeMediaSource("data:image/png;base64,AAAA", "image"), /^data:image\/png/);
 });
 
@@ -86,8 +87,8 @@ test("rich text marks unsafe media links without rendering a dangerous href", ()
 });
 
 test("asset helpers collect and replace embedded asset sources", () => {
-  const mediaRecords = collectMediaSourceRecordsFromValue({ characters: [{ id: "ilu", portrait: "http://localhost:5173/resources/imatges/ilu.jpg" }] });
-  assert.deepEqual(mediaRecords[0], { source: "http://localhost:5173/resources/imatges/ilu.jpg", key: "portrait", ownerId: "ilu" });
+  const mediaRecords = collectMediaSourceRecordsFromValue({ characters: [{ id: "ilu", portrait: "http://localhost:5173/resources/imatges/ilu.png" }] });
+  assert.deepEqual(mediaRecords[0], { source: "http://localhost:5173/resources/imatges/ilu.png", key: "portrait", ownerId: "ilu" });
 
   const sample = structuredClone(seedData);
   sample.glossary[0].imageAssets = ["data:image/png;base64,AAAA"];
@@ -165,6 +166,40 @@ test("cloud character compact payload preserves existing remote portrait", () =>
   assert.equal(payload.character.level, 4);
 });
 
+test("character overview saves portrait changes alongside identity fields", () => {
+  const character = {
+    id: "ilu",
+    name: "Ilu",
+    title: "Vell títol",
+    lineage: "Humà",
+    className: "Mag",
+    level: 4,
+    sigil: "I",
+    portrait: "drive-asset://old-portrait",
+    summary: "Resum anterior",
+    quickNotes: "Notes anteriors",
+  };
+  const formData = new FormData();
+  [
+    ["name", "Ilu"],
+    ["title", "L'ull rere el vel"],
+    ["lineage", "Humà"],
+    ["className", "Mag de les Il·lusions"],
+    ["level", "4"],
+    ["sigil", "I"],
+    ["portrait", "asset://portrait-new"],
+    ["summary", "Resum actualitzat"],
+    ["quickNotes", "Notes actualitzades"],
+  ].forEach(([key, value]) => formData.set(key, value));
+
+  saveCharacterOverview(formData, {
+    getSelectedCharacter: () => character,
+    showSaveNotice: () => {},
+  });
+
+  assert.equal(character.portrait, "asset://portrait-new");
+  assert.equal(character.className, "Mag de les Il·lusions");
+});
 test("cloud asset helpers materialize direct and rich-text asset tokens", () => {
   const imageToken = createAssetToken("glossary-image");
   const documentToken = createAssetToken("chronicle-document");

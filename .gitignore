@@ -8,3 +8,4 @@ tmp_glossari/
 GLOSSARI PARTIDA MELEDAR.docx
 GLOSSARI PARTIDA MELEDAR.zip
 resources/imatges/*.png
+!resources/imatges/ilu.png

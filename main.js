@@ -937,6 +937,11 @@ function handleClick(event) {
     return;
   }
 
+  const clearCharacterPortrait = event.target.closest("[data-clear-character-portrait]");
+  if (clearCharacterPortrait) {
+    clearCharacterPortraitDraft(clearCharacterPortrait.dataset.clearCharacterPortrait || "");
+    return;
+  }
   if (event.target.closest("[data-save-character]")) {
     saveCharacterEdits();
     return;
@@ -1336,6 +1341,12 @@ function handleInput(event) {
     return;
   }
 
+  if (event.target instanceof HTMLInputElement && event.target.dataset.characterPortraitPicker !== undefined) {
+    if (event.type === "change") {
+      void handleCharacterPortraitSelection(event.target);
+    }
+    return;
+  }
   if (event.target instanceof HTMLInputElement && event.target.dataset.richMediaPicker !== undefined) {
     void handleRichMediaSelection(event.target);
     return;
@@ -3462,6 +3473,7 @@ function applyCharacterOverviewDraft(character) {
   formData.set("className", draft.className !== undefined ? String(draft.className) : character.className || "");
   formData.set("level", draft.level !== undefined ? String(draft.level) : String(character.level || 1));
   formData.set("sigil", draft.sigil !== undefined ? String(draft.sigil) : character.sigil || "");
+  formData.set("portrait", draft.portrait !== undefined ? String(draft.portrait) : character.portrait || "");
   formData.set("summary", draft.summary !== undefined ? String(draft.summary) : character.summary || "");
   formData.set("quickNotes", draft.quickNotes !== undefined ? String(draft.quickNotes) : character.quickNotes || "");
 
@@ -5745,6 +5757,77 @@ function clearCharacterOverviewDraft(characterId) {
   }
 }
 
+function updateCharacterPortraitDraft(characterId, portrait) {
+  const character = state.characters.find((item) => item.id === characterId);
+  if (!character || !canEditCharacter(character)) {
+    return false;
+  }
+
+  state.ui.drafts.characters.overview[characterId] = {
+    ...(state.ui.drafts.characters.overview[characterId] || {}),
+    portrait: String(portrait || ""),
+  };
+  return true;
+}
+
+function clearCharacterPortraitDraft(characterId) {
+  if (!updateCharacterPortraitDraft(characterId, "")) {
+    denyPermission("No tens permisos per editar el retrat d'aquesta fitxa.");
+    return;
+  }
+
+  showSaveNotice("Retrat marcat per eliminar. Desa el personatge per aplicar el canvi.", {
+    renderParts: [RENDER_PARTS.notice, RENDER_PARTS.characters, RENDER_PARTS.assets],
+  });
+}
+
+async function handleCharacterPortraitSelection(input) {
+  const characterId = input.dataset.characterPortraitPicker || "";
+  const character = state.characters.find((item) => item.id === characterId);
+  const file = Array.from(input.files || []).find((item) => item instanceof File) || null;
+  input.value = "";
+
+  if (!character || !file) {
+    return;
+  }
+  if (!canEditCharacter(character)) {
+    denyPermission("No tens permisos per editar el retrat d'aquesta fitxa.");
+    return;
+  }
+  if (!String(file.type || "").startsWith("image/")) {
+    showSaveNotice("Selecciona un fitxer d'imatge per al retrat.", {
+      renderParts: [RENDER_PARTS.notice, RENDER_PARTS.characters],
+    });
+    return;
+  }
+
+  try {
+    let portrait = "";
+    try {
+      portrait = await storeAssetFile(file);
+    } catch (error) {
+      console.warn("No s'ha pogut cachejar el retrat localment; es conserva per pujar-lo en desar.", error);
+    }
+    if (!portrait) {
+      portrait = await readFileAsDataUrl(file);
+    }
+    if (!portrait) {
+      throw new Error("No s'ha pogut preparar el retrat.");
+    }
+    if (!updateCharacterPortraitDraft(characterId, portrait)) {
+      return;
+    }
+
+    showSaveNotice("Retrat preparat. Desa el personatge per pujar-lo a Drive.", {
+      renderParts: [RENDER_PARTS.notice, RENDER_PARTS.characters, RENDER_PARTS.assets],
+    });
+  } catch (error) {
+    console.error("No s'ha pogut preparar el retrat del personatge.", error);
+    showSaveNotice("No s'ha pogut preparar el retrat. Torna-ho a provar.", {
+      renderParts: [RENDER_PARTS.notice, RENDER_PARTS.characters],
+    });
+  }
+}
 function clearCharacterDrafts(characterId) {
   if (!characterId) {
     return;

@@ -1,9 +1,9 @@
-﻿export const STORAGE_KEY = "campaign-compendium";
+export const STORAGE_KEY = "campaign-compendium";
 export const DATA_VERSION = 15;
 
 
 const CHARACTER_PORTRAITS = {
-  ilu: new URL("./resources/imatges/ilu.jpg", import.meta.url).href,
+  ilu: new URL("./resources/imatges/ilu.png", import.meta.url).href,
   nelthan: new URL("./resources/imatges/nelthan.jpg", import.meta.url).href,
   damakos: new URL("./resources/imatges/damakos.jpg", import.meta.url).href,
   elatoris: new URL("./resources/imatges/elatoris.jpg", import.meta.url).href,

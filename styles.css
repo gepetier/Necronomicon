@@ -10288,3 +10288,162 @@ body.office-mode .character-roster-popover { z-index: 20; }
   .world-map-hex-label { font-size: 13px; stroke-width: 5; }
   .world-map-detail { padding: 1rem; }
 }
+
+/* Character editor: identity and portrait live in one concise, reusable block. */
+.character-portrait-editor {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 0.9rem;
+  border: 1px solid rgba(111, 45, 33, 0.14);
+  border-radius: 18px;
+  background: rgba(111, 45, 33, 0.045);
+}
+
+.character-portrait-editor-preview {
+  display: grid;
+  width: 112px;
+  height: 112px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(111, 45, 33, 0.22);
+  border-radius: 16px;
+  color: rgba(255, 247, 231, 0.94);
+  background: linear-gradient(145deg, var(--portrait-a, #70402c), var(--portrait-b, #3b2218));
+  box-shadow: inset 0 0 0 1px rgba(255, 245, 222, 0.14);
+}
+
+.character-portrait-editor-preview span {
+  font-family: var(--font-display);
+  font-size: 2.35rem;
+  font-weight: 700;
+}
+
+.character-portrait-editor-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.character-portrait-editor-copy {
+  display: grid;
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+.character-portrait-editor-copy .eyebrow {
+  margin-bottom: 0.18rem;
+}
+
+.character-portrait-editor-copy h4,
+.character-portrait-editor-copy p {
+  margin: 0;
+}
+
+.character-portrait-editor-copy h4 {
+  color: #3a251c;
+  font-size: 1rem;
+}
+
+.character-portrait-editor-copy > div > p:last-child {
+  margin-top: 0.3rem;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.character-portrait-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.character-portrait-picker-button {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgba(147, 94, 45, 0.28);
+  border-radius: 12px;
+  color: #654433;
+  background: linear-gradient(180deg, rgba(255, 250, 239, 0.96), rgba(234, 216, 185, 0.92));
+  box-shadow: 0 6px 14px rgba(63, 35, 20, 0.08);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.character-portrait-picker-button:hover,
+.character-portrait-picker-button:focus-within {
+  border-color: rgba(132, 77, 36, 0.52);
+  background: linear-gradient(180deg, #fffaf0, #ead6b5);
+}
+
+.character-portrait-clear {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(132, 65, 44, 0.24);
+  border-radius: 12px;
+  color: #7a3f2d;
+  background: rgba(255, 246, 234, 0.72);
+  box-shadow: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.character-portrait-clear:hover,
+.character-portrait-clear:focus-visible {
+  color: #fff8ec;
+  border-color: #863f2d;
+  background: #863f2d;
+  box-shadow: none;
+  transform: none;
+}
+.character-portrait-picker-button {
+  position: relative;
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.character-portrait-picker-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.character-portrait-clear {
+  min-height: 40px;
+}
+
+@media (max-width: 520px) {
+  .character-portrait-editor {
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 0.8rem;
+    padding: 0.8rem;
+  }
+
+  .character-portrait-editor-preview {
+    width: 82px;
+    height: 82px;
+    border-radius: 14px;
+  }
+
+  .character-portrait-editor-preview span {
+    font-size: 1.85rem;
+  }
+
+  .character-portrait-editor-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .character-portrait-picker-button,
+  .character-portrait-clear {
+    width: 100%;
+  }
+}

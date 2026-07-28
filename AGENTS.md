@@ -22,7 +22,7 @@ Fitxers principals: `main.js` (orquestració/UI), `styles.css` (estils), `data.j
 
 1. Llegeix `0-START-HERE.md` i `CURRENT-DEBUG.md`.
 2. Fes el canvi mínim; executa `verify:fast`.
-3. Tot canvi UI requereix captures desktop i mobile revisades.
+3. Tot canvi UI requereix captures desktop i mobile revisades. Si els navegadors locals no poden executar-les de forma fiable, usa Playwright/WebKit com a alternativa i revisa les imatges generades a `qa-results/captures/`; una inspeccio de DOM no les substitueix.
 4. Canvis de persistència/media requereixen `qa:persistence` i una prova de navegador real si toquen Drive o el picker natiu.
 5. No executis suites QA en paral·lel: comparteixen el port `4173`.
 

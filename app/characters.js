@@ -364,6 +364,7 @@ export function saveCharacterOverview(formData, { getSelectedCharacter, showSave
   character.className = readString(formData, "className");
   character.level = Number(readString(formData, "level")) || 1;
   character.sigil = readString(formData, "sigil").slice(0, 2) || character.sigil;
+  character.portrait = readString(formData, "portrait");
   character.summary = readString(formData, "summary");
   character.quickNotes = readString(formData, "quickNotes");
   showSaveNotice("Capçalera desada");
@@ -1590,13 +1591,14 @@ function renderCharacterEditor(character, tab, state) {
   const tabDraft = state.ui.drafts.characters.tabs[character.id]?.[tab] || {};
   const hasPendingDraft = Object.keys(overviewDraft).length > 0 || Object.keys(tabDraft).length > 0;
   const editorStatus = renderEditorStatus(state, "characters", character.id, hasPendingDraft);
+  const portrait = readDraftValue(overviewDraft.portrait, character.portrait || "");
 
   return `
     <section class="module-surface editor-workspace editor-workspace-character">
       ${renderEditorWorkspaceHeader(
         "Edició de personatge",
         character.name,
-        "La capçalera controla la carta i el resum. La segona columna segueix la pestanya oberta per reduir scroll i soroll visual.",
+        "Actualitza la identitat, el retrat i la secció oberta. Els canvis queden com a esborrany fins que els desis.",
         [
           `Nivell ${character.level}`,
           `${character.lineage} · ${character.className}`,
@@ -1607,10 +1609,37 @@ function renderCharacterEditor(character, tab, state) {
       <div class="editor-layout editor-layout-character">
         ${renderEditorCard(
           "Capçalera i identitat",
-          "Aquesta part defineix la primera impressió del personatge al compendi.",
+          "La informació que es veu primer a la carta i a la fitxa.",
           `
             <form data-form="character-overview" class="editor-form">
               <input type="hidden" name="id" value="${character.id}" />
+              <input type="hidden" name="portrait" value="${escapeAttribute(portrait)}" />
+              <section class="character-portrait-editor" aria-labelledby="character-portrait-editor-${escapeAttribute(character.id)}">
+                <div class="character-portrait-editor-preview ${portrait ? "has-image" : ""}" style="${paletteStyle(character.palette)}">
+                  ${portrait
+                    ? `<img ${renderCharacterAssetAttribute(portrait)} alt="${escapeAttribute(`Previsualització del retrat de ${character.name}`)}" />`
+                    : `<span aria-hidden="true">${escapeHtml((character.sigil || character.name || "?").slice(0, 2))}</span>`}
+                </div>
+                <div class="character-portrait-editor-copy">
+                  <div>
+                    <p class="eyebrow">Retrat</p>
+                    <h4 id="character-portrait-editor-${escapeAttribute(character.id)}">Imatge del personatge</h4>
+                    <p>Tria una imatge nova per previsualitzar-la. Es pujarà a Drive quan desis la fitxa.</p>
+                  </div>
+                  <div class="character-portrait-editor-actions">
+                    <label class="secondary character-portrait-picker-button">
+                      <span>${portrait ? "Canvia retrat" : "Afegeix retrat"}</span>
+                      <input
+                        class="character-portrait-picker-input"
+                        type="file"
+                        accept="image/*"
+                        data-character-portrait-picker="${escapeAttribute(character.id)}"
+                      />
+                    </label>
+                    ${portrait ? `<button type="button" class="text-button character-portrait-clear" data-clear-character-portrait="${escapeAttribute(character.id)}">Elimina retrat</button>` : ""}
+                  </div>
+                </div>
+              </section>
               <div class="editor-grid">
                 <label class="field">
                   <span>Nom</span>
