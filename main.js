@@ -101,17 +101,27 @@ import {
   getStoredLoginName,
   loadCampaignFromCloud,
   loadAssetFromCloud,
-  repairCampaignAssetsInCloud,
   saveCampaignToCloud,
   saveAssetToCloud,
   saveCharacterToCloud,
   saveCharacterRosterToCloud,
   saveChronicleToCloud,
   saveGlossaryEntryToCloud,
+  setCloudRequestObserver,
   storeLoginName,
 } from "./app/cloud-sync.js";
 import { createCloudSaveQueue } from "./app/cloud-save-queue.js";
 import { activateDialogFocus, deactivateDialogFocus, setAuthPageInert, trapDialogFocus } from "./app/dialog-focus.js";
+import {
+  clearSessionLog,
+  createSessionLogExport,
+  formatSessionLogText,
+  getSessionLogEntries,
+  getSessionLogSummary,
+  installSessionActivityLogger,
+  recordSessionEvent,
+  startSessionLog,
+} from "./app/session-log.js";
 
 const SYNC_CLIENT_VERSION = "2026-07-22-media-purge";
 
@@ -291,6 +301,9 @@ function initialize() {
   ensureUiStateShape();
   applyCaptureUserOverride();
 
+  startSessionLog({ contextProvider: getSessionLogContext });
+  installSessionActivityLogger();
+  setCloudRequestObserver(recordCloudRequestDiagnostic);
   document.addEventListener("click", handleClick);
   document.addEventListener("pointerdown", handleReferenceSuggestionPointerDown, true);
   document.addEventListener("keydown", handleKeydown);
@@ -399,6 +412,21 @@ function handleClick(event) {
     });
   }
 
+  if (event.target.closest("[data-session-log-copy]")) {
+    void copySessionLog();
+    return;
+  }
+
+  if (event.target.closest("[data-session-log-export]")) {
+    exportSessionLog();
+    return;
+  }
+
+  if (event.target.closest("[data-session-log-clear]")) {
+    clearSessionLog();
+    render([RENDER_PARTS.options]);
+    return;
+  }
   if (event.target.closest("[data-export-backup]")) {
     if (!canPublishCampaign()) {
       denyPermission("No tens permisos per exportar la campanya completa.");
@@ -416,13 +444,7 @@ function handleClick(event) {
     backupImportPicker?.click();
     return;
   }
-
-  if (event.target.closest("[data-repair-campaign-assets]")) {
-    void repairCampaignAssets();
-    return;
-  }
-
-  if (event.target.closest("[data-cloud-publish]")) {
+if (event.target.closest("[data-cloud-publish]")) {
     if (!canPublishCampaign()) {
       denyPermission("No tens permisos per publicar tota la campanya.");
       return;
@@ -510,6 +532,25 @@ function handleClick(event) {
     return;
   }
 
+  if (event.target.closest("[data-toggle-world-map-editor]")) {
+    if (!canManageWorldMap()) {
+      denyPermission("No tens permisos per administrar el mapa.");
+      return;
+    }
+    state.ui.worldMapEditorOpen = !state.ui.worldMapEditorOpen;
+    persistAndRender([RENDER_PARTS.map], { skipCloud: true });
+    return;
+  }
+
+  if (event.target.closest("[data-reset-world-map-hexes]")) {
+    resetWorldMapHexes();
+    return;
+  }
+
+  if (event.target.closest("[data-delete-world-map]")) {
+    deleteWorldMap();
+    return;
+  }
   const moduleLink = event.target.closest("[data-module-link]");
   if (moduleLink) {
     state.ui.currentModule = moduleLink.dataset.moduleLink;
@@ -1383,6 +1424,15 @@ function handleSubmit(event) {
     return;
   }
 
+  if (form.dataset.form === "world-map-create") {
+    createWorldMap(formData);
+    return;
+  }
+
+  if (form.dataset.form === "world-map-settings") {
+    saveWorldMapSettings(formData);
+    return;
+  }
   if (form.dataset.form === "character-assignment") {
     saveCharacterAssignment(formData);
     return;
@@ -1680,6 +1730,9 @@ async function handleLoginName(loginName, options = {}) {
   updateAuthFeedback(options.silent ? "restoringSession" : "loadingCampaign");
   cloudSession.awaitingServer = true;
   updateAuthGate();
+  recordSessionEvent("auth", options.silent ? "Recuperacio de sessio iniciada" : "Login iniciat", {
+    remembered: options.silent === true ? "si" : "no",
+  });
 
   try {
     const response = await loadCampaignFromCloud(normalizedLoginName);
@@ -1718,6 +1771,10 @@ async function handleLoginName(loginName, options = {}) {
     cloudSession.pendingInitialPublish = shouldSeedCloud;
     cloudSession.lastSyncAt = new Date().toISOString();
     cloudSession.lastError = "";
+    recordSessionEvent("auth", "Campanya remota carregada", {
+      campaigns: storageGetCampaignCatalog().campaigns.length,
+      assets: cloudSession.assetDiagnostics.length,
+    });
     ensureUiStateShape();
     persistStateImmediately({ skipCloud: true });
     const migratedEmbeddedAssets = await migrateEmbeddedAssets({ announce: false });
@@ -1735,7 +1792,9 @@ async function handleLoginName(loginName, options = {}) {
     cloudSession.ready = false;
     cloudSession.awaitingServer = false;
     cloudSession.selectingCampaign = false;
-    updateCloudStatus(error instanceof Error ? error.message : String(error), { error: true });
+    const message = error instanceof Error ? error.message : String(error);
+    recordSessionEvent("auth", "Login o carrega de campanya fallida", { error: message }, "error");
+    updateCloudStatus(message, { error: true });
   }
 }
 
@@ -1980,13 +2039,17 @@ function updateAuthGate() {
   }
 
   const shouldShowAuthGate = cloudSession.enabled && (!cloudSession.ready || cloudSession.selectingCampaign);
+  const isWaitingForServer = shouldShowAuthGate && cloudSession.awaitingServer;
   authGate.hidden = !shouldShowAuthGate;
+  if (authLoginForm) {
+    authLoginForm.hidden = isWaitingForServer || cloudSession.selectingCampaign;
+  }
   setAuthPageInert(shouldShowAuthGate || Boolean(playerWelcomeState));
   document.body.classList.toggle("auth-required", shouldShowAuthGate);
   document.body.classList.toggle("auth-selecting-campaign", cloudSession.selectingCampaign);
   document.body.classList.toggle(
     "auth-waiting-server",
-    shouldShowAuthGate && cloudSession.awaitingServer,
+    isWaitingForServer,
   );
   if (authStatus) {
     authStatus.textContent = cloudSession.status || "";
@@ -2392,6 +2455,7 @@ function renderWorldMapModule() {
     rootEl: mapModule,
     findChronicle: (id) => state.chronicles.find((chronicle) => chronicle.id === id) || null,
     updateHexStatus: cycleWorldMapHexStatus,
+    canManageMap: canManageWorldMap(),
   });
 }
 
@@ -2676,12 +2740,6 @@ function renderOptionsModule() {
             ${missingAssetCount ? `<span class="badge warning">${missingAssetCount} imatges Drive no disponibles</span>` : ""}
           </div>
           <div class="options-actions">
-            ${publishEnabled && cloudSession.capabilities?.repairCampaignAssets === true ? `
-              <button type="button" class="secondary" data-repair-campaign-assets>
-                <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
-                <span>Revisa i repara imatges Drive</span>
-              </button>
-            ` : ""}
             ${publishEnabled ? `
               <button type="button" class="secondary" data-cloud-publish>
                 <span class="module-action-icon">${renderModuleActionIcon("upload")}</span>
@@ -2707,6 +2765,7 @@ function renderOptionsModule() {
           </details>
         </article>
 
+        ${renderSessionLogCard()}
         ${publishEnabled || campaignsEditable ? `
           <article class="section-card options-card">
             <div class="options-card-copy">
@@ -2795,6 +2854,109 @@ function renderOptionsModule() {
   `;
 }
 
+function getSessionLogContext() {
+  return {
+    module: state?.ui?.currentModule || "inicial",
+    campaign: storageGetActiveCampaignMeta().id || "local",
+    online: navigator.onLine === false ? "no" : "si",
+  };
+}
+
+function recordCloudRequestDiagnostic(event) {
+  const stageLabel = {
+    start: "iniciada",
+    success: "confirmada",
+    error: "fallida",
+  }[event?.stage] || "registrada";
+  recordSessionEvent(
+    "drive",
+    `Petició Drive ${stageLabel}`,
+    {
+      action: event?.action || "request",
+      transport: event?.transport || "unknown",
+      durationMs: event?.durationMs ?? "",
+      error: event?.error || "",
+    },
+    event?.stage === "error" ? "error" : "info",
+  );
+}
+
+function renderSessionLogCard() {
+  const summary = getSessionLogSummary();
+  const entries = getSessionLogEntries({ limit: 120 });
+  const recentEntries = entries.length
+    ? entries.map((entry) => `
+      <li class="session-log-entry session-log-${escapeAttribute(entry.level)}">
+        <time datetime="${escapeAttribute(entry.at)}">${escapeHtml(formatSessionLogTime(entry.at))}</time>
+        <strong>${escapeHtml(entry.category)}</strong>
+        <span>${escapeHtml(entry.message)}</span>
+        ${renderSessionLogDetails(entry.details)}
+      </li>
+    `).join("")
+    : '<li class="session-log-empty">Encara no hi ha esdeveniments registrats.</li>';
+
+  return `
+    <article class="section-card options-card session-log-card">
+      <div class="options-card-copy">
+        <p class="eyebrow">Diagnosi</p>
+        <h3>Registre intensiu de sessió</h3>
+        <p>Conserva les accions de la interfície, les peticions Drive, els errors globals i els canvis de sessió en aquest navegador. No desa contrasenyes, tokens ni el text dels formularis.</p>
+      </div>
+      <div class="options-stat-list">
+        <span class="badge">Sessió: ${escapeHtml(summary.sessionId.slice(-10))}</span>
+        <span class="badge">${summary.currentSessionTotal} esdeveniments ara</span>
+        <span class="badge">${summary.total} conservats</span>
+        ${summary.errors ? `<span class="badge warning">${summary.errors} errors</span>` : '<span class="badge">Sense errors</span>'}
+      </div>
+      <div class="options-actions">
+        <button type="button" class="secondary" data-session-log-copy>Copia informe</button>
+        <button type="button" class="secondary" data-session-log-export>Descarrega JSON</button>
+        <button type="button" class="secondary" data-session-log-clear>Neteja registre</button>
+      </div>
+      <details class="options-diagnostics session-log-details">
+        <summary>Mostra els darrers ${Math.min(entries.length, 120)} esdeveniments</summary>
+        <ol class="session-log-list" data-session-log-list>${recentEntries}</ol>
+      </details>
+    </article>
+  `;
+}
+
+function renderSessionLogDetails(details) {
+  const text = Object.entries(details || {})
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(" · ");
+  return text ? `<small>${escapeHtml(text)}</small>` : "";
+}
+
+function formatSessionLogTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("ca-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+async function copySessionLog() {
+  const report = formatSessionLogText();
+  try {
+    await navigator.clipboard.writeText(report);
+    showSaveNotice("Registre de sessió copiat", { renderParts: [RENDER_PARTS.notice, RENDER_PARTS.options] });
+  } catch (error) {
+    recordSessionEvent("diagnosi", "No s'ha pogut copiar el registre", {
+      error: error instanceof Error ? error.message : String(error),
+    }, "error");
+    showSaveNotice("No s'ha pogut copiar el registre", { renderParts: [RENDER_PARTS.notice, RENDER_PARTS.options] });
+  }
+}
+
+function exportSessionLog() {
+  const payload = createSessionLogExport();
+  downloadTextFile(
+    `necronomicon-session-log-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
+    `${JSON.stringify(payload, null, 2)}\n`,
+    "application/json",
+  );
+  recordSessionEvent("diagnosi", "Registre de sessió exportat", { entries: payload.entries.length });
+  showSaveNotice("Registre de sessió descarregat", { renderParts: [RENDER_PARTS.notice, RENDER_PARTS.options] });
+}
 function getCloudDiagnostics() {
   const driveFile = cloudSession.driveFile || {};
   const capabilities = cloudSession.capabilities || {};
@@ -2940,7 +3102,7 @@ function renderPermissionsForm(canManagePermissions) {
       <div class="permissions-roles">${roleRows}</div>
       <div class="permissions-users">
         <div class="permissions-users-head">
-          <span>Correu</span>
+          <span>Usuari o correu</span>
           <span>Rol</span>
           <span>Personatges assignats</span>
           <span aria-hidden="true"></span>
@@ -2982,8 +3144,8 @@ function renderPermissionUserRow(email, user, index, access, enabled) {
   return `
     <div class="permissions-user-row">
       <label class="permissions-user-field">
-        <span class="permissions-field-label">Correu</span>
-        <input name="userEmail" value="${escapeAttribute(email)}" placeholder="nom@gmail.com" ${enabled ? "" : "disabled"} />
+        <span class="permissions-field-label">Usuari o correu</span>
+        <input name="userEmail" value="${escapeAttribute(email)}" placeholder="nom@gmail.com o nom de jugador" ${enabled ? "" : "disabled"} />
       </label>
       <label class="permissions-user-field">
         <span class="permissions-field-label">Rol</span>
@@ -4362,9 +4524,58 @@ function cycleWorldMapHexStatus(coordinate) {
   state.worldMap.hexes = index >= 0
     ? hexes.map((hex, hexIndex) => (hexIndex === index ? nextHex : hex))
     : [...hexes, nextHex];
-  persistAndRender([RENDER_PARTS.map], { cloudTarget: { type: "campaign" } });
+  persistAndRender([RENDER_PARTS.map], { cloud: true, cloudTarget: { type: "campaign" } });
 }
 
+function canManageWorldMap() {
+  return canPublishCampaign();
+}
+
+function createWorldMap(formData) {
+  if (!canManageWorldMap()) {
+    denyPermission("No tens permisos per crear el mapa.");
+    return;
+  }
+  state.worldMap = {
+    id: `world-map-${Date.now().toString(36)}`,
+    title: readString(formData, "title") || "Mapa de campanya",
+    subtitle: readString(formData, "subtitle") || "Atles de campanya",
+    hexes: [],
+  };
+  state.ui.worldMapEditorOpen = true;
+  persistAndRender([RENDER_PARTS.map], { cloud: true, cloudTarget: { type: "campaign" } });
+}
+
+function saveWorldMapSettings(formData) {
+  if (!state.worldMap || !canManageWorldMap()) {
+    denyPermission("No tens permisos per modificar el mapa.");
+    return;
+  }
+  state.worldMap.title = readString(formData, "title") || "Mapa de campanya";
+  state.worldMap.subtitle = readString(formData, "subtitle");
+  persistAndRender([RENDER_PARTS.map], { cloud: true, cloudTarget: { type: "campaign" } });
+}
+
+function resetWorldMapHexes() {
+  if (!state.worldMap || !canManageWorldMap()) {
+    denyPermission("No tens permisos per modificar el mapa.");
+    return;
+  }
+  if (!window.confirm("Vols tornar tots els hexes a ocults?")) return;
+  state.worldMap.hexes = (state.worldMap.hexes || []).map((hex) => ({ ...hex, status: "hidden" }));
+  persistAndRender([RENDER_PARTS.map], { cloud: true, cloudTarget: { type: "campaign" } });
+}
+
+function deleteWorldMap() {
+  if (!state.worldMap || !canManageWorldMap()) {
+    denyPermission("No tens permisos per esborrar el mapa.");
+    return;
+  }
+  if (!window.confirm("Vols esborrar aquest mapa? Aquesta accio no es pot desfer.")) return;
+  state.worldMap = null;
+  state.ui.worldMapEditorOpen = false;
+  persistAndRender([RENDER_PARTS.map], { cloud: true, cloudTarget: { type: "campaign" } });
+}
 function handleWorldMapWheel(event) {
   const target = event.target instanceof Element ? event.target : null;
   if (state.ui.currentModule !== "map" || !target?.closest("[data-world-map-viewport]")) return;
@@ -4372,11 +4583,20 @@ function handleWorldMapWheel(event) {
   adjustWorldMapZoom(event.deltaY < 0 ? 0.2 : -0.2);
 }
 
+function persistLocalState() {
+  const result = storagePersistState(state);
+  if (!result?.ok) {
+    recordSessionEvent("storage", "No s'ha pogut desar la copia local", {
+      error: result?.error?.message || "Error de localStorage",
+    }, "error");
+  }
+  return result;
+}
 function schedulePersistState(delay = 180, options = {}) {
   window.clearTimeout(persistStateTimer);
   persistStateTimer = window.setTimeout(() => {
     persistStateTimer = null;
-    storagePersistState(state);
+    persistLocalState();
     if (!shouldSkipCloudSync(options)) {
       scheduleCloudSave(900, options);
     }
@@ -4390,7 +4610,7 @@ function flushPendingPersist(options = {}) {
 
   window.clearTimeout(persistStateTimer);
   persistStateTimer = null;
-  storagePersistState(state);
+  persistLocalState();
   if (!shouldSkipCloudSync(options)) {
     scheduleCloudSave(900, options);
   }
@@ -4398,7 +4618,7 @@ function flushPendingPersist(options = {}) {
 
 function persistStateImmediately(options = {}) {
   flushPendingPersist(options);
-  storagePersistState(state);
+  persistLocalState();
   if (!shouldSkipCloudSync(options)) {
     scheduleCloudSave(900, options);
   }
@@ -4520,7 +4740,7 @@ function resumeGlossaryMediaOutboxForActiveCampaign() {
   });
 
   if (!targets.length) return 0;
-  storagePersistState(state);
+  persistLocalState();
   targets.forEach((target) => pendingCloudSaveTargets.enqueue(target));
   if (cloudSession.enabled && cloudSession.ready && cloudSession.loginName) {
     scheduleCloudQueueDrain(0);
@@ -4595,6 +4815,7 @@ async function pushStateToCloud(options = {}) {
 
   cloudSession.saving = true;
   cloudSession.status = "Desant canvis a Drive...";
+  recordSessionEvent("sync", "Sincronitzacio Drive iniciada", { target: target.type, queued: pendingCloudSaveTargets.size });
   if (glossaryId) {
     appendGlossaryUploadDebug(glossaryId, "Drive inici", "S'inicia la sincronitzacio de l'entrada.");
   }
@@ -4681,6 +4902,11 @@ async function pushStateToCloud(options = {}) {
       ? "Canvis enviats a Drive; confirmacio no disponible per mida."
       : getConfirmedCloudSaveStatus(response?.driveFile);
     applyCloudAssetReplacements(assetReplacements);
+    recordSessionEvent("sync", "Sincronitzacio Drive confirmada", {
+      target: target.type,
+      assets: assetReplacements.size,
+      revision: cloudSession.revision,
+    });
     if (glossaryId) {
       clearGlossaryMediaOutbox(campaignId, glossaryId);
 
@@ -4695,6 +4921,10 @@ async function pushStateToCloud(options = {}) {
   } catch (error) {
     cloudSession.lastError = error instanceof Error ? error.message : String(error);
     cloudSession.status = cloudSession.lastError;
+    recordSessionEvent("sync", "Sincronitzacio Drive fallida", {
+      target: target.type,
+      error: cloudSession.lastError,
+    }, "error");
     if (glossaryId) {
       appendGlossaryUploadDebug(glossaryId, "error Drive", cloudSession.lastError);
       showSaveNotice("La imatge encara no s'ha pujat: " + cloudSession.lastError, {
@@ -4849,36 +5079,6 @@ function getCloudCampaignRevision(campaign) {
   return Math.max(0, Number(campaign?.serverSync?.revision) || 0);
 }
 
-async function repairCampaignAssets() {
-  if (!canPublishCampaign() || !cloudSession.capabilities?.repairCampaignAssets) return;
-  cloudSession.saving = true;
-  cloudSession.status = "Reparant referencies d'imatge a Drive...";
-  render([RENDER_PARTS.notice, RENDER_PARTS.options]);
-  try {
-    const response = await repairCampaignAssetsInCloud(cloudSession.loginName, storageGetActiveCampaignMeta().id);
-    if (response?.campaign) {
-      state = storageMigrateStoredState({ version: response.version || 0, state: response.campaign });
-      ensureUiStateShape();
-      persistStateImmediately({ skipCloud: true });
-    }
-    clearDriveAssetFailures();
-    cloudSession.assetDiagnostics = Array.isArray(response?.assetDiagnostics) ? response.assetDiagnostics : [];
-    cloudSession.driveFile = response?.driveFile || cloudSession.driveFile;
-    cloudSession.revision = response?.campaign ? getCloudCampaignRevision(response.campaign) : cloudSession.revision;
-    cloudSession.lastError = "";
-    cloudSession.lastSyncAt = new Date().toISOString();
-    const unresolved = Array.isArray(response?.unresolved) ? response.unresolved.length : 0;
-    cloudSession.status = unresolved
-      ? `S'han reparat ${Number(response?.repaired) || 0} imatges; en queden ${unresolved} per revisar.`
-      : `S'han reparat ${Number(response?.repaired) || 0} referencies d'imatge.`;
-  } catch (error) {
-    cloudSession.lastError = error instanceof Error ? error.message : String(error);
-    cloudSession.status = cloudSession.lastError;
-  } finally {
-    cloudSession.saving = false;
-    render(FULL_RENDER_PARTS);
-  }
-}
 async function publishCampaignToCloud() {
   if (cloudSaveTimer !== null) {
     window.clearTimeout(cloudSaveTimer);
@@ -5479,6 +5679,7 @@ function ensureUiStateShape() {
   state.ui.newChronicleId = typeof state.ui.newChronicleId === "string" ? state.ui.newChronicleId : "";
   state.ui.newGlossaryId = typeof state.ui.newGlossaryId === "string" ? state.ui.newGlossaryId : "";
   state.ui.worldMapZoom = clampWorldMapZoom(state.ui.worldMapZoom);
+  state.ui.worldMapEditorOpen = Boolean(state.ui.worldMapEditorOpen);
   state.ui.chronicleIndexSearch = typeof state.ui.chronicleIndexSearch === "string" ? state.ui.chronicleIndexSearch : "";
 }
 

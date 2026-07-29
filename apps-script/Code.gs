@@ -9,9 +9,10 @@
       CAMPAIGN_FILE_NAME: "campaign.json",
       ASSET_FOLDER_NAME: "assets",
       BACKUP_PREFIX: "campaign-backup-",
-      BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
+      // El compte que desplega l'script escriu a Drive, pero mai no concedeix permisos als visitants.
+      BOOTSTRAP_ADMIN_EMAILS: [],
     };
-    const BACKEND_VERSION = "2026-07-27-shared-drive-session";
+    const BACKEND_VERSION = "2026-07-29-shared-gateway-identities";
     const BACKUP_EVERY_REVISIONS = 20;
     const MAX_BACKUP_FILES = 40;
     const SESSION_TTL_SECONDS = 3600;
@@ -567,11 +568,15 @@
     function resolveInitialSessionUser(request) {
       if (String(request.accessKey || "") === CONFIG.SERVICE_ACCESS_KEY) {
         const loginName = normalizeDisplayLoginName(request.loginName);
-        if (!loginName) throw new Error("Escriu un nom per entrar.");
+        if (!loginName) throw new Error("Escriu un usuari o correu autoritzat per entrar.");
+        // El pont de Drive no es la identitat del visitant. La sessio conserva
+        // l'identificador que ha escrit l'usuari i els permisos es resolen
+        // contra access.users de cada campanya.
         return {
-          email: CONFIG.SERVICE_USER_EMAIL,
+          email: normalizeLoginName(loginName),
           name: loginName,
           loginName,
+          viaSharedGateway: true,
         };
       }
 
@@ -579,7 +584,6 @@
       // canvi a l'accés compartit. El client actual no envia cap token Google.
       return verifyGoogleToken(request.idToken || "");
     }
-
     function normalizeDisplayLoginName(value) {
       return String(value || "").trim().replace(/\s+/g, " ").slice(0, 48);
     }

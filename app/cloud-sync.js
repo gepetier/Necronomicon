@@ -14,6 +14,11 @@ const JSONP_MAX_PAYLOAD_LENGTH = 7000;
 
 let jsonpCounter = 0;
 let serverSessionToken = "";
+let cloudRequestObserver = null;
+
+export function setCloudRequestObserver(observer) {
+  cloudRequestObserver = typeof observer === "function" ? observer : null;
+}
 
 export function getStoredLoginName() {
   return window.localStorage.getItem(LOGIN_NAME_STORAGE_KEY) || "";
@@ -270,6 +275,9 @@ function createAuthPayload(loginName) {
 
 function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
+    const startedAt = performance.now();
+    const action = String(payload?.action || "request");
+    notifyCloudRequest({ action, transport: "jsonp", stage: "start" });
     const callbackName = `__necronomiconCloudCallback${Date.now()}${jsonpCounter++}`;
     const script = document.createElement("script");
     let timedOut = false;
@@ -279,7 +287,9 @@ function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
       timedOut = true;
       window.clearTimeout(timeout);
       script.remove();
-      reject(new Error("Google Drive no ha respost a temps."));
+      const error = new Error("Google Drive no ha respost a temps.");
+      notifyCloudRequest({ action, transport: "jsonp", stage: "error", durationMs: elapsed(startedAt), error: error.message });
+      reject(error);
     }, timeoutMs);
 
     window[callbackName] = (response) => {
@@ -288,9 +298,12 @@ function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
         return;
       }
       if (!response || response.ok === false) {
-        reject(new Error(response?.error || "Resposta no valida de Google Drive."));
+        const error = new Error(response?.error || "Resposta no valida de Google Drive.");
+        notifyCloudRequest({ action, transport: "jsonp", stage: "error", durationMs: elapsed(startedAt), error: error.message });
+        reject(error);
         return;
       }
+      notifyCloudRequest({ action, transport: "jsonp", stage: "success", durationMs: elapsed(startedAt) });
       resolve(response);
     };
 
@@ -307,21 +320,46 @@ function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
     script.src = url.toString();
     script.onerror = () => {
       cleanup();
-      reject(new Error("No s'ha pogut contactar amb Google Drive."));
+      const error = new Error("No s'ha pogut contactar amb Google Drive.");
+      notifyCloudRequest({ action, transport: "jsonp", stage: "error", durationMs: elapsed(startedAt), error: error.message });
+      reject(error);
     };
     document.head.append(script);
   });
 }
 
 async function postWithoutCors(payload) {
-  await fetch(CLOUD_CONFIG.apiUrl, {
-    method: "POST",
-    mode: "no-cors",
-    credentials: "omit",
-    headers: {
-      "Content-Type": "text/plain;charset=utf-8",
-    },
-    body: JSON.stringify(payload),
-    keepalive: JSON.stringify(payload).length < 60000,
-  });
+  const startedAt = performance.now();
+  const action = String(payload?.action || "request");
+  notifyCloudRequest({ action, transport: "post", stage: "start" });
+  try {
+    const body = JSON.stringify(payload);
+    await fetch(CLOUD_CONFIG.apiUrl, {
+      method: "POST",
+      mode: "no-cors",
+      credentials: "omit",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body,
+      keepalive: body.length < 60000,
+    });
+    notifyCloudRequest({ action, transport: "post", stage: "success", durationMs: elapsed(startedAt) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    notifyCloudRequest({ action, transport: "post", stage: "error", durationMs: elapsed(startedAt), error: message });
+    throw error;
+  }
+}
+
+function notifyCloudRequest(event) {
+  try {
+    cloudRequestObserver?.(event);
+  } catch {
+    // La diagnosi no ha d'alterar mai la sincronitzacio.
+  }
+}
+
+function elapsed(startedAt) {
+  return Math.max(0, Math.round(performance.now() - startedAt));
 }

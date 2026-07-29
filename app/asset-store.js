@@ -17,7 +17,9 @@ const STORE_NAME = "assets";
 
 const objectUrlCache = new Map();
 const driveAssetFailures = new Map();
+const driveAssetPendingLoads = new Map();
 const MISSING_IMAGE_DATA_URL = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 280"><rect width="100%" height="100%" fill="#543421"/><path d="M0 0h480v280H0z" fill="none" stroke="#d6b47c" stroke-width="8"/><path d="M110 190l72-72 48 45 43-35 97 62" fill="none" stroke="#d6b47c" stroke-width="12"/><circle cx="160" cy="82" r="22" fill="#d6b47c"/></svg>')}`;
+const LOADING_IMAGE_DATA_URL = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#543421"/><g fill="none" stroke="#efd5a0" stroke-linecap="round" stroke-width="8"><circle cx="60" cy="60" r="28" opacity=".22"/><path d="M60 32a28 28 0 0 1 28 28"><animateTransform attributeName="transform" type="rotate" from="0 60 60" to="360 60 60" dur=".8s" repeatCount="indefinite"/></path></g></svg>')}`;
 let driveAssetLoader = null;
 
 export function setDriveAssetLoader(loader) {
@@ -64,56 +66,65 @@ export async function storeAssetDataUrl(dataUrl, options = {}) {
 }
 
 export async function getAssetObjectUrl(token) {
-  if (!isAssetToken(token)) {
-    return token;
-  }
+  if (!isAssetToken(token)) return token;
 
-  // Els `asset://` son només una cua local de pujada. No poden convertir-se
-  // en contingut visible: l'única prova vàlida és un `drive-asset://` que
-  // s'hagi pogut llegir des de Drive (o que ja existeixi a la seva memòria
-  // cau després d'aquesta lectura).
-  if (!isDriveAssetToken(token)) {
-    return "";
-  }
-
-  if (objectUrlCache.has(token)) {
-    return objectUrlCache.get(token);
-  }
+  // asset:// es una cua local de pujada; nomes drive-asset:// pot ser visible.
+  if (!isDriveAssetToken(token)) return "";
+  if (objectUrlCache.has(token)) return objectUrlCache.get(token);
 
   const recordId = getCacheRecordId(token);
   let record = await readRecord(recordId);
-  if (!record?.blob && isDriveAssetToken(token) && driveAssetLoader) {
-    if (driveAssetFailures.has(token)) return "";
-    try {
-      const asset = await driveAssetLoader(token);
-      if (asset?.dataUrl) {
-        const response = await fetch(asset.dataUrl);
-        const blob = await response.blob();
-        record = {
-          id: recordId,
-          blob,
-          name: asset.name || `drive-${getAssetIdFromToken(token)}`,
-          mimeType: asset.mimeType || blob.type || "application/octet-stream",
-          kind: inferAssetKindFromMimeType(asset.mimeType || blob.type),
-          savedAt: new Date().toISOString(),
-        };
-        await writeRecord(record);
-      }
-    } catch (error) {
-      driveAssetFailures.set(token, error instanceof Error ? error.message : String(error));
-      return "";
-    }
+  if (!record?.blob && driveAssetLoader) {
+    record = await loadDriveAssetWithRetry(token, recordId);
   }
-  if (!record?.blob) {
-    return "";
-  }
-  driveAssetFailures.delete(token);
+  if (!record?.blob) return "";
 
+  driveAssetFailures.delete(token);
   const objectUrl = URL.createObjectURL(record.blob);
   objectUrlCache.set(token, objectUrl);
   return objectUrl;
 }
 
+async function loadDriveAssetWithRetry(token, recordId) {
+  if (driveAssetPendingLoads.has(token)) return driveAssetPendingLoads.get(token);
+  if (driveAssetFailures.has(token)) return null;
+
+  const pending = (async () => {
+    let lastError = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const asset = await driveAssetLoader(token);
+        if (asset?.dataUrl) {
+          const response = await fetch(asset.dataUrl);
+          const blob = await response.blob();
+          const record = {
+            id: recordId,
+            blob,
+            name: asset.name || `drive-${getAssetIdFromToken(token)}`,
+            mimeType: asset.mimeType || blob.type || "application/octet-stream",
+            kind: inferAssetKindFromMimeType(asset.mimeType || blob.type),
+            savedAt: new Date().toISOString(),
+          };
+          await writeRecord(record);
+          return record;
+        }
+        lastError = new Error("Drive encara esta preparant la imatge.");
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
+      if (attempt < 4) await waitForAssetRetry(700 * (attempt + 1));
+    }
+    driveAssetFailures.set(token, lastError?.message || "No s'ha pogut carregar l'actiu de Drive.");
+    return null;
+  })().finally(() => driveAssetPendingLoads.delete(token));
+
+  driveAssetPendingLoads.set(token, pending);
+  return pending;
+}
+
+function waitForAssetRetry(delay) {
+  return new Promise((resolve) => window.setTimeout(resolve, delay));
+}
 export async function hydrateAssetReferences(root = document) {
   if (!(root instanceof Element) && root !== document) {
     return;
@@ -132,9 +143,11 @@ export async function hydrateAssetReferences(root = document) {
       const hrefToken = element.dataset.assetHref || "";
 
       if (srcToken) {
+        markAssetLoading(element);
         const source = await getAssetObjectUrl(srcToken);
         if (source) {
           element.setAttribute("src", source);
+          clearAssetLoading(element);
           element.classList.remove("asset-unavailable");
           element.removeAttribute("data-asset-error");
         } else {
@@ -326,6 +339,7 @@ function readBlobAsDataUrl(blob) {
 }
 
 function markAssetUnavailable(element, message) {
+  clearAssetLoading(element);
   element.classList.add("asset-unavailable");
   element.dataset.assetError = message;
   element.setAttribute("title", message);
@@ -334,4 +348,21 @@ function markAssetUnavailable(element, message) {
     element.setAttribute("alt", `${label} (no disponible)`);
     element.setAttribute("src", MISSING_IMAGE_DATA_URL);
   }
+}
+
+function markAssetLoading(element) {
+  if (!(element instanceof HTMLImageElement) || element.hasAttribute("src") || element.classList.contains("asset-unavailable")) {
+    return;
+  }
+
+  element.dataset.assetLoading = "true";
+  element.setAttribute("aria-busy", "true");
+  element.setAttribute("title", "Carregant la imatge des de Drive...");
+  element.setAttribute("src", LOADING_IMAGE_DATA_URL);
+}
+
+function clearAssetLoading(element) {
+  element.removeAttribute("data-asset-loading");
+  element.removeAttribute("aria-busy");
+  if (!element.classList.contains("asset-unavailable")) element.removeAttribute("title");
 }

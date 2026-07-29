@@ -504,3 +504,51 @@ test("storage seeds Ruth Baskin only for a Baskins Savage Worlds campaign", () =
   });
   assert.equal(otherSavage.characters.some((character) => character.id === "ruth-baskin"), false);
 });
+
+test("session log keeps an exportable diagnostic trail without secrets", async () => {
+  const localValues = new Map();
+  const sessionValues = new Map();
+  const createStorage = (values) => ({
+    getItem: (key) => values.get(key) || null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  });
+  const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
+  globalThis.window = {
+    localStorage: createStorage(localValues),
+    sessionStorage: createStorage(sessionValues),
+    location: { origin: "http://localhost:5173", toString: () => "http://localhost:5173/" },
+    addEventListener: () => {},
+    crypto: { randomUUID: () => "session-log-test-id" },
+  };
+  globalThis.document = {
+    visibilityState: "visible",
+    addEventListener: () => {},
+  };
+
+  try {
+    const log = await import(`../app/session-log.js?test=${Date.now()}`);
+    log.startSessionLog({ contextProvider: () => ({ module: "options", campaign: "meledar" }) });
+    log.recordSessionEvent("drive", "Petició fallida", {
+      action: "loadCampaign",
+      token: "no-pot-sortir",
+      loginName: "Adri",
+      durationMs: 321,
+    }, "error");
+
+    const entries = log.getSessionLogEntries({ currentSession: true });
+    const failed = entries.find((entry) => entry.message === "Petició fallida");
+    assert.equal(failed.details.action, "loadCampaign");
+    assert.equal(failed.details.durationMs, "321");
+    assert.equal(Object.hasOwn(failed.details, "token"), false);
+    assert.equal(Object.hasOwn(failed.details, "loginName"), false);
+    assert.match(log.formatSessionLogText(), /Petició fallida/);
+    assert.equal(log.createSessionLogExport().entries.length >= 2, true);
+    log.clearSessionLog();
+    assert.equal(log.getSessionLogSummary().total, 0);
+  } finally {
+    globalThis.window = previousWindow;
+    globalThis.document = previousDocument;
+  }
+});

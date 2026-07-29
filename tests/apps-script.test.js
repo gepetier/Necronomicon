@@ -332,23 +332,36 @@ test("Apps Script exchanges a Google identity for an opaque one-time claimed ses
   assert.equal(harness.handleRequest({ action: "claimSession", operationId: "claim-1" }).ok, false);
 });
 
-test("Apps Script accepts a superficial name through the shared Drive gateway", () => {
-  const harness = createAppsScriptHarness(createCampaignLibrary());
-  const created = harness.handleRequest({
+test("Apps Script shared gateway only admits an identifier assigned to the campaign", () => {
+  const anonymous = createAppsScriptHarness(createCampaignLibrary());
+  const deniedSession = anonymous.handleRequest({
     action: "createSession",
     loginName: "  Adri   Mestre ",
     accessKey: "necronomicon-shared-drive-gateway-v1",
-    operationId: "shared-gateway-1",
+    operationId: "shared-gateway-denied",
   });
-  const claimed = harness.handleRequest({ action: "claimSession", operationId: "shared-gateway-1" });
-  const loaded = harness.handleRequest({ action: "loadCampaign", sessionToken: claimed.sessionToken });
+  const deniedClaim = anonymous.handleRequest({ action: "claimSession", operationId: "shared-gateway-denied" });
+  const deniedLoad = anonymous.handleRequest({ action: "loadCampaign", sessionToken: deniedClaim.sessionToken });
 
-  assert.equal(created.ok, true);
-  assert.equal(loaded.ok, true);
-  assert.equal(loaded.user.name, "Adri Mestre");
-  assert.equal(loaded.user.email, "sharegepeto@gmail.com");
+  assert.equal(deniedSession.ok, true);
+  assert.equal(deniedLoad.ok, false);
+
+  const assigned = createAppsScriptHarness(createCampaignLibrary({ usersA: { "adri mestre": { role: "gm" } } }));
+  const allowedSession = assigned.handleRequest({
+    action: "createSession",
+    loginName: "  Adri   Mestre ",
+    accessKey: "necronomicon-shared-drive-gateway-v1",
+    operationId: "shared-gateway-allowed",
+  });
+  const allowedClaim = assigned.handleRequest({ action: "claimSession", operationId: "shared-gateway-allowed" });
+  const allowedLoad = assigned.handleRequest({ action: "loadCampaign", sessionToken: allowedClaim.sessionToken });
+
+  assert.equal(allowedSession.ok, true);
+  assert.equal(allowedLoad.ok, true);
+  assert.equal(allowedLoad.user.name, "Adri Mestre");
+  assert.equal(allowedLoad.user.email, "adri mestre");
+  assert.equal(allowedLoad.user.role, "gm");
 });
-
 test("Apps Script stores glossary images as Drive files and defers the asset bundle", () => {
   const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
   const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
