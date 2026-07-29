@@ -579,8 +579,8 @@ function renderGlossaryEditor(entry, state, imageUploadState = null) {
                 )}
                 <label class="field span-2">
                   <span>Editors jugadors</span>
-                  <textarea name="editableByUserEmails" rows="3" placeholder="correu@exemple.com">${escapeHtml(readDraftValue(draft.editableByUserEmails, (entry?.editableByUserEmails || []).join("\n")))}</textarea>
-                  <small class="field-help">Correus separats per comes o salts de linia. Els GM i superadmin no necessiten estar aqui.</small>
+                  <textarea name="editableByUserEmails" rows="3" placeholder="nom-del-jugador">${escapeHtml(readDraftValue(draft.editableByUserEmails, (entry?.editableByUserEmails || []).join("\n")))}</textarea>
+                  <small class="field-help">Noms separats per comes o salts de línia. Els GM i superadmin no necessiten estar aquí.</small>
                 </label>
                 <label class="field">
                   <span>Ultima sessio vista o visitada</span>

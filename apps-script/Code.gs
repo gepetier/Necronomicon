@@ -1,12 +1,17 @@
     const CONFIG = {
       CLIENT_ID: "386167885974-voguggv8fbvmqioec1p38vu3qf1fj33f.apps.googleusercontent.com",
+      // El desplegament és qui accedeix a Drive amb el compte que n'és
+      // propietari. Aquesta clau només identifica el client compartit; no és
+      // una credencial personal de Drive.
+      SERVICE_ACCESS_KEY: "necronomicon-shared-drive-gateway-v1",
+      SERVICE_USER_EMAIL: "sharegepeto@gmail.com",
       DRIVE_FOLDER_ID: "1zyOcMrfnJ88RJ7PKWesT16ciS3MrlQI6",
       CAMPAIGN_FILE_NAME: "campaign.json",
       ASSET_FOLDER_NAME: "assets",
       BACKUP_PREFIX: "campaign-backup-",
       BOOTSTRAP_ADMIN_EMAILS: ["sharegepeto@gmail.com"],
     };
-    const BACKEND_VERSION = "2026-07-27-world-map-pilot";
+    const BACKEND_VERSION = "2026-07-27-shared-drive-session";
     const BACKUP_EVERY_REVISIONS = 20;
     const MAX_BACKUP_FILES = 40;
     const SESSION_TTL_SECONDS = 3600;
@@ -125,33 +130,23 @@
 
         const user = resolveRequestUser(request);
         if (!user.email) {
-          throw new Error("Usuari Google no validat.");
+          throw new Error("Nom d'accés no validat.");
         }
 
         if (request.action === "saveAsset") {
+          const current = loadCampaign();
+          const campaignId = normalizeCampaignId(request.campaignId);
+          const targetState = getCampaignStateForId(current, campaignId);
+          const actor = decorateUser(user, targetState.access || current.access);
+          assertCanUploadAsset(actor, current, campaignId, request.targetType, request.targetId);
+          const savedAsset = persistDriveAsset(request.asset, campaignId, request.targetType, request.targetId);
           const operationId = String(request.operationId || "");
-          const claimCache = CacheService.getScriptCache();
-          try {
-            const current = loadCampaign();
-            const campaignId = normalizeCampaignId(request.campaignId);
-            const targetState = getCampaignStateForId(current, campaignId);
-            const actor = decorateUser(user, targetState.access || current.access);
-            assertCanUploadAsset(actor, current, campaignId, request.targetType, request.targetId);
-            const savedAsset = persistDriveAsset(request.asset, campaignId, request.targetType, request.targetId);
-            claimCache.put(
-              `asset-claim:${operationId}`,
-              JSON.stringify(savedAsset),
-              SESSION_CLAIM_TTL_SECONDS,
-            );
-            return ok({ operationId });
-          } catch (error) {
-            claimCache.put(
-              `asset-claim:${operationId}`,
-              JSON.stringify({ failed: true, error: String(error && error.message || error || "No s'ha pogut pujar la imatge.") }),
-              SESSION_CLAIM_TTL_SECONDS,
-            );
-            throw error;
-          }
+          CacheService.getScriptCache().put(
+            `asset-claim:${operationId}`,
+            JSON.stringify(savedAsset),
+            SESSION_CLAIM_TTL_SECONDS,
+          );
+          return ok({ operationId });
         }
 
         if (request.action === "loadAsset") {
@@ -168,25 +163,20 @@
         }
 
         if (request.action === "loadCampaign") {
-          const campaign = loadCampaign();
-          const authorized = createAuthorizedCampaignView(campaign, user);
-          return ok({
-            user: authorized.user,
-            campaign: authorized.campaign,
-            sessionToken: request.sessionToken ? "" : createSessionForUser(user),
-            assetBundle: [],
-            assetDiagnostics: [],
-            capabilities: getClientCapabilities(),
-            driveFile: null,
-          });
-        }
-
-        if (request.action === "loadCampaignMetadata") {
-          const campaign = loadCampaign();
-          const authorized = createAuthorizedCampaignView(campaign, user);
-          return ok({
-            assetDiagnostics: getDriveAssetDiagnostics(authorized.campaign),
-            driveFile: getCurrentCampaignFileInfo(),
+          return withCampaignLock(() => {
+            const campaign = loadCampaign();
+            const authorized = createAuthorizedCampaignView(campaign, user);
+            return ok({
+              user: authorized.user,
+              campaign: authorized.campaign,
+              assetBundle: [],
+              // No inspeccionem cada asset durant l'arrencada: cada consulta a
+              // Drive pot ser lenta i abans retenia el bloqueig global de la
+              // campanya. La revisio es fa explicitament des d'Opcions.
+              assetDiagnostics: [],
+              capabilities: getClientCapabilities(),
+              driveFile: getCurrentCampaignFileInfo(),
+            });
           });
         }
 
@@ -368,20 +358,6 @@
           });
         }
 
-        if (request.action === "saveWorldMap") {
-          return withCampaignLock(() => {
-            const current = loadCampaign();
-            const campaignId = normalizeCampaignId(request.campaignId);
-            const targetState = getCampaignStateForId(current, campaignId);
-            const actor = decorateUser(user, targetState.access || current.access);
-            if (!canManageCampaign(actor)) throw new Error("No tens permisos per actualitzar el mapa de campanya.");
-            updateCampaignStateValue(current, campaignId, "worldMap", normalizeWorldMap(request.worldMap));
-            const driveFile = persistCampaignUnlocked(current, user.email, getCampaignRevision(current), request.operationId);
-            const authorized = createAuthorizedCampaignView(current, user);
-            return ok({ user: authorized.user, campaign: authorized.campaign, capabilities: getClientCapabilities(), driveFile });
-          });
-        }
-
         if (request.action === "saveCharacterRoster") {
           return withCampaignLock(() => {
             const current = loadCampaign();
@@ -472,17 +448,15 @@
       return {
         action: params.action || "",
         idToken: params.idToken || "",
+        loginName: params.loginName || "",
+        accessKey: params.accessKey || "",
       };
     }
 
     function createServerSession(request) {
-      const user = verifyGoogleToken(request.idToken || "");
+      const user = resolveInitialSessionUser(request);
       const sessionToken = createSessionForUser(user);
-      CacheService.getScriptCache().put(
-        `session-claim:${String(request.operationId || "")}`,
-        sessionToken,
-        SESSION_CLAIM_TTL_SECONDS,
-      );
+      CacheService.getScriptCache().put(`session-claim:${String(request.operationId || "")}`, sessionToken, SESSION_CLAIM_TTL_SECONDS);
       return ok({ operationId: String(request.operationId || "") });
     }
 
@@ -505,7 +479,7 @@
       const cache = CacheService.getScriptCache();
       const claimKey = `asset-claim:${String(request.operationId || "")}`;
       const value = cache.get(claimKey) || "";
-      if (!value) return ok({ pending: true });
+      if (!value) throw new Error("La pujada de la imatge no s'ha pogut confirmar.");
       cache.remove(claimKey);
       return ok(JSON.parse(value));
     }
@@ -584,33 +558,42 @@
 
     function resolveRequestUser(request) {
       const sessionToken = String(request.sessionToken || "");
-      if (!sessionToken) return verifyGoogleToken(request.idToken || "");
+      if (!sessionToken) return resolveInitialSessionUser(request);
       const cached = CacheService.getScriptCache().get(`session:${sessionToken}`);
       if (!cached) throw new Error("La sessio ha caducat. Torna a iniciar sessio.");
       return JSON.parse(cached);
     }
 
-    function verifyGoogleToken(idToken) {
-      if (!idToken) {
-        throw new Error("Falta token de Google.");
+    function resolveInitialSessionUser(request) {
+      if (String(request.accessKey || "") === CONFIG.SERVICE_ACCESS_KEY) {
+        const loginName = normalizeDisplayLoginName(request.loginName);
+        if (!loginName) throw new Error("Escriu un nom per entrar.");
+        return {
+          email: CONFIG.SERVICE_USER_EMAIL,
+          name: loginName,
+          loginName,
+        };
       }
 
+      // Compatibilitat temporal per a sessions antigues ja obertes abans del
+      // canvi a l'accés compartit. El client actual no envia cap token Google.
+      return verifyGoogleToken(request.idToken || "");
+    }
+
+    function normalizeDisplayLoginName(value) {
+      return String(value || "").trim().replace(/\s+/g, " ").slice(0, 48);
+    }
+
+    function verifyGoogleToken(idToken) {
+      if (!idToken) throw new Error("Falta token de Google.");
       const response = UrlFetchApp.fetch(
         `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
         { muteHttpExceptions: true },
       );
-      if (response.getResponseCode() !== 200) {
-        throw new Error("Google no ha acceptat el token.");
-      }
-
+      if (response.getResponseCode() !== 200) throw new Error("Google no ha acceptat el token.");
       const payload = JSON.parse(response.getContentText());
-      if (payload.aud !== CONFIG.CLIENT_ID) {
-        throw new Error("El token no pertany a aquesta aplicacio.");
-      }
-      if (String(payload.email_verified) !== "true") {
-        throw new Error("El correu Google no esta verificat.");
-      }
-
+      if (payload.aud !== CONFIG.CLIENT_ID) throw new Error("El token no pertany a aquesta aplicacio.");
+      if (String(payload.email_verified) !== "true") throw new Error("El correu Google no esta verificat.");
       return {
         email: String(payload.email || "").toLowerCase(),
         name: String(payload.name || payload.email || ""),
@@ -722,8 +705,19 @@
         ui: campaign.ui && typeof campaign.ui === "object" ? campaign.ui : {},
         access: {
           roles: {
-            ...DEFAULT_ACCESS.roles,
             ...migratedRoles,
+            superadmin: {
+              ...DEFAULT_ACCESS.roles.superadmin,
+              ...(migratedRoles.superadmin || {}),
+            },
+            gm: {
+              ...DEFAULT_ACCESS.roles.gm,
+              ...(migratedRoles.gm || {}),
+            },
+            player: {
+              ...DEFAULT_ACCESS.roles.player,
+              ...(migratedRoles.player || {}),
+            },
           },
           users: {
             ...normalizeAccessUsers(access.users || {}),
@@ -733,19 +727,23 @@
     }
 
     function normalizeAccessUsers(users) {
-      return Object.keys(users || {}).reduce((nextUsers, email) => {
-        const user = users[email] || {};
-        const normalizedEmail = String(email || "").toLowerCase();
-        if (!normalizedEmail || normalizedEmail.indexOf("@") === -1) {
+      return Object.keys(users || {}).reduce((nextUsers, identity) => {
+        const user = users[identity] || {};
+        const normalizedIdentity = normalizeLoginName(identity);
+        if (!normalizedIdentity) {
           return nextUsers;
         }
-        nextUsers[normalizedEmail] = {
+        nextUsers[normalizedIdentity] = {
           ...user,
           role: normalizeRoleId(user.role || "player"),
           characterIds: Array.isArray(user.characterIds) ? user.characterIds.map(String) : [],
         };
         return nextUsers;
       }, {});
+    }
+
+    function normalizeLoginName(value) {
+      return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
     }
 
     function normalizeRoleId(role) {
@@ -850,44 +848,6 @@
       }
 
       syncTopLevelCampaignFields(campaign);
-    }
-
-    function updateCampaignStateValue(campaign, campaignId, key, value) {
-      if (!Array.isArray(campaign.campaigns)) {
-        campaign[key] = value;
-        return;
-      }
-      const targetId = resolveCampaignId(campaign, campaignId);
-      if (!targetId) throw new Error("Campanya no trobada per desar el mapa.");
-      const now = new Date().toISOString();
-      let updated = false;
-      campaign.campaigns = campaign.campaigns.map((entry) => {
-        if (!entry || entry.id !== targetId || !entry.state) return entry;
-        updated = true;
-        return {
-          ...entry,
-          updatedAt: now,
-          state: { ...entry.state, meta: { ...(entry.state.meta || {}), updatedAt: now }, [key]: value },
-        };
-      });
-      if (!updated) throw new Error("Campanya no trobada per desar el mapa.");
-      syncTopLevelCampaignFields(campaign);
-    }
-
-    function normalizeWorldMap(value) {
-      if (!value || typeof value !== "object") throw new Error("Mapa de campanya no valid.");
-      const validStatuses = { hidden: true, discovered: true, visited: true };
-      const hexes = Array.isArray(value.hexes) ? value.hexes.slice(0, 300).map((hex) => ({
-        id: String(hex && hex.id || ""),
-        q: Number(hex && hex.q),
-        r: Number(hex && hex.r),
-        status: validStatuses[hex && hex.status] ? hex.status : "hidden",
-        name: String(hex && hex.name || "").slice(0, 120),
-        terrain: String(hex && hex.terrain || "").slice(0, 200),
-        description: String(hex && hex.description || "").slice(0, 4000),
-        chronicleIds: Array.isArray(hex && hex.chronicleIds) ? hex.chronicleIds.map(String).slice(0, 30) : [],
-      })).filter((hex) => Number.isFinite(hex.q) && Number.isFinite(hex.r)) : [];
-      return { id: String(value.id || "world-map").slice(0, 120), title: String(value.title || "Atles de campanya").slice(0, 160), subtitle: String(value.subtitle || "").slice(0, 280), hexes };
     }
 
     function normalizeCharacterRosterStatus(status) {
@@ -1697,8 +1657,6 @@
         preserveExistingImageAssets: true,
         driveAssetFiles: true,
         characterRosterManagement: true,
-        worldMapManagement: true,
-        deferredCampaignMetadata: true,
       };
     }
 

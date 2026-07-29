@@ -165,6 +165,9 @@ export function migrateStoredState(payload) {
   if (version < 14) {
     nextState = migrateCharacterRosterPermissions(nextState);
   }
+  if (version < 15) {
+    nextState = migrateWorldMap(nextState);
+  }
 
   return sanitizeState(nextState);
 }
@@ -1012,6 +1015,14 @@ function migrateGlossaryCharacterCategoryName(candidate) {
   return next;
 }
 
+function migrateWorldMap(candidate) {
+  const next = structuredClone(candidate);
+  if (next.meta?.id === DEFAULT_CAMPAIGN_ID && !next.worldMap) {
+    next.worldMap = structuredClone(seedData.worldMap);
+  }
+  return next;
+}
+
 function sanitizeState(candidate) {
   const safe = structuredClone(seedData);
   if (!candidate || typeof candidate !== "object") {
@@ -1080,23 +1091,19 @@ function sanitizeState(candidate) {
 function sanitizeWorldMap(candidate, campaignId) {
   const fallback = campaignId === DEFAULT_CAMPAIGN_ID ? structuredClone(seedData.worldMap) : null;
   if (!candidate || typeof candidate !== "object") return fallback;
-
   const validStatuses = new Set(["hidden", "discovered", "visited"]);
   const hexes = Array.isArray(candidate.hexes)
-    ? candidate.hexes
-      .map((hex) => ({
-        id: String(hex?.id || `${hex?.q}:${hex?.r}`),
-        q: Number(hex?.q),
-        r: Number(hex?.r),
-        status: validStatuses.has(hex?.status) ? hex.status : "hidden",
-        name: String(hex?.name || ""),
-        terrain: String(hex?.terrain || ""),
-        description: String(hex?.description || ""),
-        chronicleIds: Array.isArray(hex?.chronicleIds) ? hex.chronicleIds.map(String) : [],
-      }))
-      .filter((hex) => Number.isFinite(hex.q) && Number.isFinite(hex.r))
+    ? candidate.hexes.map((hex) => ({
+      id: String(hex?.id || `${hex?.q}:${hex?.r}`),
+      q: Number(hex?.q),
+      r: Number(hex?.r),
+      status: validStatuses.has(hex?.status) ? hex.status : "hidden",
+      name: String(hex?.name || ""),
+      terrain: String(hex?.terrain || ""),
+      description: String(hex?.description || ""),
+      chronicleIds: Array.isArray(hex?.chronicleIds) ? hex.chronicleIds.map(String) : [],
+    })).filter((hex) => Number.isFinite(hex.q) && Number.isFinite(hex.r))
     : (fallback?.hexes || []);
-
   return {
     id: String(candidate.id || fallback?.id || "world-map"),
     title: String(candidate.title || fallback?.title || "Atles de campanya"),

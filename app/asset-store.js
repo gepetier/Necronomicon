@@ -68,6 +68,14 @@ export async function getAssetObjectUrl(token) {
     return token;
   }
 
+  // Els `asset://` son només una cua local de pujada. No poden convertir-se
+  // en contingut visible: l'única prova vàlida és un `drive-asset://` que
+  // s'hagi pogut llegir des de Drive (o que ja existeixi a la seva memòria
+  // cau després d'aquesta lectura).
+  if (!isDriveAssetToken(token)) {
+    return "";
+  }
+
   if (objectUrlCache.has(token)) {
     return objectUrlCache.get(token);
   }

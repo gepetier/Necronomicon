@@ -4,11 +4,11 @@ import assert from "node:assert/strict";
 import { DATA_VERSION, seedData } from "../data.js";
 import { createBackupPayload, readBackupAssetBundle, readBackupStatePayload } from "../app/backup.js";
 import {
-  clearStoredCredential,
+  clearStoredLoginName,
   createCharacterPayloadWithoutPortrait,
   createGlossaryEntryPayloadWithoutImages,
-  getStoredCredential,
-  storeCredential,
+  getStoredLoginName,
+  storeLoginName,
 } from "../app/cloud-sync.js";
 import {
   collectAssetTokensFromState,
@@ -219,9 +219,9 @@ test("cloud asset helpers materialize direct and rich-text asset tokens", () => 
   });
 });
 
-test("Google credential is session-scoped and legacy local storage is cleared", () => {
+test("superficial login name is remembered locally", () => {
   const sessionValues = new Map();
-  const localValues = new Map([["necronomicon-google-credential", "legacy-token"]]);
+  const localValues = new Map();
   const createStorage = (values) => ({
     getItem: (key) => values.get(key) || null,
     setItem: (key, value) => values.set(key, String(value)),
@@ -229,16 +229,15 @@ test("Google credential is session-scoped and legacy local storage is cleared", 
   });
   const previousWindow = globalThis.window;
   globalThis.window = {
-    sessionStorage: createStorage(sessionValues),
     localStorage: createStorage(localValues),
   };
 
   try {
-    storeCredential("session-token");
-    assert.equal(getStoredCredential(), "session-token");
-    assert.equal(localValues.has("necronomicon-google-credential"), false);
-    clearStoredCredential();
-    assert.equal(getStoredCredential(), "");
+    storeLoginName("  Adri   G. ");
+    assert.equal(getStoredLoginName(), "Adri G.");
+    assert.equal(sessionValues.size, 0);
+    clearStoredLoginName();
+    assert.equal(getStoredLoginName(), "");
   } finally {
     globalThis.window = previousWindow;
   }

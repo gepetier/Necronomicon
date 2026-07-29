@@ -1166,10 +1166,9 @@ async function runPersistenceWriteSuite(context) {
     steps,
     Boolean(reference)
       && (tooltip?.textContent || "").includes(quickDescription)
-      && isLoadedAssetImage(tooltipImage)
-      && tooltipOpacity === "1"
+      && isUnavailableAssetImage(tooltipImage)
       && tooltipPageOverflow === "visible",
-    "La referencia desada activa el tooltip amb descripcio i imatge carregada",
+    "La referencia desada no mostra una imatge local sense confirmacio de Drive",
     { tooltipOpacity, tooltipText: tooltip?.textContent?.trim() || "", tooltipSrc: tooltipImage?.src || "" },
   );
 
@@ -1245,8 +1244,8 @@ async function runPersistenceReadSuite(context) {
   record(
     steps,
     (directDetail?.querySelector(".glossary-detail-body")?.textContent || "").includes(directDescription)
-      && isLoadedAssetImage(directImage),
-    "La fitxa directa conserva descripcio visible i imatge d'IndexedDB despres de netejar cache",
+      && isUnavailableAssetImage(directImage),
+    "La fitxa directa conserva el text i bloqueja la imatge local despres de netejar cache",
     { imageSrc: directImage?.src || "", description: directDetail?.querySelector(".glossary-detail-body")?.textContent?.trim() || "" },
   );
 
@@ -1267,8 +1266,8 @@ async function runPersistenceReadSuite(context) {
     steps,
     Boolean(reference)
       && (tooltip?.textContent || "").includes(quickDescription)
-      && isLoadedAssetImage(tooltipImage),
-    "El tooltip de la referencia persisteix amb descripcio i imatge despres del reinici",
+      && isUnavailableAssetImage(tooltipImage),
+    "El tooltip de la referencia persisteix amb text i bloqueja la imatge local despres del reinici",
     { tooltipOpacity, tooltipSrc: tooltipImage?.src || "", tooltipText: tooltip?.textContent?.trim() || "" },
   );
 
@@ -1288,6 +1287,14 @@ function makeSuiteResult(context, steps) {
 function isLoadedAssetImage(image) {
   return image?.tagName === "IMG"
     && (image.src.startsWith("blob:") || image.src.startsWith("data:image/"))
+    && image.complete
+    && image.naturalWidth > 0;
+}
+
+function isUnavailableAssetImage(image) {
+  return image?.tagName === "IMG"
+    && image.classList.contains("asset-unavailable")
+    && image.src.startsWith("data:image/svg+xml,")
     && image.complete
     && image.naturalWidth > 0;
 }

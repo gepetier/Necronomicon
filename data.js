@@ -1026,7 +1026,7 @@ Un silenci trencat únicament pel moviment frenètic de la ploma d’Elyse contr
     glossarySortOrder: "alphabetical",
     glossarySortMenuOpen: false,
     selectedGlossaryId: "acantilado-del-silencio",
-    selectedMapHexId: "0:0",
+    worldMapZoom: 1,
     editModes: {
       characters: false,
       chronicles: false,

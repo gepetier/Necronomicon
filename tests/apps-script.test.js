@@ -320,37 +320,7 @@ test("Apps Script stores glossary images as separate Drive files and serves auth
   assert.equal(loaded.dataUrl, "data:image/png;base64,aW1hdGdl");
 });
 
-test("Apps Script keeps an asset claim pending until the upload has completed", () => {
-  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
-  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
-
-  const pending = harness.handleRequest({ action: "claimAssetUpload", operationId: "not-yet-uploaded" });
-
-  assert.equal(pending.ok, true);
-  assert.equal(pending.pending, true);
-});
-
-test("Apps Script exposes a rejected asset upload to its later claim", () => {
-  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
-  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
-
-  const rejected = harness.handleRequest({
-    action: "saveAsset",
-    idToken: "admin",
-    operationId: "asset-rejected",
-    campaignId: "campaign-a",
-    targetType: "campaign",
-    asset: { name: "not-an-image.txt", mimeType: "text/plain", dataUrl: "data:text/plain;base64,YmFk" },
-  });
-  const claimed = harness.handleRequest({ action: "claimAssetUpload", operationId: "asset-rejected" });
-
-  assert.equal(rejected.ok, false);
-  assert.equal(claimed.ok, true);
-  assert.equal(claimed.failed, true);
-  assert.match(claimed.error, /imatge compatible/);
-});
-
-test("Apps Script exchanges the Google token for an opaque one-time claimed session", () => {
+test("Apps Script exchanges a Google identity for an opaque one-time claimed session", () => {
   const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
   const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
   const created = harness.handleRequest({ action: "createSession", idToken: "admin", operationId: "claim-1" });
@@ -362,26 +332,23 @@ test("Apps Script exchanges the Google token for an opaque one-time claimed sess
   assert.equal(harness.handleRequest({ action: "claimSession", operationId: "claim-1" }).ok, false);
 });
 
-test("Apps Script defers Drive metadata while returning an authenticated campaign session", () => {
-  const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
-  campaign.campaigns[0].state.glossary = [{
-    id: "missing-asset",
-    name: "Missing asset",
-    imageAssets: ["drive-asset://missing-file"],
-  }];
-  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
+test("Apps Script accepts a superficial name through the shared Drive gateway", () => {
+  const harness = createAppsScriptHarness(createCampaignLibrary());
+  const created = harness.handleRequest({
+    action: "createSession",
+    loginName: "  Adri   Mestre ",
+    accessKey: "necronomicon-shared-drive-gateway-v1",
+    operationId: "shared-gateway-1",
+  });
+  const claimed = harness.handleRequest({ action: "claimSession", operationId: "shared-gateway-1" });
+  const loaded = harness.handleRequest({ action: "loadCampaign", sessionToken: claimed.sessionToken });
 
-  const initial = harness.handleRequest({ action: "loadCampaign", idToken: "admin" });
-  assert.equal(initial.ok, true);
-  assert.equal(initial.sessionToken, "server-session-token");
-  assert.deepEqual(initial.assetDiagnostics, []);
-  assert.equal(initial.driveFile, null);
-
-  const metadata = harness.handleRequest({ action: "loadCampaignMetadata", idToken: "admin" });
-  assert.equal(metadata.ok, true);
-  assert.deepEqual(metadata.assetDiagnostics, [{ token: "drive-asset://missing-file", status: "missing" }]);
-  assert.equal(metadata.driveFile.id, "campaign-file-id");
+  assert.equal(created.ok, true);
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.user.name, "Adri Mestre");
+  assert.equal(loaded.user.email, "sharegepeto@gmail.com");
 });
+
 test("Apps Script stores glossary images as Drive files and defers the asset bundle", () => {
   const campaign = createCampaignLibrary({ usersA: { "admin@example.com": { role: "superadmin" } } });
   const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
@@ -796,6 +763,26 @@ test("Apps Script lets a GM manage a roster but blocks player escalation and uns
   assert.equal(textualDelete.ok, false);
 });
 
+test("Apps Script completes legacy partial role permissions before deleting a character", () => {
+  const campaign = createCampaignLibrary({
+    usersA: { "admin@example.com": { role: "superadmin" } },
+  });
+  campaign.campaigns[0].state.access.roles = {
+    superadmin: { manageCharacters: true },
+  };
+  const harness = createAppsScriptHarness(campaign, { admin: "admin@example.com" });
+
+  const deleted = harness.handleRequest({
+    action: "deleteCharacter",
+    idToken: "admin",
+    campaignId: "campaign-a",
+    operationId: "delete-legacy-superadmin-character",
+    itemId: "hero-a",
+  });
+
+  assert.equal(deleted.ok, true);
+  assert.equal(harness.readCampaign().campaigns[0].state.characters.length, 0);
+});
 test("Apps Script deletes one glossary entry without publishing the full catalog", () => {
   const campaign = createCampaignLibrary({
     usersB: { "player@example.com": { role: "player" } },
