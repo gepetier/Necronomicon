@@ -135,6 +135,8 @@ let cloudSaveTimer = null;
 let cloudSaveRetryTimer = null;
 let cloudSaveInFlight = false;
 const pendingCloudSaveTargets = createCloudSaveQueue();
+const cloudRequestContexts = new Map();
+const cloudTraceContexts = new Map();
 
 const referenceSuggestionTimers = new WeakMap();
 const glossaryImageUploadsInFlight = new Set();
@@ -235,6 +237,7 @@ const cloudSession = {
   status: authPreviewMode ? "" : qaMode ? "Mode QA local" : getAuthFeedbackText("booting"),
   saving: false,
   awaitingServer: false,
+  usingCachedState: false,
   selectingCampaign: false,
   lastSyncAt: "",
   lastError: "",
@@ -1710,6 +1713,19 @@ async function initializeCloudSession() {
   updateAuthFeedback("booting");
   const storedLoginName = getStoredLoginName();
   if (storedLoginName) {
+    // La copia local ja s'ha carregat abans del primer render. La deixem
+    // disponible en lectura mentre Drive confirma la sessio i la versio remota.
+    if (hasCampaignContent(state)) {
+      cloudSession.loginName = storedLoginName;
+      cloudSession.user = { name: storedLoginName };
+      cloudSession.awaitingServer = true;
+      cloudSession.usingCachedState = true;
+      cloudSession.status = "Obrint la copia local; Drive s'actualitza en segon pla...";
+      recordSessionEvent("auth", "Copia local oberta mentre Drive comprova la sessio", { remembered: "si" });
+      updateAuthGate();
+      void handleLoginName(storedLoginName, { silent: true, usingCachedState: true });
+      return;
+    }
     await handleLoginName(storedLoginName, { silent: true });
     return;
   }
@@ -1726,6 +1742,7 @@ async function handleLoginName(loginName, options = {}) {
 
   cloudSession.loginName = normalizedLoginName;
   cloudSession.user = { name: normalizedLoginName };
+  cloudSession.usingCachedState = options.usingCachedState === true;
   storeLoginName(normalizedLoginName);
   updateAuthFeedback(options.silent ? "restoringSession" : "loadingCampaign");
   cloudSession.awaitingServer = true;
@@ -1767,6 +1784,7 @@ async function handleLoginName(loginName, options = {}) {
     cloudSession.revision = getCloudCampaignRevision(response.campaign);
     cloudSession.ready = true;
     cloudSession.awaitingServer = false;
+    cloudSession.usingCachedState = false;
     cloudSession.selectingCampaign = true;
     cloudSession.pendingInitialPublish = shouldSeedCloud;
     cloudSession.lastSyncAt = new Date().toISOString();
@@ -1791,6 +1809,7 @@ async function handleLoginName(loginName, options = {}) {
     cloudSession.revision = 0;
     cloudSession.ready = false;
     cloudSession.awaitingServer = false;
+    cloudSession.usingCachedState = false;
     cloudSession.selectingCampaign = false;
     const message = error instanceof Error ? error.message : String(error);
     recordSessionEvent("auth", "Login o carrega de campanya fallida", { error: message }, "error");
@@ -2038,7 +2057,7 @@ function updateAuthGate() {
     return;
   }
 
-  const shouldShowAuthGate = cloudSession.enabled && (!cloudSession.ready || cloudSession.selectingCampaign);
+  const shouldShowAuthGate = cloudSession.enabled && (!cloudSession.ready || cloudSession.selectingCampaign) && !cloudSession.usingCachedState;
   const isWaitingForServer = shouldShowAuthGate && cloudSession.awaitingServer;
   authGate.hidden = !shouldShowAuthGate;
   if (authLoginForm) {
@@ -2862,23 +2881,74 @@ function getSessionLogContext() {
   };
 }
 
+function createCloudSyncDiagnostic(operation) {
+  const random = window.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
+  return {
+    traceId: `trace-${Date.now()}-${random}`,
+    operation: String(operation || "sync"),
+  };
+}
 function recordCloudRequestDiagnostic(event) {
+  const stage = event?.stage || "unknown";
+  const requestId = String(event?.requestId || "");
+  const traceId = String(event?.traceId || "");
+  if (stage === "start") {
+    const context = getSessionLogContext();
+    if (requestId) cloudRequestContexts.set(requestId, context);
+    if (traceId) {
+      const existingTrace = cloudTraceContexts.get(traceId);
+      cloudTraceContexts.set(traceId, { context: existingTrace?.context || context, touchedAt: Date.now() });
+      while (cloudTraceContexts.size > 80) {
+        cloudTraceContexts.delete(cloudTraceContexts.keys().next().value);
+      }
+    }
+  }
+  const requestContext = requestId ? cloudRequestContexts.get(requestId) : null;
+  const traceContext = traceId ? cloudTraceContexts.get(traceId)?.context : null;
+  const timing = event?.serverTiming && typeof event.serverTiming === "object" ? event.serverTiming : {};
+  const uploadTiming = event?.uploadTiming && typeof event.uploadTiming === "object" ? event.uploadTiming : {};
   const stageLabel = {
     start: "iniciada",
     success: "confirmada",
     error: "fallida",
-  }[event?.stage] || "registrada";
+  }[stage] || "registrada";
   recordSessionEvent(
     "drive",
-    `Petició Drive ${stageLabel}`,
+    `Petici\u00f3 Drive ${stageLabel}`,
     {
+      ...(traceContext || requestContext || {}),
       action: event?.action || "request",
+      operation: event?.operation || "",
+      traceId,
       transport: event?.transport || "unknown",
+      requestId,
+      resource: event?.resource || "",
+      reuse: event?.reuse || "",
       durationMs: event?.durationMs ?? "",
+      backendMs: timing.totalMs ?? "",
+      lockWaitMs: timing.lockWaitMs ?? "",
+      lockWorkMs: timing.lockWorkMs ?? "",
+      driveLookupMs: timing.driveLookupMs ?? "",
+      driveReadMs: timing.driveReadMs ?? "",
+      driveWriteMs: timing.driveWriteMs ?? "",
+      serializeMs: timing.serializeMs ?? "",
+      uploadBackendMs: uploadTiming.totalMs ?? "",
+      assetPersistMs: uploadTiming.assetPersistMs ?? "",
+      assetFolderMs: uploadTiming.assetFolderMs ?? "",
+      assetLookupMs: uploadTiming.assetLookupMs ?? "",
+      assetDecodeMs: uploadTiming.assetDecodeMs ?? "",
+      assetWriteMs: uploadTiming.assetWriteMs ?? "",
+      assetExternalizeMs: timing.assetExternalizeMs ?? "",
+      assetValidationMs: timing.assetValidationMs ?? "",
+      campaignMutationMs: timing.campaignMutationMs ?? "",
+      campaignPersistMs: timing.campaignPersistMs ?? "",
       error: event?.error || "",
     },
-    event?.stage === "error" ? "error" : "info",
+    stage === "error" ? "error" : "info",
   );
+  if (requestId && (stage === "success" || stage === "error")) {
+    cloudRequestContexts.delete(requestId);
+  }
 }
 
 function renderSessionLogCard() {
@@ -4812,6 +4882,7 @@ async function pushStateToCloud(options = {}) {
   const target = resolveCloudSaveTarget(options.target || inferCloudSaveTarget());
   if (!target) return false;
   const glossaryId = getGlossaryCloudTargetId(target);
+  const diagnostic = createCloudSyncDiagnostic(target.type);
 
   cloudSession.saving = true;
   cloudSession.status = "Desant canvis a Drive...";
@@ -4827,20 +4898,21 @@ async function pushStateToCloud(options = {}) {
     if (target.type === "campaign") {
       const prepared = await prepareCloudAssetPayload(
         storageCreateCloudCampaignPayload(stripTransientUiState(state)),
-        { campaignId, targetType: "campaign" },
+        { campaignId, targetType: "campaign", diagnostic },
       );
       const campaignPayload = prepared.payload;
       assetReplacements = prepared.replacements;
       response = await saveCampaignToCloud(
         cloudSession.loginName,
         campaignPayload,
-        { expectedRevision: cloudSession.revision },
+        { expectedRevision: cloudSession.revision, diagnostic },
       );
     } else if (target.type === "character") {
       const prepared = await prepareCloudAssetPayload(target.character, {
         campaignId,
         targetType: "character",
         targetId: target.character?.id,
+        diagnostic,
       });
       const characterPayload = prepared.payload;
       assetReplacements = prepared.replacements;
@@ -4848,6 +4920,7 @@ async function pushStateToCloud(options = {}) {
         preserveExistingPortrait:
           target.preserveExistingPortrait === true
           && cloudSession.capabilities?.preserveExistingCharacterPortrait === true,
+        diagnostic,
       });
     } else if (target.type === "characterRoster") {
       response = await saveCharacterRosterToCloud(cloudSession.loginName, target.characterId, {
@@ -4865,10 +4938,11 @@ async function pushStateToCloud(options = {}) {
         campaignId,
         targetType: "chronicle",
         targetId: target.chronicle?.id,
+        diagnostic,
       });
       const chroniclePayload = prepared.payload;
       assetReplacements = prepared.replacements;
-      response = await saveChronicleToCloud(cloudSession.loginName, chroniclePayload, campaignId);
+      response = await saveChronicleToCloud(cloudSession.loginName, chroniclePayload, campaignId, { diagnostic });
     } else if (target.type === "glossary") {
       appendGlossaryUploadDebug(
         glossaryId,
@@ -4879,6 +4953,7 @@ async function pushStateToCloud(options = {}) {
         campaignId,
         targetType: "glossary",
         targetId: target.entry?.id,
+        diagnostic,
       });
       const glossaryPayload = prepared.payload;
       assetReplacements = prepared.replacements;
@@ -4886,6 +4961,7 @@ async function pushStateToCloud(options = {}) {
         preserveExistingImageAssets:
           target.preserveExistingImageAssets === true
           && cloudSession.capabilities?.preserveExistingImageAssets === true,
+        diagnostic,
       });
     }
     cloudSession.lastSyncAt = new Date().toISOString();

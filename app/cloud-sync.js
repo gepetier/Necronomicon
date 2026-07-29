@@ -6,6 +6,7 @@ export const CLOUD_CONFIG = {
 };
 
 const LOGIN_NAME_STORAGE_KEY = "necronomicon-login-name";
+const SERVER_SESSION_STORAGE_KEY = "necronomicon-server-session-v1";
 // Apps Script pot necessitar uns segons addicionals en un arrencat en fred o
 // mentre espera el bloqueig de la campanya. Les lectures d'actius ja disposen
 // de 30 s; fem servir el mateix marge per a la campanya i les confirmacions.
@@ -13,7 +14,9 @@ const JSONP_TIMEOUT_MS = 30000;
 const JSONP_MAX_PAYLOAD_LENGTH = 7000;
 
 let jsonpCounter = 0;
+let cloudRequestCounter = 0;
 let serverSessionToken = "";
+let serverSessionLoginName = "";
 let cloudRequestObserver = null;
 
 export function setCloudRequestObserver(observer) {
@@ -29,7 +32,7 @@ export function storeLoginName(loginName) {
 }
 
 export function clearStoredLoginName() {
-  serverSessionToken = "";
+  clearServerSession();
   window.localStorage.removeItem(LOGIN_NAME_STORAGE_KEY);
 }
 
@@ -37,20 +40,31 @@ export function normalizeLoginName(loginName) {
   return String(loginName || "").trim().replace(/\s+/g, " ").slice(0, 48);
 }
 
-export async function loadCampaignFromCloud(loginName) {
-  await establishServerSession(loginName);
-  return jsonpRequest({
-    action: "loadCampaign",
-    ...createAuthPayload(loginName),
-  });
+export async function loadCampaignFromCloud(loginName, options = {}) {
+  const normalizedLoginName = normalizeLoginName(loginName);
+  const session = await establishServerSession(normalizedLoginName, options);
+  try {
+    return await jsonpRequest({
+      action: "loadCampaign",
+      ...createAuthPayload(normalizedLoginName),
+    }, JSONP_TIMEOUT_MS, options.diagnostic);
+  } catch (error) {
+    // Una sessio guardada a la pestanya pot haver caducat al servidor. La
+    // refem una sola vegada abans de donar l'error al compendi.
+    if (!session.reused || !isExpiredServerSessionError(error)) throw error;
+    clearServerSession();
+    await establishServerSession(normalizedLoginName, { ...options, force: true });
+    return jsonpRequest({ action: "loadCampaign", ...createAuthPayload(normalizedLoginName) }, JSONP_TIMEOUT_MS, options.diagnostic);
+  }
 }
+
 export async function saveCampaignToCloud(loginName, campaign, options = {}) {
   return postAndConfirm({
     action: "saveCampaign",
     ...createAuthPayload(loginName),
     campaign,
     expectedRevision: Math.max(0, Number(options.expectedRevision) || 0),
-  }, loginName);
+  }, loginName, options.diagnostic);
 }
 
 export async function saveCharacterToCloud(loginName, character, campaignId = "", options = {}) {
@@ -63,16 +77,16 @@ export async function saveCharacterToCloud(loginName, character, campaignId = ""
   const compactPayload = options.preserveExistingPortrait
     ? createCharacterPayloadWithoutPortrait(payload)
     : null;
-  return saveItemToCloud(payload, compactPayload, loginName);
+  return saveItemToCloud(payload, compactPayload, loginName, options.diagnostic);
 }
 
-export async function saveChronicleToCloud(loginName, chronicle, campaignId = "") {
+export async function saveChronicleToCloud(loginName, chronicle, campaignId = "", options = {}) {
   return saveItemToCloud({
     action: "saveChronicle",
     ...createAuthPayload(loginName),
     campaignId,
     chronicle,
-  }, null, loginName);
+  }, null, loginName, options.diagnostic);
 }
 
 export async function saveGlossaryEntryToCloud(loginName, entry, campaignId = "", options = {}) {
@@ -85,7 +99,7 @@ export async function saveGlossaryEntryToCloud(loginName, entry, campaignId = ""
   const compactPayload = options.preserveExistingImageAssets
     ? createGlossaryEntryPayloadWithoutImages(payload)
     : null;
-  return saveItemToCloud(payload, compactPayload, loginName);
+  return saveItemToCloud(payload, compactPayload, loginName, options.diagnostic);
 }
 
 export async function saveCharacterRosterToCloud(loginName, characterId, roster, campaignId = "") {
@@ -136,7 +150,7 @@ export async function repairCampaignAssetsInCloud(loginName, campaignId = "") {
 export async function saveAssetToCloud(loginName, asset, context = {}) {
   const label = String(asset?.name || asset?.id || "imatge").trim() || "imatge";
   try {
-    await establishServerSession(loginName);
+    await establishServerSession(loginName, { diagnostic: context.diagnostic });
     const operationId = createOperationId();
     await postWithoutCors({
       action: "saveAsset",
@@ -146,8 +160,8 @@ export async function saveAssetToCloud(loginName, asset, context = {}) {
       targetType: context.targetType || "campaign",
       targetId: context.targetId || "",
       asset,
-    });
-    return jsonpRequest({ action: "claimAssetUpload", operationId });
+    }, context.diagnostic);
+    return jsonpRequest({ action: "claimAssetUpload", operationId }, JSONP_TIMEOUT_MS, context.diagnostic);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`Pujada Drive fallida per "${label}": ${detail}`);
@@ -194,13 +208,13 @@ export function createCharacterPayloadWithoutPortrait(payload) {
   };
 }
 
-async function saveItemToCloud(payload, compactPayload = null, loginName = "") {
+async function saveItemToCloud(payload, compactPayload = null, loginName = "", diagnostic = null) {
   const operationId = createOperationId();
   const confirmedPayload = { ...payload, operationId };
   const confirmedCompactPayload = compactPayload ? { ...compactPayload, operationId } : null;
   const serialized = JSON.stringify(confirmedPayload);
   if (serialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
-    const response = await jsonpRequest(confirmedPayload);
+    const response = await jsonpRequest(confirmedPayload, JSONP_TIMEOUT_MS, diagnostic);
     assertConfirmedOperation(response, operationId);
     return response;
   }
@@ -208,19 +222,19 @@ async function saveItemToCloud(payload, compactPayload = null, loginName = "") {
   if (confirmedCompactPayload) {
     const compactSerialized = JSON.stringify(confirmedCompactPayload);
     if (compactSerialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
-      const response = await jsonpRequest(confirmedCompactPayload);
+      const response = await jsonpRequest(confirmedCompactPayload, JSONP_TIMEOUT_MS, diagnostic);
       assertConfirmedOperation(response, operationId);
       return response;
     }
   }
 
-  return postAndConfirm(confirmedPayload, loginName);
+  return postAndConfirm(confirmedPayload, loginName, diagnostic);
 }
 
-async function postAndConfirm(payload, loginName = "") {
+async function postAndConfirm(payload, loginName = "", diagnostic = null) {
   const operationId = String(payload.operationId || createOperationId());
-  await postWithoutCors({ ...payload, operationId });
-  const response = await loadCampaignFromCloud(loginName);
+  await postWithoutCors({ ...payload, operationId }, diagnostic);
+  const response = await loadCampaignFromCloud(loginName, { diagnostic });
   assertConfirmedOperation(response, operationId);
   return response;
 }
@@ -246,24 +260,62 @@ function createOperationId() {
   return `sync-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-async function establishServerSession(loginName) {
-  if (serverSessionToken || !loginName) return serverSessionToken;
+async function establishServerSession(loginName, options = {}) {
+  const normalizedLoginName = normalizeLoginName(loginName);
+  if (!normalizedLoginName) return { active: false, reused: false };
+  if (serverSessionToken && serverSessionLoginName === normalizedLoginName) {
+    notifySessionReuse("memory", options.diagnostic);
+    return { active: true, reused: true };
+  }
+
+  const restored = !options.force ? readStoredServerSession(normalizedLoginName) : "";
+  if (restored) {
+    serverSessionToken = restored;
+    serverSessionLoginName = normalizedLoginName;
+    notifySessionReuse("storage", options.diagnostic);
+    return { active: true, reused: true };
+  }
+
   const operationId = createOperationId();
   try {
-    await postWithoutCors({
-      action: "createSession",
-      loginName: normalizeLoginName(loginName),
-      accessKey: CLOUD_CONFIG.serviceAccessKey,
-      operationId,
-    });
-    const response = await jsonpRequest({ action: "claimSession", operationId });
+    await postWithoutCors({ action: "createSession", loginName: normalizedLoginName, accessKey: CLOUD_CONFIG.serviceAccessKey, operationId }, options.diagnostic);
+    const response = await jsonpRequest({ action: "claimSession", operationId }, JSONP_TIMEOUT_MS, options.diagnostic);
     serverSessionToken = String(response?.sessionToken || "");
+    serverSessionLoginName = serverSessionToken ? normalizedLoginName : "";
+    if (serverSessionToken) storeServerSession(normalizedLoginName, serverSessionToken);
   } catch {
-    serverSessionToken = "";
+    clearServerSession();
   }
-  return serverSessionToken;
+  return { active: Boolean(serverSessionToken), reused: false };
 }
 
+function isExpiredServerSessionError(error) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /sessio .*caduc|session .*expired|sessio .*no valida|session .*invalid/i.test(message);
+}
+function readStoredServerSession(loginName) {
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(SERVER_SESSION_STORAGE_KEY) || "null");
+    if (!stored || stored.loginName !== loginName || !stored.token) return "";
+    return String(stored.token);
+  } catch {
+    return "";
+  }
+}
+
+function storeServerSession(loginName, token) {
+  try {
+    window.sessionStorage.setItem(SERVER_SESSION_STORAGE_KEY, JSON.stringify({ loginName, token }));
+  } catch {
+    // La sessio es pot continuar reutilitzant en memoria si sessionStorage no esta disponible.
+  }
+}
+
+function clearServerSession() {
+  serverSessionToken = "";
+  serverSessionLoginName = "";
+  try { window.sessionStorage.removeItem(SERVER_SESSION_STORAGE_KEY); } catch { /* storage opcional */ }
+}
 function createAuthPayload(loginName) {
   return serverSessionToken
     ? { sessionToken: serverSessionToken }
@@ -273,11 +325,12 @@ function createAuthPayload(loginName) {
     };
 }
 
-function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
+function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS, trace = null) {
   return new Promise((resolve, reject) => {
     const startedAt = performance.now();
     const action = String(payload?.action || "request");
-    notifyCloudRequest({ action, transport: "jsonp", stage: "start" });
+    const diagnostic = createCloudRequestDiagnostic(payload, trace);
+    notifyCloudRequest({ action, transport: "jsonp", stage: "start", ...diagnostic });
     const callbackName = `__necronomiconCloudCallback${Date.now()}${jsonpCounter++}`;
     const script = document.createElement("script");
     let timedOut = false;
@@ -288,7 +341,7 @@ function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
       window.clearTimeout(timeout);
       script.remove();
       const error = new Error("Google Drive no ha respost a temps.");
-      notifyCloudRequest({ action, transport: "jsonp", stage: "error", durationMs: elapsed(startedAt), error: error.message });
+      notifyCloudRequest({ action, transport: "jsonp", stage: "error", durationMs: elapsed(startedAt), error: error.message, ...diagnostic });
       reject(error);
     }, timeoutMs);
 
@@ -299,11 +352,11 @@ function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
       }
       if (!response || response.ok === false) {
         const error = new Error(response?.error || "Resposta no valida de Google Drive.");
-        notifyCloudRequest({ action, transport: "jsonp", stage: "error", durationMs: elapsed(startedAt), error: error.message });
+        notifyCloudRequest({ action, transport: "jsonp", stage: "error", durationMs: elapsed(startedAt), error: error.message, ...diagnostic });
         reject(error);
         return;
       }
-      notifyCloudRequest({ action, transport: "jsonp", stage: "success", durationMs: elapsed(startedAt) });
+      notifyCloudRequest({ action, transport: "jsonp", stage: "success", durationMs: elapsed(startedAt), serverTiming: response?.timing || null, uploadTiming: response?.uploadTiming || null, ...diagnostic });
       resolve(response);
     };
 
@@ -321,17 +374,18 @@ function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS) {
     script.onerror = () => {
       cleanup();
       const error = new Error("No s'ha pogut contactar amb Google Drive.");
-      notifyCloudRequest({ action, transport: "jsonp", stage: "error", durationMs: elapsed(startedAt), error: error.message });
+      notifyCloudRequest({ action, transport: "jsonp", stage: "error", durationMs: elapsed(startedAt), error: error.message, ...diagnostic });
       reject(error);
     };
     document.head.append(script);
   });
 }
 
-async function postWithoutCors(payload) {
+async function postWithoutCors(payload, trace = null) {
   const startedAt = performance.now();
   const action = String(payload?.action || "request");
-  notifyCloudRequest({ action, transport: "post", stage: "start" });
+  const diagnostic = createCloudRequestDiagnostic(payload, trace);
+  notifyCloudRequest({ action, transport: "post", stage: "start", ...diagnostic });
   try {
     const body = JSON.stringify(payload);
     await fetch(CLOUD_CONFIG.apiUrl, {
@@ -344,14 +398,43 @@ async function postWithoutCors(payload) {
       body,
       keepalive: body.length < 60000,
     });
-    notifyCloudRequest({ action, transport: "post", stage: "success", durationMs: elapsed(startedAt) });
+    notifyCloudRequest({ action, transport: "post", stage: "success", durationMs: elapsed(startedAt), ...diagnostic });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    notifyCloudRequest({ action, transport: "post", stage: "error", durationMs: elapsed(startedAt), error: message });
+    notifyCloudRequest({ action, transport: "post", stage: "error", durationMs: elapsed(startedAt), error: message, ...diagnostic });
     throw error;
   }
 }
 
+function notifySessionReuse(reuse, trace = null) {
+  const diagnostic = createCloudRequestDiagnostic({}, trace);
+  notifyCloudRequest({
+    action: "reuseSession",
+    transport: "session",
+    stage: "success",
+    durationMs: 0,
+    reuse,
+    ...diagnostic,
+  });
+}
+function createCloudRequestDiagnostic(payload, trace = null) {
+  const reference = String(payload?.assetRef || payload?.asset?.id || "");
+  return {
+    requestId: `drive-${Date.now()}-${cloudRequestCounter++}`,
+    traceId: String(trace?.traceId || ""),
+    operation: String(trace?.operation || ""),
+    resource: reference ? `asset-${hashDiagnosticReference(reference)}` : "",
+  };
+}
+
+function hashDiagnosticReference(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
 function notifyCloudRequest(event) {
   try {
     cloudRequestObserver?.(event);

@@ -18,6 +18,9 @@ const STORE_NAME = "assets";
 const objectUrlCache = new Map();
 const driveAssetFailures = new Map();
 const driveAssetPendingLoads = new Map();
+const MAX_CONCURRENT_DRIVE_ASSET_LOADS = 3;
+let activeDriveAssetLoads = 0;
+const driveAssetLoadQueue = [];
 const MISSING_IMAGE_DATA_URL = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 280"><rect width="100%" height="100%" fill="#543421"/><path d="M0 0h480v280H0z" fill="none" stroke="#d6b47c" stroke-width="8"/><path d="M110 190l72-72 48 45 43-35 97 62" fill="none" stroke="#d6b47c" stroke-width="12"/><circle cx="160" cy="82" r="22" fill="#d6b47c"/></svg>')}`;
 const LOADING_IMAGE_DATA_URL = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#543421"/><g fill="none" stroke="#efd5a0" stroke-linecap="round" stroke-width="8"><circle cx="60" cy="60" r="28" opacity=".22"/><path d="M60 32a28 28 0 0 1 28 28"><animateTransform attributeName="transform" type="rotate" from="0 60 60" to="360 60 60" dur=".8s" repeatCount="indefinite"/></path></g></svg>')}`;
 let driveAssetLoader = null;
@@ -89,7 +92,7 @@ async function loadDriveAssetWithRetry(token, recordId) {
   if (driveAssetPendingLoads.has(token)) return driveAssetPendingLoads.get(token);
   if (driveAssetFailures.has(token)) return null;
 
-  const pending = (async () => {
+  const pending = enqueueDriveAssetLoad(async () => {
     let lastError = null;
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
@@ -116,12 +119,29 @@ async function loadDriveAssetWithRetry(token, recordId) {
     }
     driveAssetFailures.set(token, lastError?.message || "No s'ha pogut carregar l'actiu de Drive.");
     return null;
-  })().finally(() => driveAssetPendingLoads.delete(token));
+  }).finally(() => driveAssetPendingLoads.delete(token));
 
   driveAssetPendingLoads.set(token, pending);
   return pending;
 }
 
+function enqueueDriveAssetLoad(task) {
+  return new Promise((resolve, reject) => {
+    driveAssetLoadQueue.push({ task, resolve, reject });
+    drainDriveAssetLoadQueue();
+  });
+}
+
+function drainDriveAssetLoadQueue() {
+  while (activeDriveAssetLoads < MAX_CONCURRENT_DRIVE_ASSET_LOADS && driveAssetLoadQueue.length) {
+    const job = driveAssetLoadQueue.shift();
+    activeDriveAssetLoads += 1;
+    Promise.resolve().then(job.task).then(job.resolve, job.reject).finally(() => {
+      activeDriveAssetLoads -= 1;
+      drainDriveAssetLoadQueue();
+    });
+  }
+}
 function waitForAssetRetry(delay) {
   return new Promise((resolve) => window.setTimeout(resolve, delay));
 }

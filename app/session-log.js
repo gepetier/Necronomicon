@@ -208,7 +208,7 @@ function sanitizeDetails(details) {
   return Object.fromEntries(
     Object.entries(details || {})
       .filter(([key, value]) => !blocked.test(key) && value !== undefined && value !== null && value !== "")
-      .slice(0, 12)
+      .slice(0, 28)
       .map(([key, value]) => [trimText(key, 60), trimText(value, MAX_TEXT_LENGTH)]),
   );
 }

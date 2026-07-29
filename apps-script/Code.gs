@@ -21,6 +21,8 @@
     const LOCAL_ASSET_PREFIX = "asset://";
     const MAX_DRIVE_ASSET_BYTES = 12 * 1024 * 1024;
     const DIRECT_MEDIA_KEYS = new Set(["portrait", "imageAssets", "voiceNotes"]);
+    let activeRequestTiming = null;
+
     const RICH_MEDIA_TOKEN_PATTERN = /\{\{media:(image|audio|video|file)\|([^|{}]+)\|([^{}]+)\}\}/g;
     const ALLOWED_DRIVE_ASSET_MIME_TYPES = new Set([
       "image/avif",
@@ -114,16 +116,56 @@
     function doGet(e) {
       const request = readRequest(e);
       const result = handleRequest(request);
+      logRequestTiming(request, result.timing);
       return writeJsonpResponse(e, result);
     }
 
     function doPost(e) {
       const request = readRequest(e);
       const result = handleRequest(request);
+      logRequestTiming(request, result.timing);
       return writeJsonResponse(result);
     }
 
     function handleRequest(request) {
+      const previousTiming = activeRequestTiming;
+      const timing = { startedAt: Date.now(), phases: {} };
+      activeRequestTiming = timing;
+      try {
+        const result = handleRequestCore(request);
+        const summary = summarizeRequestTiming(timing);
+        return { ...result, timing: summary };
+      } finally {
+        activeRequestTiming = previousTiming;
+      }
+    }
+
+    function summarizeRequestTiming(timing) {
+      return { totalMs: Math.max(0, Date.now() - timing.startedAt), ...timing.phases };
+    }
+    function logRequestTiming(request, timing) {
+      if (typeof console === "undefined" || typeof console.log !== "function") return;
+      console.log(JSON.stringify({
+        type: "necronomicon-request-timing",
+        action: String(request && request.action || "request"),
+        ...timing,
+      }));
+    }
+    function recordRequestTiming(name, durationMs) {
+      if (!activeRequestTiming) return;
+      const safeDuration = Math.max(0, Number(durationMs) || 0);
+      activeRequestTiming.phases[name] = (Number(activeRequestTiming.phases[name]) || 0) + safeDuration;
+    }
+
+    function timeRequestPhase(name, callback) {
+      const startedAt = Date.now();
+      try {
+        return callback();
+      } finally {
+        recordRequestTiming(name, Date.now() - startedAt);
+      }
+    }
+    function handleRequestCore(request) {
       try {
         if (request.action === "createSession") return createServerSession(request);
         if (request.action === "claimSession") return claimServerSession(request);
@@ -140,11 +182,11 @@
           const targetState = getCampaignStateForId(current, campaignId);
           const actor = decorateUser(user, targetState.access || current.access);
           assertCanUploadAsset(actor, current, campaignId, request.targetType, request.targetId);
-          const savedAsset = persistDriveAsset(request.asset, campaignId, request.targetType, request.targetId);
+          const savedAsset = timeRequestPhase("assetPersistMs", () => persistDriveAsset(request.asset, campaignId, request.targetType, request.targetId));
           const operationId = String(request.operationId || "");
           CacheService.getScriptCache().put(
             `asset-claim:${operationId}`,
-            JSON.stringify(savedAsset),
+            JSON.stringify({ ...savedAsset, uploadTiming: summarizeRequestTiming(activeRequestTiming) }),
             SESSION_CLAIM_TTL_SECONDS,
           );
           return ok({ operationId });
@@ -334,21 +376,21 @@
               throw new Error("No tens permisos per editar aquesta entrada del glossari.");
             }
 
-            const nextEntry = request.preserveExistingImageAssets && currentEntry
+            const nextEntry = timeRequestPhase("assetExternalizeMs", () => request.preserveExistingImageAssets && currentEntry
               ? {
                 ...currentEntry,
                 ...entry,
                 imageAssets: currentEntry.imageAssets,
               }
-              : externalizeDriveAssets(entry, campaignId);
-            assertDriveAssetReferencesAreAllowed(nextEntry, targetState);
-            updateCampaignItem(current, campaignId, "glossary", nextEntry);
-            const driveFile = persistCampaignUnlocked(
+              : externalizeDriveAssets(entry, campaignId));
+            timeRequestPhase("assetValidationMs", () => assertDriveAssetReferencesAreAllowed(nextEntry, targetState));
+            timeRequestPhase("campaignMutationMs", () => updateCampaignItem(current, campaignId, "glossary", nextEntry));
+            const driveFile = timeRequestPhase("campaignPersistMs", () => persistCampaignUnlocked(
               current,
               user.email,
               getCampaignRevision(current),
               request.operationId,
-            );
+            ));
             const authorized = createAuthorizedCampaignView(current, user);
             return ok({
               user: authorized.user,
@@ -519,11 +561,14 @@
         .map((part) => String(part).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 50))
         .join("__");
       const fileName = `asset-${prefix}-${hashAssetContent(match[2])}.${getAssetExtension(mimeType)}`;
-      const folder = getAssetFolder();
-      const existing = folder.getFilesByName(fileName);
+      const folder = timeRequestPhase("assetFolderMs", () => getAssetFolder());
+      const existing = timeRequestPhase("assetLookupMs", () => folder.getFilesByName(fileName));
       const file = existing.hasNext()
         ? existing.next()
-        : folder.createFile(Utilities.newBlob(Utilities.base64Decode(match[2]), mimeType, fileName));
+        : timeRequestPhase("assetWriteMs", () => {
+          const bytes = timeRequestPhase("assetDecodeMs", () => Utilities.base64Decode(match[2]));
+          return folder.createFile(Utilities.newBlob(bytes, mimeType, fileName));
+        });
       return {
         assetRef: `drive-asset://${file.getId()}`,
         id: file.getId(),
@@ -606,14 +651,14 @@
     }
 
     function loadCampaign() {
-      const file = getCampaignFile();
+      const file = timeRequestPhase("driveLookupMs", () => getCampaignFile());
       if (!file) {
         const blank = createBlankCampaign();
         writeCampaignFile(blank);
         return blank;
       }
 
-      const content = file.getBlob().getDataAsString("UTF-8");
+      const content = timeRequestPhase("driveReadMs", () => file.getBlob().getDataAsString("UTF-8"));
       if (!String(content || "").trim()) {
         const blank = createBlankCampaign();
         writeCampaignFile(blank);
@@ -621,7 +666,7 @@
       }
 
       try {
-        return normalizeCampaign(JSON.parse(content));
+        return timeRequestPhase("parseMs", () => normalizeCampaign(JSON.parse(content)));
       } catch (error) {
         backupRawCampaign(content, "invalid-json");
         const blank = createBlankCampaign();
@@ -642,23 +687,27 @@
 
     function withCampaignLock(callback) {
       const lock = LockService.getScriptLock();
+      const queuedAt = Date.now();
       lock.waitLock(15000);
+      recordRequestTiming("lockWaitMs", Date.now() - queuedAt);
+      const startedAt = Date.now();
       try {
         return callback();
       } finally {
+        recordRequestTiming("lockWorkMs", Date.now() - startedAt);
         lock.releaseLock();
       }
     }
 
     function persistCampaignUnlocked(campaign, actorEmail, previousRevision, operationId, options) {
-      const normalized = normalizeCampaign(campaign);
-      stampServerWriteMetadata(normalized, actorEmail, previousRevision, operationId);
+      const normalized = timeRequestPhase("normalizePersistMs", () => normalizeCampaign(campaign));
+      timeRequestPhase("metadataStampMs", () => stampServerWriteMetadata(normalized, actorEmail, previousRevision, operationId));
       campaign.serverSync = normalized.serverSync;
       const revision = Math.max(0, Number(previousRevision) || 0);
       if ((options && options.forceBackup) || revision % BACKUP_EVERY_REVISIONS === 0) {
-        backupCampaign(actorEmail);
+        timeRequestPhase("backupMs", () => backupCampaign(actorEmail));
       }
-      return getDriveFileInfo(writeCampaignFile(normalized));
+      return timeRequestPhase("driveFileInfoMs", () => getDriveFileInfo(writeCampaignFile(normalized)));
     }
 
     function stampServerWriteMetadata(campaign, actorEmail, previousRevision, operationId) {
@@ -1542,15 +1591,15 @@
     }
 
     function writeCampaignFile(campaign) {
-      const folder = getCampaignFolder();
-      const content = `${JSON.stringify(campaign, null, 2)}\n`;
-      const file = getCampaignFile();
+      const folder = timeRequestPhase("driveLookupMs", () => getCampaignFolder());
+      const content = timeRequestPhase("serializeMs", () => `${JSON.stringify(campaign, null, 2)}\n`);
+      const file = timeRequestPhase("driveLookupMs", () => getCampaignFile());
       if (file) {
-        file.setContent(content);
+        timeRequestPhase("driveWriteMs", () => file.setContent(content));
         return file;
       }
 
-      return folder.createFile(CONFIG.CAMPAIGN_FILE_NAME, content, MimeType.PLAIN_TEXT);
+      return timeRequestPhase("driveWriteMs", () => folder.createFile(CONFIG.CAMPAIGN_FILE_NAME, content, MimeType.PLAIN_TEXT));
     }
 
     function getCurrentCampaignFileInfo() {
