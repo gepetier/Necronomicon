@@ -12,7 +12,7 @@
       // El compte que desplega l'script escriu a Drive, pero mai no concedeix permisos als visitants.
       BOOTSTRAP_ADMIN_EMAILS: [],
     };
-    const BACKEND_VERSION = "2026-07-29-shared-gateway-identities";
+    const BACKEND_VERSION = "2026-07-29-asset-claim-reliability";
     const BACKUP_EVERY_REVISIONS = 20;
     const MAX_BACKUP_FILES = 40;
     const SESSION_TTL_SECONDS = 3600;
@@ -177,19 +177,21 @@
         }
 
         if (request.action === "saveAsset") {
-          const current = loadCampaign();
-          const campaignId = normalizeCampaignId(request.campaignId);
-          const targetState = getCampaignStateForId(current, campaignId);
-          const actor = decorateUser(user, targetState.access || current.access);
-          assertCanUploadAsset(actor, current, campaignId, request.targetType, request.targetId);
-          const savedAsset = timeRequestPhase("assetPersistMs", () => persistDriveAsset(request.asset, campaignId, request.targetType, request.targetId));
           const operationId = String(request.operationId || "");
-          CacheService.getScriptCache().put(
-            `asset-claim:${operationId}`,
-            JSON.stringify({ ...savedAsset, uploadTiming: summarizeRequestTiming(activeRequestTiming) }),
-            SESSION_CLAIM_TTL_SECONDS,
-          );
-          return ok({ operationId });
+          try {
+            const current = loadCampaign();
+            const campaignId = normalizeCampaignId(request.campaignId);
+            const targetState = getCampaignStateForId(current, campaignId);
+            const actor = decorateUser(user, targetState.access || current.access);
+            assertCanUploadAsset(actor, current, campaignId, request.targetType, request.targetId);
+            const savedAsset = timeRequestPhase("assetPersistMs", () => persistDriveAsset(request.asset, campaignId, request.targetType, request.targetId));
+            storeAssetClaim(operationId, { ...savedAsset, uploadTiming: summarizeRequestTiming(activeRequestTiming) });
+            return ok({ operationId });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            storeAssetClaim(operationId, { ok: false, error: message });
+            return { ok: false, error: message };
+          }
         }
 
         if (request.action === "loadAsset") {
@@ -395,6 +397,7 @@
             return ok({
               user: authorized.user,
               campaign: authorized.campaign,
+              savedItem: nextEntry,
               capabilities: getClientCapabilities(),
               driveFile,
             });
@@ -471,10 +474,17 @@
         }
         throw new Error(`Accio desconeguda: ${request.action || "(buida)"}`);
       } catch (error) {
-        return {
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        };
+        const message = error instanceof Error ? error.message : String(error);
+        // Fins i tot un error d'autenticacio arriba al client mitjançant el
+        // claim, ja que el POST no-cors no pot llegir la seva resposta.
+        if (request && request.action === "saveAsset") {
+          try {
+            storeAssetClaim(String(request.operationId || ""), { ok: false, error: message });
+          } catch {
+            // No amaguem l'error original si el magatzem temporal tambe falla.
+          }
+        }
+        return { ok: false, error: message };
       }
     }
 
@@ -518,13 +528,54 @@
       return ok({ sessionToken, expiresIn: SESSION_TTL_SECONDS });
     }
 
+    function storeAssetClaim(operationId, payload) {
+      const id = String(operationId || "");
+      if (!id) return;
+      const claimKey = `asset-claim:${id}`;
+      const value = JSON.stringify({ expiresAt: Date.now() + SESSION_CLAIM_TTL_SECONDS * 1000, payload });
+      CacheService.getScriptCache().put(claimKey, value, SESSION_CLAIM_TTL_SECONDS);
+      // CacheService es rapid, pero la visibilitat entre un POST i el JSONP
+      // seguent no esta garantida. Properties es el testimoni fiable de curta vida.
+      try {
+        const properties = PropertiesService.getScriptProperties();
+        purgeExpiredAssetClaims(properties);
+        properties.setProperty(claimKey, value);
+      } catch {
+        // El cache encara pot completar la confirmacio si Properties arriba al limit.
+      }
+    }
+
+    function purgeExpiredAssetClaims(properties) {
+      const now = Date.now();
+      Object.entries(properties.getProperties()).forEach(([key, value]) => {
+        if (!key.startsWith("asset-claim:")) return;
+        try {
+          if (Number(JSON.parse(value).expiresAt) < now) properties.deleteProperty(key);
+        } catch {
+          properties.deleteProperty(key);
+        }
+      });
+    }
+
     function claimAssetUpload(request) {
       const cache = CacheService.getScriptCache();
       const claimKey = `asset-claim:${String(request.operationId || "")}`;
-      const value = cache.get(claimKey) || "";
-      if (!value) throw new Error("La pujada de la imatge no s'ha pogut confirmar.");
+      let properties = null;
+      try {
+        properties = PropertiesService.getScriptProperties();
+      } catch {
+        // CacheService continua sent una via valida de confirmacio.
+      }
+      const value = cache.get(claimKey) || (properties && properties.getProperty(claimKey)) || "";
       cache.remove(claimKey);
-      return ok(JSON.parse(value));
+      if (properties) properties.deleteProperty(claimKey);
+      if (!value) throw new Error("La pujada de la imatge no s'ha pogut confirmar.");
+      const claim = JSON.parse(value);
+      if (!claim || Number(claim.expiresAt) < Date.now()) {
+        throw new Error("La confirmacio de la pujada ha caducat.");
+      }
+      if (claim.payload && claim.payload.ok === false) return claim.payload;
+      return ok(claim.payload || {});
     }
 
     function assertCanUploadAsset(actor, campaign, campaignId, targetType, targetId) {

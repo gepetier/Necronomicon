@@ -424,20 +424,20 @@ test("storage repairs stale packaged Meledar character portraits", () => {
   assert.equal(ilu.portrait, seedData.characters.find((character) => character.id === "ilu").portrait);
 });
 
-test("storage version 12 removes legacy chronicle and glossary images once", () => {
+test("storage version 12 removes legacy images but preserves canonical Drive assets", () => {
   const legacyState = structuredClone(seedData);
   legacyState.glossary[0] = {
     ...legacyState.glossary[0],
-    description: "{{media:image|Mapa antic|drive-asset://legacy-map}}",
-    imageAssets: ["drive-asset://legacy-cover"],
+    description: "{{media:image|Mapa Drive|drive-asset://drive-map}}{{media:image|Mapa antic|asset://legacy-map}}",
+    imageAssets: ["drive-asset://drive-cover", "asset://legacy-local"],
   };
   legacyState.chronicles[0] = {
     ...legacyState.chronicles[0],
     imageAssets: ["asset://legacy-local"],
   };
   const migrated = migrateStoredState({ version: 11, state: legacyState });
-  assert.deepEqual(migrated.glossary[0].imageAssets, []);
-  assert.equal(migrated.glossary[0].description, "Mapa antic");
+  assert.deepEqual(migrated.glossary[0].imageAssets, ["drive-asset://drive-cover"]);
+  assert.equal(migrated.glossary[0].description, "{{media:image|Mapa Drive|drive-asset://drive-map}}Mapa antic");
   assert.deepEqual(migrated.chronicles[0].imageAssets, []);
 });
 

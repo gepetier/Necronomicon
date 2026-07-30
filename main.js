@@ -774,12 +774,14 @@ if (event.target.closest("[data-cloud-publish]")) {
 
   const glossarySelect = event.target.closest("[data-glossary-id]");
   if (glossarySelect) {
+    const glossaryListScrollTop = getGlossaryListScrollTop();
     state.ui.selectedGlossaryId = glossarySelect.dataset.glossaryId;
     if (state.ui.glossaryReturnTargetId && state.ui.selectedGlossaryId !== state.ui.glossaryReturnTargetId) {
       state.ui.glossaryReturnView = null;
       state.ui.glossaryReturnTargetId = "";
     }
     persistAndRender();
+    restoreGlossaryListScrollTop(glossaryListScrollTop);
     return;
   }
 
@@ -1797,7 +1799,9 @@ async function handleLoginName(loginName, options = {}) {
     persistStateImmediately({ skipCloud: true });
     const migratedEmbeddedAssets = await migrateEmbeddedAssets({ announce: false });
     updateAuthFeedback(shouldSeedCloud ? "firstPublish" : "campaignReady");
-    prepareCampaignSelectionAfterLogin();
+    prepareCampaignSelectionAfterLogin({
+      restoreCampaignId: options.silent ? localCatalogBeforeCloud.activeCampaignId : "",
+    });
     if ((shouldSeedCloud || migratedEmbeddedAssets) && canPublishCampaign()) {
       await pushStateToCloud({ target: { type: "campaign" } });
       cloudSession.pendingInitialPublish = false;
@@ -1847,7 +1851,7 @@ function hasCampaignContent(candidate) {
   );
 }
 
-function prepareCampaignSelectionAfterLogin() {
+function prepareCampaignSelectionAfterLogin(options = {}) {
   const accessibleCampaigns = getAccessibleCampaignsForCurrentUser();
   if (!accessibleCampaigns.length) {
     cloudSession.selectingCampaign = true;
@@ -1868,10 +1872,19 @@ function prepareCampaignSelectionAfterLogin() {
     updateAuthGate();
     return;
   }
+  const restoredCampaign = options.restoreCampaignId
+    ? accessibleCampaigns.find((campaign) => campaign.id === options.restoreCampaignId)
+    : null;
   const onlyCampaign = accessibleCampaigns.length === 1 ? accessibleCampaigns[0] : null;
   const directCampaign = invitedCampaign
+    || restoredCampaign
     || (onlyCampaign?.userAccess?.role === "player" ? onlyCampaign : null);
   if (directCampaign) {
+    if (restoredCampaign && !invitedCampaign) {
+      recordSessionEvent("auth", "Campanya anterior restaurada", {
+        campaignId: restoredCampaign.id,
+      });
+    }
     selectLoginCampaign(directCampaign.id, { forceWelcome: Boolean(invitedCampaign) });
     return;
   }
@@ -2467,6 +2480,24 @@ function renderGlossaryModule() {
   });
 }
 
+function getGlossaryListScrollTop() {
+  const list = glossaryModule?.querySelector(".glossary-list");
+  return list instanceof HTMLElement ? list.scrollTop : 0;
+}
+
+function restoreGlossaryListScrollTop(scrollTop) {
+  if (!Number.isFinite(scrollTop) || scrollTop < 0) return;
+
+  const restore = () => {
+    const list = glossaryModule?.querySelector(".glossary-list");
+    if (list instanceof HTMLElement) {
+      list.scrollTop = scrollTop;
+    }
+  };
+
+  restore();
+  window.requestAnimationFrame(restore);
+}
 function renderWorldMapModule() {
   if (!mapModule) return;
   renderWorldMapView({
@@ -4895,6 +4926,7 @@ async function pushStateToCloud(options = {}) {
     const campaignId = storageGetActiveCampaignMeta().id;
     let response = null;
     let assetReplacements = new Map();
+    let expectedGlossaryImageAssets = null;
     if (target.type === "campaign") {
       const prepared = await prepareCloudAssetPayload(
         storageCreateCloudCampaignPayload(stripTransientUiState(state)),
@@ -4957,6 +4989,9 @@ async function pushStateToCloud(options = {}) {
       });
       const glossaryPayload = prepared.payload;
       assetReplacements = prepared.replacements;
+      expectedGlossaryImageAssets = Array.isArray(glossaryPayload.imageAssets)
+        ? glossaryPayload.imageAssets.map((source) => String(source || "").trim()).filter(Boolean)
+        : null;
       response = await saveGlossaryEntryToCloud(cloudSession.loginName, glossaryPayload, campaignId, {
         preserveExistingImageAssets:
           target.preserveExistingImageAssets === true
@@ -4974,15 +5009,21 @@ async function pushStateToCloud(options = {}) {
     cloudSession.revision = response?.campaign
       ? getCloudCampaignRevision(response.campaign)
       : cloudSession.revision;
+    const glossaryConfirmation = target.type === "glossary"
+      ? reconcileSavedGlossaryEntry(response?.savedItem, expectedGlossaryImageAssets)
+      : null;
     cloudSession.status = response?.unverified
       ? "Canvis enviats a Drive; confirmacio no disponible per mida."
-      : getConfirmedCloudSaveStatus(response?.driveFile);
+      : glossaryConfirmation?.imageMismatch
+        ? "Drive ha desat l'entrada, pero la seva imatge no ha quedat confirmada."
+        : getConfirmedCloudSaveStatus(response?.driveFile);
     applyCloudAssetReplacements(assetReplacements);
     recordSessionEvent("sync", "Sincronitzacio Drive confirmada", {
       target: target.type,
       assets: assetReplacements.size,
       revision: cloudSession.revision,
-    });
+      imageMismatch: glossaryConfirmation?.imageMismatch === true ? "si" : "no",
+    }, glossaryConfirmation?.imageMismatch ? "error" : "info");
     if (glossaryId) {
       clearGlossaryMediaOutbox(campaignId, glossaryId);
 
@@ -4991,7 +5032,12 @@ async function pushStateToCloud(options = {}) {
         "Drive confirmat",
         assetReplacements.size + " imatge(s) materialitzada(es) i entrada confirmada a Drive.",
       );
-      showSaveNotice("Entrada i imatge confirmades a Drive.", { renderParts: [RENDER_PARTS.notice] });
+      showSaveNotice(
+        glossaryConfirmation?.imageMismatch
+          ? "L'entrada s'ha desat, pero Drive no ha confirmat la imatge. Mira el registre abans de tornar-la a pujar."
+          : "Entrada i imatge confirmades a Drive.",
+        { renderParts: [RENDER_PARTS.notice] },
+      );
     }
     return true;
   } catch (error) {
@@ -5151,6 +5197,39 @@ function applyCloudAssetReplacements(replacements) {
   persistStateImmediately({ skipCloud: true });
 }
 
+function reconcileSavedGlossaryEntry(savedItem, expectedImageAssets) {
+  if (!savedItem || typeof savedItem !== "object" || !savedItem.id) {
+    return { imageMismatch: false, reconciled: false };
+  }
+
+  const savedId = String(savedItem.id);
+  const localEntry = findGlossaryEntry(savedId);
+  if (!localEntry) {
+    return { imageMismatch: false, reconciled: false };
+  }
+
+  const savedImages = Array.isArray(savedItem.imageAssets)
+    ? savedItem.imageAssets.map((source) => String(source || "").trim()).filter(Boolean)
+    : [];
+  const imageMismatch = Array.isArray(expectedImageAssets)
+    && !areStringListsEqual(expectedImageAssets, savedImages);
+
+  state.glossary = state.glossary.map((entry) => (
+    entry.id === savedId ? { ...entry, ...savedItem, imageAssets: savedImages } : entry
+  ));
+  ensureUiStateShape();
+  persistStateImmediately({ skipCloud: true });
+
+  if (imageMismatch) {
+    recordSessionEvent("sync", "Discrepancia en la confirmacio de la imatge del glossari", {
+      entryId: savedId,
+      expectedImages: expectedImageAssets.length,
+      savedImages: savedImages.length,
+    }, "error");
+  }
+
+  return { imageMismatch, reconciled: true };
+}
 function getCloudCampaignRevision(campaign) {
   return Math.max(0, Number(campaign?.serverSync?.revision) || 0);
 }

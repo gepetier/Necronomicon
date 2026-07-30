@@ -290,6 +290,10 @@ function renderGlossaryCard(entry, selectedGlossaryId, state, permissions = {}) 
   const isActive = entry.id === selectedGlossaryId;
   const canEdit = permissions.canEditGlossaryEntry?.(entry) !== false;
   const canDelete = permissions.canDeleteGlossaryEntry?.(entry) !== false;
+  const hasImage = Array.isArray(entry.imageAssets)
+    ? entry.imageAssets.some((source) => String(source || "").trim())
+    : Boolean(String(entry.imageAssets || "").trim());
+  const imageStatusLabel = hasImage ? "Imatge vinculada" : "Sense imatge vinculada";
 
   return `
     <article
@@ -297,15 +301,24 @@ function renderGlossaryCard(entry, selectedGlossaryId, state, permissions = {}) 
       data-glossary-id="${entry.id}"
       tabindex="0"
       role="button"
-      aria-label="${escapeAttribute(`Obre l'entrada ${entry.name}`)}"
+      aria-label="${escapeAttribute(`Obre l'entrada ${entry.name}; ${imageStatusLabel.toLowerCase()}`)}"
       style="${paletteStyle(entry.palette)}"
     >
       <div class="glossary-entry-head">
         <h3>${escapeHtml(entry.name)}</h3>
-        ${
-          isActive && (canEdit || canDelete)
-            ? `
-        <div class="glossary-entry-actions">
+        <div class="glossary-entry-meta">
+          <span
+            class="glossary-image-status ${hasImage ? "has-image" : "no-image"}"
+            data-glossary-card-image-status="${hasImage ? "true" : "false"}"
+            title="${imageStatusLabel}"
+          >
+            ${renderGlossaryImageStatusIcon(hasImage)}
+            <span>${hasImage ? "Imatge" : "Sense imatge"}</span>
+          </span>
+          ${
+            isActive && (canEdit || canDelete)
+              ? `
+          <div class="glossary-entry-actions">
           ${canEdit ? `
           <button
             type="button"
@@ -330,9 +343,10 @@ function renderGlossaryCard(entry, selectedGlossaryId, state, permissions = {}) 
             <span class="sr-only">Esborra</span>
           </button>
           ` : ""}
-        </div>`
-            : ""
-        }
+          </div>`
+              : ""
+          }
+        </div>
       </div>
     </article>
   `;
@@ -752,6 +766,23 @@ function renderGlossaryActionIcon(type) {
       <path d="M9 4.75h6l.45 1.5H19v1.5h-1.1l-.8 11.1a2.1 2.1 0 0 1-2.09 1.95H9a2.1 2.1 0 0 1-2.09-1.95l-.8-11.1H5v-1.5h3.55L9 4.75Zm1.6 4.1v8.1h1.5v-8.1Zm3.3 0v8.1h1.5v-8.1Z" fill="currentColor"/>
     </svg>
   `;
+}
+
+function renderGlossaryImageStatusIcon(hasImage) {
+  return hasImage
+    ? `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <rect x="3.5" y="5" width="17" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <circle cx="9" cy="10" r="1.6" fill="currentColor"/>
+        <path d="m5.5 17 4.2-4.2 3.1 3 2.2-2.1 3.5 3.3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/>
+      </svg>
+    `
+    : `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <rect x="3.5" y="5" width="17" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="m7 8 10 8M17 8 7 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"/>
+      </svg>
+    `;
 }
 
 function renderScopeTitle(state) {

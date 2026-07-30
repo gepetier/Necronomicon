@@ -386,16 +386,26 @@ async function runFunctionalSuite(context) {
 
   context.click("[data-clear-glossary-filters]");
   await delay(80);
-  context.qsa(".glossary-entry")[0]?.click();
+  const glossaryListBeforeSelection = context.doc.querySelector(".glossary-list");
+  const glossaryListMaxScroll = glossaryListBeforeSelection
+    ? Math.max(0, glossaryListBeforeSelection.scrollHeight - glossaryListBeforeSelection.clientHeight)
+    : 0;
+  const glossaryListExpectedScroll = Math.min(180, glossaryListMaxScroll);
+  if (glossaryListBeforeSelection) {
+    glossaryListBeforeSelection.scrollTop = glossaryListExpectedScroll;
+  }
+  context.click('[data-glossary-id="uric"]');
   await delay(80);
   const glossaryTitle = context.doc.querySelector(".glossary-detail h3")?.textContent?.trim() || "";
+  const glossaryListAfterSelection = context.doc.querySelector(".glossary-list");
+  const glossaryListActualScroll = glossaryListAfterSelection?.scrollTop || 0;
   record(
     steps,
-    glossaryTitle.length > 0,
-    "La seleccio d'una entrada del glossari mostra el detall",
-    { glossaryTitle },
+    glossaryTitle.length > 0
+      && Math.abs(glossaryListActualScroll - glossaryListExpectedScroll) < 2,
+    "La seleccio d'una entrada del glossari mostra el detall sense perdre la posicio de la llista",
+    { glossaryTitle, glossaryListExpectedScroll, glossaryListActualScroll },
   );
-
   context.click('[data-glossary-filter="Personatges"]');
   await delay(80);
   const secondaryCharacterResults = context.qsa(".glossary-entry h3").map((element) => element.textContent?.trim() || "");
@@ -454,6 +464,23 @@ async function runFunctionalSuite(context) {
       && officeToggleLabel.includes("Desactiva"),
     "El mode oficina es pot activar i relabela la navegacio amb noms neutres",
     { officeNavLabel, officeToggleLabel },
+  );
+
+  context.click('[data-module-link="glossary"]');
+  await delay(120);
+  const officeGlossaryCards = context.qsa(".glossary-entry");
+  const officeGlossaryImageStatuses = context.qsa("[data-glossary-card-image-status]");
+  record(
+    steps,
+    officeGlossaryCards.length > 0
+      && officeGlossaryImageStatuses.length === officeGlossaryCards.length
+      && officeGlossaryImageStatuses.every((element) => ["true", "false"].includes(element.dataset.glossaryCardImageStatus)),
+    "El mode oficina indica si cada entrada del glossari te una imatge vinculada",
+    {
+      cards: officeGlossaryCards.length,
+      statuses: officeGlossaryImageStatuses.length,
+      withImage: officeGlossaryImageStatuses.filter((element) => element.dataset.glossaryCardImageStatus === "true").length,
+    },
   );
 
   context.click('[data-module-link="chronicles"]');

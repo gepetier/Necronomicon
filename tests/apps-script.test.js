@@ -68,6 +68,7 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
   const events = [];
   const backups = [];
   const cacheValues = new Map();
+  const propertyValues = new Map();
   const assetFilesById = new Map();
   const assetFilesByName = new Map();
   const trashedAssetIds = new Set();
@@ -219,6 +220,14 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
         remove: (key) => cacheValues.delete(key),
       }),
     },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        setProperty: (key, value) => propertyValues.set(key, String(value)),
+        getProperty: (key) => propertyValues.get(key) || null,
+        getProperties: () => Object.fromEntries(propertyValues),
+        deleteProperty: (key) => propertyValues.delete(key),
+      }),
+    },
     DriveApp: {
       getFolderById: () => folder,
       getFileById: (id) => {
@@ -266,6 +275,7 @@ function createAppsScriptHarness(initialCampaign, tokenEmails = {}) {
     events,
     backups,
     assetFiles: assetFilesById,
+    dropCachedClaim: (operationId) => cacheValues.delete(`asset-claim:${operationId}`),
     trashedAssetIds,
     purgeLegacyImages: () => JSON.parse(JSON.stringify(context.purgeLegacyChronicleAndGlossaryImages())),
   };
@@ -289,11 +299,28 @@ test("Apps Script stores glossary images as separate Drive files and serves auth
       dataUrl: "data:image/png;base64,aW1hdGdl",
     },
   });
+  // Reprodueix la finestra real: el JSONP pot aterrar en una instancia on el
+  // ScriptCache encara no veu el POST. Properties conserva el testimoni.
+  harness.dropCachedClaim("asset-operation-1");
   const claimed = harness.handleRequest({ action: "claimAssetUpload", operationId: "asset-operation-1" });
 
   assert.equal(upload.ok, true);
   assert.equal(claimed.assetRef, "drive-asset://asset-file-1");
   assert.equal(harness.assetFiles.size, 1);
+
+  const failedUpload = harness.handleRequest({
+    action: "saveAsset",
+    idToken: "player",
+    operationId: "asset-operation-invalid",
+    campaignId: "campaign-b",
+    targetType: "glossary",
+    targetId: "entry-assigned",
+    asset: { name: "trencat.png", mimeType: "image/png", dataUrl: "invalid" },
+  });
+  const failedClaim = harness.handleRequest({ action: "claimAssetUpload", operationId: "asset-operation-invalid" });
+  assert.equal(failedUpload.ok, false);
+  assert.equal(failedClaim.ok, false);
+  assert.match(failedClaim.error, /contingut de la imatge no es valid/i);
 
   const saved = harness.handleRequest({
     action: "saveGlossaryEntry",
@@ -377,6 +404,7 @@ test("Apps Script stores glossary images as Drive files and defers the asset bun
   assert.equal(saved.ok, true);
   const remoteSource = harness.readCampaign().campaigns[0].state.glossary[0].imageAssets[0];
   assert.match(remoteSource, /^drive-asset:\/\/asset-file-/);
+  assert.deepEqual(saved.savedItem.imageAssets, [remoteSource]);
   assert.equal(harness.assetFiles.size, 1);
 
   const loaded = harness.handleRequest({ action: "loadCampaign", idToken: "admin" });

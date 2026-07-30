@@ -12,6 +12,8 @@ const SERVER_SESSION_STORAGE_KEY = "necronomicon-server-session-v1";
 // de 30 s; fem servir el mateix marge per a la campanya i les confirmacions.
 const JSONP_TIMEOUT_MS = 30000;
 const JSONP_MAX_PAYLOAD_LENGTH = 7000;
+const ASSET_CLAIM_ATTEMPTS = 4;
+const ASSET_CLAIM_RETRY_MS = 500;
 
 let jsonpCounter = 0;
 let cloudRequestCounter = 0;
@@ -161,7 +163,7 @@ export async function saveAssetToCloud(loginName, asset, context = {}) {
       targetId: context.targetId || "",
       asset,
     }, context.diagnostic);
-    return jsonpRequest({ action: "claimAssetUpload", operationId }, JSONP_TIMEOUT_MS, context.diagnostic);
+    return claimAssetUpload(operationId, context.diagnostic);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`Pujada Drive fallida per "${label}": ${detail}`);
@@ -323,6 +325,27 @@ function createAuthPayload(loginName) {
       loginName: normalizeLoginName(loginName),
       accessKey: CLOUD_CONFIG.serviceAccessKey,
     };
+}
+
+async function claimAssetUpload(operationId, diagnostic = null) {
+  let lastError = null;
+  for (let attempt = 0; attempt < ASSET_CLAIM_ATTEMPTS; attempt += 1) {
+    try {
+      return await jsonpRequest({ action: "claimAssetUpload", operationId }, JSONP_TIMEOUT_MS, diagnostic);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/pujada de la imatge no s'ha pogut confirmar/i.test(message) || attempt === ASSET_CLAIM_ATTEMPTS - 1) {
+        throw error;
+      }
+      await waitForAssetClaim((attempt + 1) * ASSET_CLAIM_RETRY_MS);
+    }
+  }
+  throw lastError || new Error("La pujada de la imatge no s'ha pogut confirmar.");
+}
+
+function waitForAssetClaim(delayMs) {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
 }
 
 function jsonpRequest(payload, timeoutMs = JSONP_TIMEOUT_MS, trace = null) {

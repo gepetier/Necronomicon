@@ -787,17 +787,22 @@ function migrateLegacyChronicleAndGlossaryImages(candidate) {
 
 function stripLegacyRecordImages(record) {
   const stripped = stripLegacyInlineImages(record);
+  // La migracio v12 nomes purga imatges legacy. Una referencia Drive ja es
+  // canonica i pot arribar des d'una campanya antiga en cada inici de sessio.
+  const imageAssets = Array.isArray(record?.imageAssets)
+    ? record.imageAssets.filter((source) => /^drive-asset:\/\/[a-zA-Z0-9_-]+$/.test(String(source || "").trim()))
+    : [];
   return {
     ...stripped,
-    imageAssets: [],
+    imageAssets,
   };
 }
 
 function stripLegacyInlineImages(value) {
   if (typeof value === "string") {
     return value.replace(
-      /\{\{media:image\|([^|{}]+)\|[^{}]+\}\}/g,
-      "$1",
+      /\{\{media:image\|([^|{}]+)\|([^{}]+)\}\}/g,
+      (full, label, source) => /^drive-asset:\/\/[a-zA-Z0-9_-]+$/.test(String(source || "").trim()) ? full : label,
     );
   }
   if (Array.isArray(value)) {
