@@ -9,3 +9,4 @@ GLOSSARI PARTIDA MELEDAR.docx
 GLOSSARI PARTIDA MELEDAR.zip
 resources/imatges/*.png
 !resources/imatges/ilu.png
+!resources/imatges/*-card-scene.png

@@ -2406,6 +2406,11 @@ img {
   filter: saturate(0.98) contrast(1.04) brightness(0.98);
 }
 
+.portrait-media.card-scene-media {
+  object-fit: cover;
+  object-position: center;
+}
+
 .card-portrait::before {
   content: attr(data-mark);
   position: absolute;

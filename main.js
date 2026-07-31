@@ -2368,6 +2368,10 @@ function updateSaveNotice() {
 }
 
 function getCloudSyncState() {
+  if (cloudSession.lastError || (cloudSession.enabled && (!cloudSession.ready || !cloudSession.loginName))) {
+    return "unsynced";
+  }
+
   if (
     cloudSession.saving
     || cloudSession.awaitingServer
@@ -2378,10 +2382,6 @@ function getCloudSyncState() {
     || pendingCloudSaveTargets.size > 0
   ) {
     return "syncing";
-  }
-
-  if (cloudSession.lastError || (cloudSession.enabled && (!cloudSession.ready || !cloudSession.loginName))) {
-    return "unsynced";
   }
 
   return "synced";

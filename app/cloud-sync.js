@@ -14,11 +14,13 @@ const JSONP_TIMEOUT_MS = 30000;
 const JSONP_MAX_PAYLOAD_LENGTH = 7000;
 const ASSET_CLAIM_ATTEMPTS = 4;
 const ASSET_CLAIM_RETRY_MS = 500;
+const SESSION_REFRESH_MARGIN_MS = 30000;
 
 let jsonpCounter = 0;
 let cloudRequestCounter = 0;
 let serverSessionToken = "";
 let serverSessionLoginName = "";
+let serverSessionExpiresAt = 0;
 let cloudRequestObserver = null;
 
 export function setCloudRequestObserver(observer) {
@@ -44,20 +46,12 @@ export function normalizeLoginName(loginName) {
 
 export async function loadCampaignFromCloud(loginName, options = {}) {
   const normalizedLoginName = normalizeLoginName(loginName);
-  const session = await establishServerSession(normalizedLoginName, options);
-  try {
-    return await jsonpRequest({
+  return withFreshServerSession(normalizedLoginName, options.diagnostic, () => (
+    jsonpRequest({
       action: "loadCampaign",
       ...createAuthPayload(normalizedLoginName),
-    }, JSONP_TIMEOUT_MS, options.diagnostic);
-  } catch (error) {
-    // Una sessio guardada a la pestanya pot haver caducat al servidor. La
-    // refem una sola vegada abans de donar l'error al compendi.
-    if (!session.reused || !isExpiredServerSessionError(error)) throw error;
-    clearServerSession();
-    await establishServerSession(normalizedLoginName, { ...options, force: true });
-    return jsonpRequest({ action: "loadCampaign", ...createAuthPayload(normalizedLoginName) }, JSONP_TIMEOUT_MS, options.diagnostic);
-  }
+    }, JSONP_TIMEOUT_MS, options.diagnostic)
+  ));
 }
 
 export async function saveCampaignToCloud(loginName, campaign, options = {}) {
@@ -152,18 +146,19 @@ export async function repairCampaignAssetsInCloud(loginName, campaignId = "") {
 export async function saveAssetToCloud(loginName, asset, context = {}) {
   const label = String(asset?.name || asset?.id || "imatge").trim() || "imatge";
   try {
-    await establishServerSession(loginName, { diagnostic: context.diagnostic });
     const operationId = createOperationId();
-    await postWithoutCors({
-      action: "saveAsset",
-      ...createAuthPayload(loginName),
-      operationId,
-      campaignId: context.campaignId || "",
-      targetType: context.targetType || "campaign",
-      targetId: context.targetId || "",
-      asset,
-    }, context.diagnostic);
-    return claimAssetUpload(operationId, context.diagnostic);
+    return await withFreshServerSession(loginName, context.diagnostic, async () => {
+      await postWithoutCors({
+        action: "saveAsset",
+        ...createAuthPayload(loginName),
+        operationId,
+        campaignId: context.campaignId || "",
+        targetType: context.targetType || "campaign",
+        targetId: context.targetId || "",
+        asset,
+      }, context.diagnostic);
+      return claimAssetUpload(operationId, context.diagnostic);
+    });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`Pujada Drive fallida per "${label}": ${detail}`);
@@ -171,13 +166,14 @@ export async function saveAssetToCloud(loginName, asset, context = {}) {
 }
 
 export async function loadAssetFromCloud(loginName, assetRef, campaignId = "") {
-  await establishServerSession(loginName);
-  return jsonpRequest({
-    action: "loadAsset",
-    ...createAuthPayload(loginName),
-    campaignId,
-    assetRef,
-  }, 30000);
+  return withFreshServerSession(loginName, null, () => (
+    jsonpRequest({
+      action: "loadAsset",
+      ...createAuthPayload(loginName),
+      campaignId,
+      assetRef,
+    }, 30000)
+  ));
 }
 
 export function createGlossaryEntryPayloadWithoutImages(payload) {
@@ -212,31 +208,45 @@ export function createCharacterPayloadWithoutPortrait(payload) {
 
 async function saveItemToCloud(payload, compactPayload = null, loginName = "", diagnostic = null) {
   const operationId = createOperationId();
-  const confirmedPayload = { ...payload, operationId };
-  const confirmedCompactPayload = compactPayload ? { ...compactPayload, operationId } : null;
-  const serialized = JSON.stringify(confirmedPayload);
-  if (serialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
-    const response = await jsonpRequest(confirmedPayload, JSONP_TIMEOUT_MS, diagnostic);
-    assertConfirmedOperation(response, operationId);
-    return response;
-  }
-
-  if (confirmedCompactPayload) {
-    const compactSerialized = JSON.stringify(confirmedCompactPayload);
-    if (compactSerialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
-      const response = await jsonpRequest(confirmedCompactPayload, JSONP_TIMEOUT_MS, diagnostic);
+  return withFreshServerSession(loginName, diagnostic, async () => {
+    const confirmedPayload = refreshAuthPayload({ ...payload, operationId }, loginName);
+    const confirmedCompactPayload = compactPayload
+      ? refreshAuthPayload({ ...compactPayload, operationId }, loginName)
+      : null;
+    const serialized = JSON.stringify(confirmedPayload);
+    if (serialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
+      const response = await jsonpRequest(confirmedPayload, JSONP_TIMEOUT_MS, diagnostic);
       assertConfirmedOperation(response, operationId);
       return response;
     }
-  }
 
-  return postAndConfirm(confirmedPayload, loginName, diagnostic);
+    if (confirmedCompactPayload) {
+      const compactSerialized = JSON.stringify(confirmedCompactPayload);
+      if (compactSerialized.length <= JSONP_MAX_PAYLOAD_LENGTH) {
+        const response = await jsonpRequest(confirmedCompactPayload, JSONP_TIMEOUT_MS, diagnostic);
+        assertConfirmedOperation(response, operationId);
+        return response;
+      }
+    }
+
+    return postAndConfirmOnce(confirmedPayload, loginName, diagnostic);
+  });
 }
 
 async function postAndConfirm(payload, loginName = "", diagnostic = null) {
   const operationId = String(payload.operationId || createOperationId());
+  return withFreshServerSession(loginName, diagnostic, () => (
+    postAndConfirmOnce(refreshAuthPayload({ ...payload, operationId }, loginName), loginName, diagnostic)
+  ));
+}
+
+async function postAndConfirmOnce(payload, loginName = "", diagnostic = null) {
+  const operationId = String(payload.operationId || createOperationId());
   await postWithoutCors({ ...payload, operationId }, diagnostic);
-  const response = await loadCampaignFromCloud(loginName, { diagnostic });
+  const response = await jsonpRequest({
+    action: "loadCampaign",
+    ...createAuthPayload(loginName),
+  }, JSONP_TIMEOUT_MS, diagnostic);
   assertConfirmedOperation(response, operationId);
   return response;
 }
@@ -265,15 +275,21 @@ function createOperationId() {
 async function establishServerSession(loginName, options = {}) {
   const normalizedLoginName = normalizeLoginName(loginName);
   if (!normalizedLoginName) return { active: false, reused: false };
-  if (serverSessionToken && serverSessionLoginName === normalizedLoginName) {
+  if (
+    serverSessionToken
+    && serverSessionLoginName === normalizedLoginName
+    && serverSessionExpiresAt > Date.now() + SESSION_REFRESH_MARGIN_MS
+  ) {
     notifySessionReuse("memory", options.diagnostic);
     return { active: true, reused: true };
   }
+  if (serverSessionToken) clearServerSession();
 
-  const restored = !options.force ? readStoredServerSession(normalizedLoginName) : "";
+  const restored = !options.force ? readStoredServerSession(normalizedLoginName) : null;
   if (restored) {
-    serverSessionToken = restored;
+    serverSessionToken = restored.token;
     serverSessionLoginName = normalizedLoginName;
+    serverSessionExpiresAt = restored.expiresAt;
     notifySessionReuse("storage", options.diagnostic);
     return { active: true, reused: true };
   }
@@ -284,7 +300,12 @@ async function establishServerSession(loginName, options = {}) {
     const response = await jsonpRequest({ action: "claimSession", operationId }, JSONP_TIMEOUT_MS, options.diagnostic);
     serverSessionToken = String(response?.sessionToken || "");
     serverSessionLoginName = serverSessionToken ? normalizedLoginName : "";
-    if (serverSessionToken) storeServerSession(normalizedLoginName, serverSessionToken);
+    serverSessionExpiresAt = serverSessionToken
+      ? Date.now() + Math.max(60, Number(response?.expiresIn) || 0) * 1000
+      : 0;
+    if (serverSessionToken) {
+      storeServerSession(normalizedLoginName, serverSessionToken, serverSessionExpiresAt);
+    }
   } catch {
     clearServerSession();
   }
@@ -298,16 +319,23 @@ function isExpiredServerSessionError(error) {
 function readStoredServerSession(loginName) {
   try {
     const stored = JSON.parse(window.sessionStorage.getItem(SERVER_SESSION_STORAGE_KEY) || "null");
-    if (!stored || stored.loginName !== loginName || !stored.token) return "";
-    return String(stored.token);
+    if (
+      !stored
+      || stored.loginName !== loginName
+      || !stored.token
+      || Number(stored.expiresAt) <= Date.now() + SESSION_REFRESH_MARGIN_MS
+    ) {
+      return null;
+    }
+    return { token: String(stored.token), expiresAt: Number(stored.expiresAt) };
   } catch {
-    return "";
+    return null;
   }
 }
 
-function storeServerSession(loginName, token) {
+function storeServerSession(loginName, token, expiresAt) {
   try {
-    window.sessionStorage.setItem(SERVER_SESSION_STORAGE_KEY, JSON.stringify({ loginName, token }));
+    window.sessionStorage.setItem(SERVER_SESSION_STORAGE_KEY, JSON.stringify({ loginName, token, expiresAt }));
   } catch {
     // La sessio es pot continuar reutilitzant en memoria si sessionStorage no esta disponible.
   }
@@ -316,8 +344,37 @@ function storeServerSession(loginName, token) {
 function clearServerSession() {
   serverSessionToken = "";
   serverSessionLoginName = "";
+  serverSessionExpiresAt = 0;
   try { window.sessionStorage.removeItem(SERVER_SESSION_STORAGE_KEY); } catch { /* storage opcional */ }
 }
+
+async function withFreshServerSession(loginName, diagnostic, operation) {
+  const normalizedLoginName = normalizeLoginName(loginName);
+  const session = await establishServerSession(normalizedLoginName, { diagnostic });
+  if (!session.active) {
+    throw new Error("No s'ha pogut renovar la sessio de sincronitzacio.");
+  }
+
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isExpiredServerSessionError(error)) throw error;
+    clearServerSession();
+    const renewed = await establishServerSession(normalizedLoginName, { diagnostic, force: true });
+    if (!renewed.active) throw error;
+    notifySessionReuse("renewed", diagnostic);
+    return operation();
+  }
+}
+
+function refreshAuthPayload(payload, loginName) {
+  const refreshed = { ...payload };
+  delete refreshed.sessionToken;
+  delete refreshed.loginName;
+  delete refreshed.accessKey;
+  return { ...refreshed, ...createAuthPayload(loginName) };
+}
+
 function createAuthPayload(loginName) {
   return serverSessionToken
     ? { sessionToken: serverSessionToken }

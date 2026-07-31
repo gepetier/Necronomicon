@@ -8,6 +8,7 @@ import {
   createCharacterPayloadWithoutPortrait,
   createGlossaryEntryPayloadWithoutImages,
   getStoredLoginName,
+  saveChronicleToCloud,
   storeLoginName,
 } from "../app/cloud-sync.js";
 import {
@@ -240,6 +241,48 @@ test("superficial login name is remembered locally", () => {
     assert.equal(getStoredLoginName(), "");
   } finally {
     globalThis.window = previousWindow;
+  }
+});
+
+test("cloud writes renew an expired server session and retry once transparently", async () => {
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key) || null, setItem: (key, value) => values.set(key, String(value)), removeItem: (key) => values.delete(key) };
+  const previous = { window: globalThis.window, document: globalThis.document, fetch: globalThis.fetch };
+  const postActions = [];
+  const saveTokens = [];
+  let claimedSessions = 0;
+  globalThis.window = { localStorage: storage, sessionStorage: storage, crypto: { randomUUID: () => `operation-${postActions.length + claimedSessions}` }, setTimeout, clearTimeout };
+  globalThis.fetch = async (_url, options) => { postActions.push(JSON.parse(options.body).action); return {}; };
+  globalThis.document = {
+    createElement: () => ({ remove: () => {} }),
+    head: { append: (script) => {
+      const url = new URL(script.src);
+      const callback = url.searchParams.get("callback");
+      const payload = JSON.parse(url.searchParams.get("payload"));
+      queueMicrotask(() => {
+        if (payload.action === "claimSession") {
+          claimedSessions += 1;
+          globalThis.window[callback]({ ok: true, sessionToken: `session-${claimedSessions}`, expiresIn: 3600 });
+        } else if (payload.action === "saveChronicle") {
+          saveTokens.push(payload.sessionToken);
+          globalThis.window[callback](saveTokens.length === 1
+            ? { ok: false, error: "La sessio ha caducat. Torna a iniciar sessio." }
+            : { ok: true });
+        }
+      });
+    } },
+  };
+  try {
+    clearStoredLoginName();
+    const result = await saveChronicleToCloud("Adri", { id: "sessio-prova" }, "meledar");
+    assert.equal(result.ok, true);
+    assert.deepEqual(postActions, ["createSession", "createSession"]);
+    assert.deepEqual(saveTokens, ["session-1", "session-2"]);
+  } finally {
+    clearStoredLoginName();
+    globalThis.window = previous.window;
+    globalThis.document = previous.document;
+    globalThis.fetch = previous.fetch;
   }
 });
 

@@ -17,6 +17,13 @@ import {
 } from "./utils.js";
 import { isAssetToken } from "./assets.js";
 
+const CHARACTER_CARD_SCENES = {
+  ilu: new URL("../resources/imatges/ilu-card-scene.png", import.meta.url).href,
+  nelthan: new URL("../resources/imatges/nelthan-card-scene.png", import.meta.url).href,
+  damakos: new URL("../resources/imatges/damakos-card-scene.png", import.meta.url).href,
+  elatoris: new URL("../resources/imatges/elatoris-card-scene.png", import.meta.url).href,
+};
+
 const ABILITY_DEFINITIONS = [
   { key: "for", source: "For", label: "Força", shortLabel: "FOR", skills: ["Atletisme"] },
   { key: "des", source: "Des", label: "Destresa", shortLabel: "DES", skills: ["Acrobàcies", "Joc de mans", "Sigil"] },
@@ -443,6 +450,8 @@ function renderCharacterCard(character, state, options = {}) {
   const hasOverviewDraft = Object.keys(state.ui.drafts.characters.overview[character.id] || {}).length > 0;
   const hasTabDraft = Object.keys(state.ui.drafts.characters.tabs[character.id] || {}).length > 0;
   const status = getCharacterRosterStatus(character);
+  const cardImage = CHARACTER_CARD_SCENES[character.id] || character.portrait || "";
+  const hasDedicatedCardScene = Boolean(CHARACTER_CARD_SCENES[character.id]);
   const statusPills = [{ label: rosterStatusLabel(status), tone: `roster-${status}` }];
   if (hasOverviewDraft || hasTabDraft) statusPills.push({ label: "Esborrany", tone: "draft" });
   if (state.ui.editModes.characters && state.ui.selectedCharacterId === character.id) statusPills.push({ label: "En edició", tone: "editing" });
@@ -450,8 +459,8 @@ function renderCharacterCard(character, state, options = {}) {
     <article class="character-card character-roster-${status}" data-character-card="${character.id}" tabindex="0" role="button" aria-label="${escapeAttribute(`Obre la fitxa de ${character.name}`)}" style="${paletteStyle(character.palette)}">
       ${renderStatusPills(statusPills)}
       ${renderCharacterRosterActions(character, { ...options, state })}
-      <div class="card-portrait ${character.portrait ? "has-image" : ""}" data-mark="${escapeHtml(character.sigil)}">
-        ${character.portrait ? `<img class="portrait-media" ${renderCharacterAssetAttribute(character.portrait)} alt="${escapeAttribute(`Retrat de ${character.name}`)}" loading="lazy" />` : ""}
+      <div class="card-portrait ${cardImage ? "has-image" : ""}" data-mark="${escapeHtml(character.sigil)}">
+        ${cardImage ? `<img class="portrait-media ${hasDedicatedCardScene ? "card-scene-media" : ""}" ${renderCharacterAssetAttribute(cardImage)} alt="${escapeAttribute(hasDedicatedCardScene ? `Escena de campanya de ${character.name}` : `Retrat de ${character.name}`)}" loading="lazy" />` : ""}
         <div class="portrait-badge">${escapeHtml(character.sigil)}</div>
       </div>
       <div class="character-card-copy">
