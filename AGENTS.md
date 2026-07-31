@@ -28,6 +28,7 @@ Fitxers principals: `main.js` (orquestració/UI), `styles.css` (estils), `data.j
 
 ## Decisions estables
 
+- Flux Git: treballa directament sobre `main`. Quan l'usuari demani "commit i push", publica `main` per activar el desplegament de GitHub Pages. No creis branques noves tret que l'usuari ho demani explicitament.
 - `campaign.json` a Drive és la font canònica. `data.js`, localStorage i IndexedDB són bootstrap/cache.
 - Media d'usuari: fitxers a `assets` de Drive i referències `drive-asset://<id>`; IndexedDB només cacheja.
 - `asset://...` sense blob local bloqueja una publicació completa: no s'ha d'ignorar silenciosament.
