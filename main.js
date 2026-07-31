@@ -4964,7 +4964,7 @@ async function pushStateToCloud(options = {}) {
     } else if (target.type === "deleteChronicle") {
       response = await deleteChronicleFromCloud(cloudSession.loginName, target.chronicleId, campaignId);
     } else if (target.type === "deleteGlossary") {
-      response = await deleteGlossaryEntryFromCloud(cloudSession.loginName, target.glossaryId, campaignId);
+      response = await deleteGlossaryEntryFromCloud(cloudSession.loginName, target.entryId, campaignId);
     } else if (target.type === "chronicle") {
       const prepared = await prepareCloudAssetPayload(target.chronicle, {
         campaignId,
